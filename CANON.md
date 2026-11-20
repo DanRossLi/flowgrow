@@ -64,6 +64,7 @@ Also from Dan: "take the existing hexagon and aesthetics", and "this will be a w
 - **Own repo** (Dan: "make a new repo, call it "flowgrow" this way it doesn't conflict with flowtile (old). move the flowgrow stuff there"): Flowgrow lives in this repo, `DanRossLi/flowgrow`. Flow Tile's repo (`DanRossLi/flowtile`, "flowtile (old)") no longer holds any of it. What the move did is under "The move to its own repo".
 - **Simple look for piloting** (Dan: "to pilot/test create a simplier version of the game graphically and just have basic blue tile for water and green tiles, then have a number on them, the locking mechanism. this will let us test the basics"): a second look for the same game, built the same day. See "The simple look, as built". The painted look stays.
 - **Pilot pile** (Dan: "make starting tiles only level 1 and have 10 tiles only, which makes the loop the challenge"): the pile is 10 tiles and every tile dealt is level 1, so higher levels can only come from combining and from the copies a lock banks. See "The pilot pile, as built".
+- **No lock limit** (Dan: "there is no lock limit, a user can lock as many times as they want"): locks are free and unlimited, so `lockEvery` is 0 in the config. See "No lock limit, as built".
 
 ### The move to its own repo (Nov 20)
 
@@ -81,10 +82,16 @@ Also from Dan: "take the existing hexagon and aesthetics", and "this will be a w
 
 ### The pilot pile, as built (Nov 20)
 
-- **What changed:** two numbers in `flowgrow.config.js`: `stackSize` 80 to 10 and `levelOdds` 0.5 to 0. With `levelOdds: 0` the deal only ever picks level 1, whatever is on the map. Nothing else in the rules changed, and the first build's game is one change away: `stackSize: 80` and `levelOdds: 0.5` (the simulator takes them as `stackSize=80 levelOdds=0.5` and gives the first build's numbers exactly).
+- **What changed:** two numbers in `flowgrow.config.js`: `stackSize` 80 to 10 and `levelOdds` 0.5 to 0. With `levelOdds: 0` the deal only ever picks level 1, whatever is on the map. Nothing else in the rules changed, and the first build's game is a few values away: `stackSize: 80`, `levelOdds: 0.5` and, since Nov 20, `lockEvery: 10` (the simulator takes them as `stackSize=80 levelOdds=0.5 lockEvery=10` and gives the first build's numbers exactly).
 - **The pile:** 10 tiles, all level 1. The first three are always habitat 1, habitat 1, river, and each of the other seven is a river tile one time in ten (a river tile always arrives at level 1 too).
 - **Why the loop is the challenge:** a tile only goes on a habitat of its own level, so with only level 1 dealt the pile can take a habitat from level 1 to level 2 and no further. Level 3 and up can only come from the copies a lock banks.
-- **The best score is kept per pile** (its size and level odds), so the first build's best isn't shown against 10-tile runs. A run saved before this change is replayed under the new pile, or dropped if its moves no longer fit.
+- **The best score is kept per ruleset** (every number that changes how a run plays: the map, the pile, the odds, the lock values), so scores from different rules never meet (it was per pile until Nov 20). A run saved before a change is replayed under the new rules, or dropped if its moves no longer fit.
+
+### No lock limit, as built (Nov 20)
+
+- **What changed:** `lockEvery` 10 to 0 in `flowgrow.config.js`. A lock is always at hand, the Lock button shows ∞ and no "next in", and `lockHold` is not used. The first build's pacing is one value away: `lockEvery: 10` with `lockHold: 1`.
+- **What still limits the loop:** a tile can be locked once, and a locked tile can't be copied, combined onto, widened or locked again, so the loop runs out when no unlocked tile has a copyable neighbour. The run then ends by itself, or when you tap **End run**.
+- **What it does:** `node tools/flowgrow-sim.mjs` now reports about 47 points for its simple player over about 300 moves and 77 locks. That player locks whichever tile banks the most copies, river tiles included, so the river spreads over most of the island and scores nothing. A player who locks only habitats stops by itself after 2 to 3 locks and about 20 moves, with 47 to 57 points (best 64), against 29 to 35 with one lock.
 
 ### What is built (LOU-298)
 
@@ -103,19 +110,19 @@ Also from Dan: "take the existing hexagon and aesthetics", and "this will be a w
 - **Where copies go:** to the back of the pile, behind every tile still to be dealt and behind copies banked earlier. They are kept as their own list, and "Tiles left" counts them.
 - **A locked tile** can't be combined onto, widened, locked again or copied. It keeps its score and still counts as the top level for dealing.
 - **Copies play like dealt tiles,** with the same rules and the same scoring. A level 2 river copy can only extend, and it reaches 2 tiles out.
-- **Screen:** a **Lock** button in the bottom bar shows the locks held and the tiles until the next one. Tapping it turns lock mode on, and tapping it again turns it off. In lock mode every lockable tile shows how many copies it would bank. Tapping one marks each copy on its neighbour, marks neighbours that are too high, and a card above the bar asks to confirm ("Lock this thicket?"). A locked habitat gets a padlock on its level pill and is painted a little muted. At the back of the pile panel, **Back of the pile** lists the banked copies in order.
+- **Screen:** a **Lock** button in the bottom bar shows the locks held and the tiles until the next one (since Nov 20 there is no lock limit, so it shows ∞). Tapping it turns lock mode on, and tapping it again turns it off. In lock mode every lockable tile shows how many copies it would bank. Tapping one marks each copy on its neighbour, marks neighbours that are too high, and a card above the bar asks to confirm ("Lock this thicket?"). A locked habitat gets a padlock on its level pill and is painted a little muted. At the back of the pile panel, **Back of the pile** lists the banked copies in order.
 - **A lock is a move:** it can be undone, it is saved, and it has a line in the run log. The log marks each placed tile as dealt or copy. The result adds locks used and lost, and copies banked, placed and discarded, with the points from copies.
 - **The six lock values** are in `flowgrow.config.js`: `lockEnabled`, `lockLevelCap`, `lockCopiesGo`, `lockRivers`, `lockEvery`, `lockHold`. With `lockEnabled: false` the game plays exactly as it did before locking.
 
 ### Open for Dan (placeholders, not rules)
 
-- **Lock pacing:** one lock for every 10 tiles placed (planted, combined, extended or widened; discards don't count), and only one can be held. A lock earned while holding one is lost.
+- ~~**Lock pacing:** one lock for every 10 tiles placed (planted, combined, extended or widened; discards don't count), and only one can be held. A lock earned while holding one is lost.~~ *Superseded Nov 20: Dan said there is no lock limit (see "No lock limit, as built"). It is still how `lockEvery: 10` and `lockHold: 1` work, if either comes back.*
 - **A lock doesn't use the tile in hand.**
 - **Order of copies from one lock:** river tiles first, then habitats from the lowest level to the highest.
 - **A locked river tile** still reaches land, and the river can still be extended from it. It is marked with a padlock pill on the tile.
 - **End of a run with locking:** it no longer ends when the pile's tiles are used up (80 in the first build, 10 now). It ends when the pile is empty and no lock you hold would bank a copy, or when you tap **End run** (shown once the pile is empty).
 - **An endless pile has no back,** so with `stackSize: 0` copies become the next tiles instead.
-- **With no lock held,** the Lock button only says when the next one comes ("No lock yet. Next one in 4 tiles.").
+- ~~**With no lock held,** the Lock button only says when the next one comes ("No lock yet. Next one in 4 tiles.").~~ *Moot since Nov 20: with no lock limit there is always a lock to use.*
 - **With the pile empty and a lock in hand,** lock mode turns on by itself.
 
 - **Score by level:** a move scores by the level of the habitat it leaves on the map: 1, 3, 6, 10, 15, 21, 28. So a level 1 tile put on a level 1 habitat scores 3. River tiles score nothing.
@@ -130,7 +137,7 @@ Also from Dan: "take the existing hexagon and aesthetics", and "this will be a w
 - **Score is called Score,** not Life as on the Weather test.
 - **The move** (chosen Nov 20 so the move could be done, not set by Dan): the page's title is just "Flowgrow"; the Home links to Flow Tile's home page are gone (Flowgrow has no home page of its own yet); the app icons are Flow Tile's drop, as stand-ins; `play.css` is copied whole and not trimmed; Flow Tile keeps pointer pages for `/flowgrow/` and `/city-test/`; the old history was not carried across.
 - **The simple look** (chosen Nov 20, not set by Dan): it is the default look; the island is flat from above instead of tilted; river tiles carry their level (1 or 2) as well as habitats; empty land is pale green where the river reaches and off-white where it doesn't; mountains are grey with a triangle; the source has a white ring; the colours, and the gold, teal and dashed-blue rings that mark what the tile in hand can do, are placeholders.
-- **The pilot pile** (found while building it, not set by Dan): lock pacing is still one lock per 10 tiles placed, so a 10-tile pile earns exactly one lock, with the 10th placement, and a discarded tile means no lock at all. In 1,000 simulated runs a simple player averages 29 points with 4 copies banked (16 points with locking off), so the loop runs once. A lock every 5 tiles runs it about 3 times and averages 43. The 7 dealt tiles are each a river tile one time in ten, so runs differ a little; with `riverShare: 0` every run is the same 10 tiles.
+- ~~**The pilot pile** (found while building it, not set by Dan): lock pacing is still one lock per 10 tiles placed, so a 10-tile pile earns exactly one lock, with the 10th placement, and a discarded tile means no lock at all. In 1,000 simulated runs a simple player averages 29 points with 4 copies banked (16 points with locking off), so the loop runs once. A lock every 5 tiles runs it about 3 times and averages 43. The 7 dealt tiles are each a river tile one time in ten, so runs differ a little; with `riverShare: 0` every run is the same 10 tiles.~~ *Resolved Nov 20: Dan said there is no lock limit, so the loop is no longer held to one lock.*
 
 ### Not built yet
 

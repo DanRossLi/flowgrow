@@ -41,6 +41,6 @@ window.FLOWGROW = {
   lockLevelCap: true,       // false: every unlocked neighbour is copied, whatever its level
   lockCopiesGo: "back",     // "back": the end of the pile. "front": the next tiles
   lockRivers: true,         // false: river tiles can't be locked or copied
-  lockEvery: 10,            // tiles placed per lock earned (0: locks are free and unlimited)
-  lockHold: 1,              // locks the player can hold
+  lockEvery: 0,             // tiles placed per lock earned. 0: locks are free and unlimited (Dan, Nov 20: "there is no lock limit"). 10 in the first build
+  lockHold: 1,              // locks the player can hold (not used while locks are unlimited)
 };

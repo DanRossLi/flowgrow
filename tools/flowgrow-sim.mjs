@@ -202,6 +202,10 @@ function checks() { let n = 0; const fails = [];
   { const S = run(["habitat 1", "habitat 1", "habitat 1", "habitat 1"], {levelOdds:0, stackSize:4, queueShown:0}); R.place(S, 0, E); R.place(S, 0, E);
     ok("with only level 1 dealt, the pile takes a habitat to level 2 and no further: no tile in hand fits a level 2 habitat", at(S, E) === 2 && R.options(S, 0).length > 0 && R.options(S, 0).every(o => o.does === "plant" && o.p + "" !== E + "")) }
   ok("the config file asks for the pilot pile: 10 tiles, level odds 0", BASE.stackSize === 10 && BASE.levelOdds === 0);
+  // ----- no lock limit (Dan, Nov 20: "there is no lock limit, a user can lock as many times as they want")
+  ok("the config file has no lock limit: lockEvery 0, so a lock is always at hand", BASE.lockEnabled === true && BASE.lockEvery === 0);
+  { const k = R.rulesKey(REF); ok("a ruleset's key changes with any rule, and not with names or zoom",
+      /^[0-9a-z]{1,7}$/.test(k) && R.rulesKey(cfgWith({})) === k && R.rulesKey(cfgWith({lockEvery:0})) !== k && R.rulesKey(cfgWith({stackSize:10})) !== k && R.rulesKey(cfgWith({levelOdds:0})) !== k && R.rulesKey(cfgWith({tilesAcross:7, levelNames:["A"]})) === k) }
 
   for (const f of fails) console.log("FAILED: " + f);
   console.log(fails.length ? `${fails.length} of ${n} rule checks failed` : `all ${n} rule checks passed`);

@@ -120,6 +120,10 @@ const reachAt = (c, l) => c.riverReach[Math.min(l, c.riverReach.length) - 1] || 
 // ---------- dealing. Seeded, so a run can be replayed: the same seed and the same moves always give the same pile.
 const seedOf = v => { const n = Number(v); if (v !== "" && v != null && Number.isFinite(n)) return Math.abs(Math.floor(n)) % 4294967296;
   let h = 2166136261; for (const ch of String(v)) h = Math.imul(h ^ ch.charCodeAt(0), 16777619); return h >>> 0 };
+// A short name for the rules a run is played under: every config value that changes how a run plays (not names or zoom).
+// The best score is kept per ruleset, so scores from different rules never meet.
+const RULE_KEYS = ["map", "stackSize", "queueShown", "pickFrom", "riverShare", "opening", "maxLevel", "levelOdds", "scoreByLevel", "riverReach", "lockEnabled", "lockLevelCap", "lockCopiesGo", "lockRivers", "lockEvery", "lockHold"];
+const rulesKey = c => seedOf(JSON.stringify(RULE_KEYS.map(k => c[k]))).toString(36);
 function rand(S) { let t = (S.rs = (S.rs + 0x6D2B79F5) >>> 0); t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296 }
 // One new tile. The first tiles of a run are fixed (cfg.opening). After that a tile is a river tile riverShare of the time;
 // otherwise a habitat whose level is rolled from 1 up to the highest habitat level on the map right now, each level
@@ -261,7 +265,7 @@ function logText(S) { const c = S.cfg, lines = [`Flowgrow run log · seed ${S.se
   return lines.join("\n") }
 const settingsText = c => ["Flowgrow settings", ...KEYS.map(([k, , label]) => `${label}: ${k === "map" ? "\n  " + c.map.join("\n  ") : Array.isArray(c[k]) ? c[k].join(", ") : c[k]}`)].join("\n");
 
-const rules = {HEX, step, hexDist, key, unkey, KEYS, tidy, mapOf, parseTile, tileWord, inside, codeAt, nbrs, isOpen, levelName, scoreOf, riverTop, reachAt, seedOf,
+const rules = {HEX, step, hexDist, key, unkey, KEYS, tidy, mapOf, parseTile, tileWord, inside, codeAt, nbrs, isOpen, levelName, scoreOf, riverTop, reachAt, seedOf, rulesKey,
   roll, fill, left, fresh, reachOf, plantable, options, opens, why, place, discard, replay, tileText, logText, settingsText,
   hasLock, lockable, copiesOf, lockWouldCopy, lock, end};
 G.Flowgrow = {rules};
@@ -283,7 +287,7 @@ const mem = {get(k) { try { return localStorage.getItem("flowgrow." + k) } catch
 // keys may still be here: bring the best score and any run in progress across once, then drop them.
 for (const k of ["best", "run.v2"]) try { const old = localStorage.getItem("flowtile.flowgrow." + k); if (old != null) { if (mem.get(k) == null) mem.set(k, old); localStorage.removeItem("flowtile.flowgrow." + k) } } catch (_) {}
 const CFG = tidy(G.FLOWGROW).cfg, GRID = grid(CFG), W = CFG.map[0].length, H = CFG.map.length;
-const BEST = "best." + CFG.stackSize + "x" + CFG.levelOdds; // the best score is kept per pile (its size and level odds), so scores from a different game never meet
+const BEST = "best." + rulesKey(CFG); // the best score is kept per ruleset (every number that changes how a run plays), so scores from different rules never meet
 const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches, now = () => performance.now();
 let S = null, opts = [], landSig = "", wonShown = false, msgT = 0, lockMode = false, lockSel = null, lockList = [];
 const pops = {}, fx = [];
