@@ -63,6 +63,7 @@ Also from Dan: "take the existing hexagon and aesthetics", and "this will be a w
 
 - **Own repo** (Dan: "make a new repo, call it "flowgrow" this way it doesn't conflict with flowtile (old). move the flowgrow stuff there"): Flowgrow lives in this repo, `DanRossLi/flowgrow`. Flow Tile's repo (`DanRossLi/flowtile`, "flowtile (old)") no longer holds any of it. What the move did is under "The move to its own repo".
 - **Simple look for piloting** (Dan: "to pilot/test create a simplier version of the game graphically and just have basic blue tile for water and green tiles, then have a number on them, the locking mechanism. this will let us test the basics"): a second look for the same game, built the same day. See "The simple look, as built". The painted look stays.
+- **Pilot pile** (Dan: "make starting tiles only level 1 and have 10 tiles only, which makes the loop the challenge"): the pile is 10 tiles and every tile dealt is level 1, so higher levels can only come from combining and from the copies a lock banks. See "The pilot pile, as built".
 
 ### The move to its own repo (Nov 20)
 
@@ -77,6 +78,13 @@ Also from Dan: "take the existing hexagon and aesthetics", and "this will be a w
 - **What it shows:** flat hexes seen from above. A **blue** tile is a river tile (the source too) and a **green** tile is a habitat, and each carries its level as a **number**. A river tile is level 1, or the darker blue level 2; habitat levels 1 to 7 run from light to dark green. **The locking mechanism is all there:** the Lock button, lock mode with the copies each tile would bank, the confirm card, a padlock on every locked tile, and the banked copies at the back of the pile, drawn in the same blue and green.
 - **Everything else is the same game:** the rules, the pile, the buttons, scoring, undo, saving and the seeded piles. Part 1 of `flowgrow.js` (the rules) was not edited. Only the picture of the island, the pictures of tiles in the pile and the menu's seven levels, the tap-to-tile maths and the camera's bounds know about the look. The painted look is unchanged and is still in the game.
 - **Choosing a look:** the page opens on the simple look. The menu's Look row switches to the painted look and back, in the middle of a run, and remembers the choice on the device; `?look=painted` or `?look=simple` picks one for a single visit.
+
+### The pilot pile, as built (Nov 20)
+
+- **What changed:** two numbers in `flowgrow.config.js`: `stackSize` 80 to 10 and `levelOdds` 0.5 to 0. With `levelOdds: 0` the deal only ever picks level 1, whatever is on the map. Nothing else in the rules changed, and the first build's game is one change away: `stackSize: 80` and `levelOdds: 0.5` (the simulator takes them as `stackSize=80 levelOdds=0.5` and gives the first build's numbers exactly).
+- **The pile:** 10 tiles, all level 1. The first three are always habitat 1, habitat 1, river, and each of the other seven is a river tile one time in ten (a river tile always arrives at level 1 too).
+- **Why the loop is the challenge:** a tile only goes on a habitat of its own level, so with only level 1 dealt the pile can take a habitat from level 1 to level 2 and no further. Level 3 and up can only come from the copies a lock banks.
+- **The best score is kept per pile** (its size and level odds), so the first build's best isn't shown against 10-tile runs. A run saved before this change is replayed under the new pile, or dropped if its moves no longer fit.
 
 ### What is built (LOU-298)
 
@@ -105,23 +113,24 @@ Also from Dan: "take the existing hexagon and aesthetics", and "this will be a w
 - **A lock doesn't use the tile in hand.**
 - **Order of copies from one lock:** river tiles first, then habitats from the lowest level to the highest.
 - **A locked river tile** still reaches land, and the river can still be extended from it. It is marked with a padlock pill on the tile.
-- **End of a run with locking:** it no longer ends at 80 tiles. It ends when the pile is empty and no lock you hold would bank a copy, or when you tap **End run** (shown once the pile is empty).
+- **End of a run with locking:** it no longer ends when the pile's tiles are used up (80 in the first build, 10 now). It ends when the pile is empty and no lock you hold would bank a copy, or when you tap **End run** (shown once the pile is empty).
 - **An endless pile has no back,** so with `stackSize: 0` copies become the next tiles instead.
 - **With no lock held,** the Lock button only says when the next one comes ("No lock yet. Next one in 4 tiles.").
 - **With the pile empty and a lock in hand,** lock mode turns on by itself.
 
 - **Score by level:** a move scores by the level of the habitat it leaves on the map: 1, 3, 6, 10, 15, 21, 28. So a level 1 tile put on a level 1 habitat scores 3. River tiles score nothing.
-- **Where higher levels come from:** the pile deals them. A habitat's level is rolled from 1 up to the highest level on the map at that moment, and each level is half as likely as the one below. One tile in ten is a river tile. The first three tiles are always habitat 1, habitat 1, river.
+- **Where higher levels come from:** ~~the pile deals them. A habitat's level is rolled from 1 up to the highest level on the map at that moment, and each level is half as likely as the one below.~~ *Superseded Nov 20 by Dan's pilot pile: the pile only deals level 1, so higher levels come only from combining and from lock copies.* One tile in ten is a river tile. The first three tiles are always habitat 1, habitat 1, river.
 - **One kind of habitat,** levels 1 to 7: Sprouts, Meadow, Thicket, Saplings, Grove, Forest, Old forest. The names, and the words "habitat" and "plant", are placeholders.
 - **Plant and combine:** a habitat goes on any empty land within reach of the river, or on a habitat of the same level. A level 7 habitat can't be combined.
 - **River:** the source counts as a level 1 river tile, and a river tile always arrives at level 1. Extend: put it on empty land that touches the river. Branches are allowed. Widen: put it on a level 1 river tile to make it level 2, the widest. A level 1 river tile reaches 1 tile out and a level 2 river tile reaches 2. Mountains don't block reach.
 - **Discard** scores nothing and still uses up the tile. **Undo** is unlimited.
-- **A run:** 80 tiles, no timer and no way to lose. The result shows the score, the best score on the device, the top level and what was planted, combined and discarded.
+- **A run:** ~~80 tiles~~ *(10 tiles since Nov 20, Dan's pilot pile)*, no timer and no way to lose. The result shows the score, the best score on the device, the top level and what was planted, combined and discarded.
 - **The island:** 13×9, all bare ground, the source in the middle and 8 mountains in three small groups. No sea tiles.
 - **Opening view:** centred on the source, with about 5 tiles across a phone.
 - **Score is called Score,** not Life as on the Weather test.
 - **The move** (chosen Nov 20 so the move could be done, not set by Dan): the page's title is just "Flowgrow"; the Home links to Flow Tile's home page are gone (Flowgrow has no home page of its own yet); the app icons are Flow Tile's drop, as stand-ins; `play.css` is copied whole and not trimmed; Flow Tile keeps pointer pages for `/flowgrow/` and `/city-test/`; the old history was not carried across.
 - **The simple look** (chosen Nov 20, not set by Dan): it is the default look; the island is flat from above instead of tilted; river tiles carry their level (1 or 2) as well as habitats; empty land is pale green where the river reaches and off-white where it doesn't; mountains are grey with a triangle; the source has a white ring; the colours, and the gold, teal and dashed-blue rings that mark what the tile in hand can do, are placeholders.
+- **The pilot pile** (found while building it, not set by Dan): lock pacing is still one lock per 10 tiles placed, so a 10-tile pile earns exactly one lock, with the 10th placement, and a discarded tile means no lock at all. In 1,000 simulated runs a simple player averages 29 points with 4 copies banked (16 points with locking off), so the loop runs once. A lock every 5 tiles runs it about 3 times and averages 43. The 7 dealt tiles are each a river tile one time in ten, so runs differ a little; with `riverShare: 0` every run is the same 10 tiles.
 
 ### Not built yet
 

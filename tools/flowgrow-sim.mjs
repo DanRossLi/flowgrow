@@ -20,6 +20,12 @@ function load() { const window = {FLOWGROW_SIM:true};
   return {R:window.Flowgrow.rules, base:window.FLOWGROW} }
 const {R, base} = load();
 const BASE = R.tidy(base).cfg;
+// The rule checks are written for these values, the first build's, so tuning flowgrow.config.js never breaks them (the pilot pile, for one,
+// changes the pile). The report and the command line use the config file as it is.
+const REF = (() => { const t = R.tidy({...base, map:["_____________", "_BB__________", "__B_______B__", "__________BB_", "______T______", "_____________", "___BB________", "_____________", "_____________"],
+  stackSize:80, queueShown:3, pickFrom:1, riverShare:.1, opening:["habitat 1", "habitat 1", "river"], maxLevel:7, levelOdds:.5, scoreByLevel:[1, 3, 6, 10, 15, 21, 28], riverReach:[1, 2],
+  levelNames:["Sprouts", "Meadow", "Thicket", "Saplings", "Grove", "Forest", "Old forest"], lockEnabled:true, lockLevelCap:true, lockCopiesGo:"back", lockRivers:true, lockEvery:10, lockHold:1}, base);
+  if (t.bad.length) throw new Error("bad reference config: " + t.bad); return t.cfg })();
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
 // ---------- the simple player: one turn
@@ -67,13 +73,13 @@ function report(cfg, runs) { const res = []; for (let seed = 1; seed <= runs; se
 // ---------- the rule checks: small set-ups with a fixed pile (the config's opening list), checked one fact at a time
 function checks() { let n = 0; const fails = [];
   const ok = (what, cond) => { n++; if (!cond) fails.push(what) };
-  const cfgWith = o => { const t = R.tidy({...BASE, ...o}, BASE); if (t.bad.length) throw new Error("bad test config: " + t.bad); return t.cfg };
+  const cfgWith = o => { const t = R.tidy({...REF, ...o}, REF); if (t.bad.length) throw new Error("bad test config: " + t.bad); return t.cfg };
   const run = (opening, o = {}) => R.fresh(cfgWith({opening, ...o}), 7);
   const at = (S, p) => S.h[R.key(p)], riv = (S, p) => S.r[R.key(p)], does = (S, p, i = 0) => (R.options(S, i).find(o => o.p + "" === p + "") || {}).does;
   const SRC = [6, 4], E = [7, 4], W = [5, 4], FAR = [9, 4];
 
   { const t = R.tidy(base); ok("the config file passes its own checks", t.bad.length === 0 && same(t.cfg.map, base.map)) }
-  { const S = R.fresh(BASE, 1); ok("a run starts with the source as a level 1 river tile", riv(S, SRC) && riv(S, SRC).l === 1 && Object.keys(S.r).length === 1);
+  { const S = R.fresh(REF, 1); ok("a run starts with the source as a level 1 river tile", riv(S, SRC) && riv(S, SRC).l === 1 && Object.keys(S.r).length === 1);
     ok("the first three tiles are habitat 1, habitat 1, river", same(S.q.slice(0, 3), [{k:"h", l:1}, {k:"h", l:1}, {k:"r", l:1}]));
     ok("the pile shows the tile in hand and the next 3, with 80 tiles left", S.q.length === 4 && S.dealt === 4 && R.left(S) === 80);
     ok("at the start the 6 tiles round the source can be planted", R.plantable(S).length === 6 && R.plantable(S).every(k => R.hexDist(R.unkey(k), SRC) === 1)) }
@@ -112,17 +118,17 @@ function checks() { let n = 0; const fails = [];
     S.top = 3; const c = [0, 0, 0, 0]; for (let i = 0; i < N; i++) { const t = R.roll(S); if (t.k === "h") c[t.l]++ } const h = c[1] + c[2] + c[3];
     ok("levels 1, 2 and 3 are dealt 4 : 2 : 1 when 3 is the top level on the map", c[0] === 0 && Math.abs(c[1] / h - 4 / 7) < .012 && Math.abs(c[2] / h - 2 / 7) < .012 && Math.abs(c[3] / h - 1 / 7) < .012);
     S.top = 9; let over = false; for (let i = 0; i < 3000; i++) if (R.roll(S).l > 7) over = true; ok("no tile is dealt above the top level", !over) }
-  { const NOLOCK = cfgWith({lockEnabled:false}), a = play(NOLOCK, 42), b = play(NOLOCK, 42), c = play(NOLOCK, 43), BASE = NOLOCK;
+  { const NOLOCK = cfgWith({lockEnabled:false}), a = play(NOLOCK, 42), b = play(NOLOCK, 42), c = play(NOLOCK, 43), REF = NOLOCK;
     ok("the same seed and the same moves give the same run", !a.error && same(a.S, b.S));
     ok("another seed gives another pile", !same(a.S.log.map(e => e.t), c.S.log.map(e => e.t)));
     ok("a whole run uses every tile and its score is the sum of its moves", a.S.over && a.S.used === 80 && a.S.moves.length === 80 && a.S.log.reduce((s, e) => s + e.pts, 0) === a.S.score && a.S.planted + a.S.combined + a.S.extended + a.S.widened + a.S.discarded === 80);
-    const part = R.replay(BASE, 42, a.S.moves.slice(0, 30)), back = R.replay(BASE, 42, a.S.moves.slice(0, 29)), again = R.replay(BASE, 42, a.S.moves.slice(0, 29)); R.place(again, a.S.moves[29].i, [a.S.moves[29].x ?? 0, a.S.moves[29].y ?? 0]) || R.discard(again, 0);
-    ok("undo steps back one move and never re-rolls a tile", same(back.q.slice(0, 3), R.replay(BASE, 42, a.S.moves.slice(0, 29)).q.slice(0, 3)) && same(part, again));
+    const part = R.replay(REF, 42, a.S.moves.slice(0, 30)), back = R.replay(REF, 42, a.S.moves.slice(0, 29)), again = R.replay(REF, 42, a.S.moves.slice(0, 29)); R.place(again, a.S.moves[29].i, [a.S.moves[29].x ?? 0, a.S.moves[29].y ?? 0]) || R.discard(again, 0);
+    ok("undo steps back one move and never re-rolls a tile", same(back.q.slice(0, 3), R.replay(REF, 42, a.S.moves.slice(0, 29)).q.slice(0, 3)) && same(part, again));
     ok("the run log has one line per move", a.S.log.length === 80 && R.logText(a.S).split("\n").length === 82 && a.S.log.every((e, i) => e.n === i + 1)) }
-  { ok("levels 1 to 7 score 1, 3, 6, 10, 15, 21, 28", same([1, 2, 3, 4, 5, 6, 7].map(l => R.scoreOf(BASE, l)), [1, 3, 6, 10, 15, 21, 28]));
-    ok("past level 7 the score carries on the pattern", R.scoreOf(BASE, 8) === 36 && R.scoreOf(BASE, 9) === 45) }
-  { const t = R.tidy({...BASE, map:["___", "_X_", "___"], stackSize:"12", riverShare:5, opening:"habitat 2, river, habitat 1", levelNames:""}, BASE);
-    ok("a bad map or a bad number is refused and the old value stands", same(t.bad, ["map", "riverShare", "levelNames"]) && same(t.cfg.map, BASE.map) && t.cfg.riverShare === .1 && t.cfg.stackSize === 12 && same(t.cfg.opening, ["habitat 2", "river", "habitat 1"]));
+  { ok("levels 1 to 7 score 1, 3, 6, 10, 15, 21, 28", same([1, 2, 3, 4, 5, 6, 7].map(l => R.scoreOf(REF, l)), [1, 3, 6, 10, 15, 21, 28]));
+    ok("past level 7 the score carries on the pattern", R.scoreOf(REF, 8) === 36 && R.scoreOf(REF, 9) === 45) }
+  { const t = R.tidy({...REF, map:["___", "_X_", "___"], stackSize:"12", riverShare:5, opening:"habitat 2, river, habitat 1", levelNames:""}, REF);
+    ok("a bad map or a bad number is refused and the old value stands", same(t.bad, ["map", "riverShare", "levelNames"]) && same(t.cfg.map, REF.map) && t.cfg.riverShare === .1 && t.cfg.stackSize === 12 && same(t.cfg.opening, ["habitat 2", "river", "habitat 1"]));
     ok("a map needs exactly one source", R.mapOf(["___", "___", "___"]) === undefined && R.mapOf(["T__", "__T", "___"]) === undefined && !!R.mapOf("_T_ ___ _B_")) }
   { const S = run(["habitat 1", "habitat 2", "habitat 1"], {pickFrom:3}); const a = R.place(S, 1, E);
     ok("with pick from 3, the second tile can be taken instead", a && at(S, E) === 2 && same(S.q[0], {k:"h", l:1}) && same(R.replay(S.cfg, 7, S.moves), S)) }
@@ -183,9 +189,19 @@ function checks() { let n = 0; const fails = [];
     const Z = setup({"8,6":3, [N[0]]:2}, {}, {lockEvery:0}); Z.locks = 0; ok("lock: with lockEvery 0, locks are free and unlimited", R.lockable(Z, C) && R.lock(Z, C) && R.lockable(Z, R.unkey(N[0])) && Z.locks === 0);
     const O = setup({"8,6":3, [N[0]]:2}, {}, {lockEnabled:false}); ok("lock: with locking off, nothing can be locked", !R.lockable(O, C) && R.lock(O, C) === null) }
 
-  { const a = play(BASE, 42), S = a.S;
+  { const a = play(REF, 42), S = a.S;
     ok("lock: a whole run with locking ends, and its score is the sum of its moves", !a.error && S.over && S.lockUsed > 0 && S.log.reduce((s, e) => s + e.pts, 0) === S.score && S.planted + S.combined + S.extended + S.widened + S.discarded === S.used && S.used === 80 + S.copyPlaced + S.copyDiscarded);
     ok("lock: the run log has a line for every move, and marks locks and copies", R.logText(S).split("\n").length === S.moves.length + 2 && /\. Locked .* banked /.test(R.logText(S)) && /, copy · /.test(R.logText(S)) && /, dealt · /.test(R.logText(S))) }
+
+  // ----- the pilot pile (Dan, Nov 20: "make starting tiles only level 1 and have 10 tiles only, which makes the loop the challenge")
+  { const S = R.fresh(cfgWith({levelOdds:0, stackSize:0, opening:[], riverShare:0}), 11); S.top = 7; let all1 = true; for (let i = 0; i < 4000; i++) { const t = R.roll(S); if (t.k !== "h" || t.l !== 1) all1 = false }
+    ok("level odds 0: every dealt habitat is level 1, even with a level 7 on the map", all1) }
+  { const a = play(cfgWith({levelOdds:0, stackSize:10}), 5), S = a.S, dealt = S.log.filter(e => e.t && !e.t.c && e.did !== "lock" && e.did !== "end");
+    ok("a pile of 10 with level odds 0: all 10 dealt tiles are level 1, so anything higher in the run came from combining or a lock copy",
+      !a.error && S.over && S.dealt === 10 && dealt.length === 10 && dealt.every(e => e.t.l === 1) && S.used === 10 + S.copyPlaced + S.copyDiscarded) }
+  { const S = run(["habitat 1", "habitat 1", "habitat 1", "habitat 1"], {levelOdds:0, stackSize:4, queueShown:0}); R.place(S, 0, E); R.place(S, 0, E);
+    ok("with only level 1 dealt, the pile takes a habitat to level 2 and no further: no tile in hand fits a level 2 habitat", at(S, E) === 2 && R.options(S, 0).length > 0 && R.options(S, 0).every(o => o.does === "plant" && o.p + "" !== E + "")) }
+  ok("the config file asks for the pilot pile: 10 tiles, level odds 0", BASE.stackSize === 10 && BASE.levelOdds === 0);
 
   for (const f of fails) console.log("FAILED: " + f);
   console.log(fails.length ? `${fails.length} of ${n} rule checks failed` : `all ${n} rule checks passed`);

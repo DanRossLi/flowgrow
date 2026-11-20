@@ -16,13 +16,14 @@ window.FLOWGROW = {
         "_____________"],
 
   // The pile
-  stackSize: 80,            // tiles in a run (0: endless)
+  stackSize: 10,            // tiles in a run (0: endless). 10 for the pilot (Dan, Nov 20); 80 in the first build
   queueShown: 3,            // tiles shown after the tile in hand
   pickFrom: 1,              // 1: you must place the tile in hand. 3: tap any of the first 3 to take it instead
   riverShare: 0.10,         // chance a dealt tile is a river tile
   opening: ["habitat 1", "habitat 1", "river"], // the first tiles of every run, in order
   maxLevel: 7,              // the highest level a habitat can reach
-  levelOdds: 0.5,           // each level is this many times as likely as the one below
+  levelOdds: 0,             // each level is this many times as likely as the one below. 0: only level 1 is ever dealt (Dan, Nov 20), so higher levels
+                            // come only from combining and from the copies a lock banks. 0.5 in the first build
 
   // Score: a move scores by the level of the habitat it leaves on the map (Dan: "+1, +3, +6, +10....")
   scoreByLevel: [1, 3, 6, 10, 15, 21, 28],

@@ -79,7 +79,7 @@ const KEYS = [
   ["riverShare", real(0, 1), "River tile chance", "0 to 1", "num"],
   ["opening", listOf(s => { const t = parseTile(s); return t ? tileWord(t) : undefined }, 0, 40), "First tiles", "such as habitat 1, river", "list"],
   ["maxLevel", whole(1, 12), "Top level", "the highest a habitat can reach", "int"],
-  ["levelOdds", real(0.01, 4), "Level odds", "each level is this many times as likely as the one below", "num"],
+  ["levelOdds", real(0, 4), "Level odds", "each level is this many times as likely as the one below. 0: only level 1 is ever dealt", "num"],
   ["scoreByLevel", listOf(real(0, 100000), 1, 24), "Points by level", "level 1 first", "list"],
   ["riverReach", listOf(whole(0, 12), 1, 4), "River reach", "tiles out, by river level", "list"],
   ["tilesAcross", real(2, 16), "Tiles across", "opening zoom on a phone", "num"],
@@ -123,7 +123,8 @@ const seedOf = v => { const n = Number(v); if (v !== "" && v != null && Number.i
 function rand(S) { let t = (S.rs = (S.rs + 0x6D2B79F5) >>> 0); t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296 }
 // One new tile. The first tiles of a run are fixed (cfg.opening). After that a tile is a river tile riverShare of the time;
 // otherwise a habitat whose level is rolled from 1 up to the highest habitat level on the map right now, each level
-// levelOdds times as likely as the one below.
+// levelOdds times as likely as the one below. With levelOdds 0 only level 1 is ever dealt (the pilot, Dan, Nov 20: "make
+// starting tiles only level 1"): higher levels then come only from combining and from the copies a lock banks.
 function roll(S) { const c = S.cfg;
   if (S.dealt < c.opening.length) { const t = parseTile(c.opening[S.dealt]); return {k:t.k, l:Math.min(t.l, t.k === "r" ? riverTop(c) : c.maxLevel)} }
   if (rand(S) < c.riverShare) return {k:"r", l:1};
@@ -282,6 +283,7 @@ const mem = {get(k) { try { return localStorage.getItem("flowgrow." + k) } catch
 // keys may still be here: bring the best score and any run in progress across once, then drop them.
 for (const k of ["best", "run.v2"]) try { const old = localStorage.getItem("flowtile.flowgrow." + k); if (old != null) { if (mem.get(k) == null) mem.set(k, old); localStorage.removeItem("flowtile.flowgrow." + k) } } catch (_) {}
 const CFG = tidy(G.FLOWGROW).cfg, GRID = grid(CFG), W = CFG.map[0].length, H = CFG.map.length;
+const BEST = "best." + CFG.stackSize + "x" + CFG.levelOdds; // the best score is kept per pile (its size and level odds), so scores from a different game never meet
 const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches, now = () => performance.now();
 let S = null, opts = [], landSig = "", wonShown = false, msgT = 0, lockMode = false, lockSel = null, lockList = [];
 const pops = {}, fx = [];
@@ -550,7 +552,7 @@ function sync() { opts = options(S, 0); landSig = [...reachOf(S)].join(";");
   if (S.over && !wonShown) result(); if (!S.over) wonShown = false; $("win").hidden = !S.over; $("app").classList.toggle("won", S.over);
   mem.set("run.v2", S.over ? null : JSON.stringify({seed:S.seed, moves:S.moves, at:Date.now()})); draw() }
 // When the tiles run out: the score, the best score on this device, the top level and what was done.
-function result() { wonShown = true; const best = +mem.get("best") || 0; if (S.score > best) mem.set("best", String(S.score));
+function result() { wonShown = true; const best = +mem.get(BEST) || 0; if (S.score > best) mem.set(BEST, String(S.score));
   $("wScore").innerHTML = `<b>${S.score} points</b> · ${S.score > best ? (best ? `New best (was ${best})` : "New best") : `Best ${best}`}`;
   $("wGoals").innerHTML = [[`Top level ${S.top}${S.top ? " · " + levelName(CFG, S.top) : ""}`, `${Object.keys(S.h).length} habitats on the island`], [`${S.planted} planted · ${S.combined} combined`, `${S.discarded} discarded`],
     [`River: ${S.extended} extended · ${S.widened} widened`, `${Object.keys(S.r).length} river tiles with the source`],

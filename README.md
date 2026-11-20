@@ -12,7 +12,8 @@ Plain HTML/JS, no build step, no framework, and nothing loaded from other sites.
 - A **habitat** is planted on empty land within reach of your river (the green land), or put on a habitat of the **same level**, which then goes up one level. A different level is never allowed.
 - The seven levels are Sprouts, Meadow, Thicket, Saplings, Grove, Forest and Old forest. A move scores by the level it leaves on the map: 1, 3, 6, 10, 15, 21, 28.
 - A **river tile** scores nothing. Put it on empty land that touches the river to make the river longer, or on a level 1 river tile to make it wider. A wider river reaches 2 tiles out instead of 1.
-- **Discard** throws the tile in hand away. **Undo** steps back as far as you like. A run has 80 tiles, with no timer and no way to lose.
+- **Discard** throws the tile in hand away. **Undo** steps back as far as you like. A run has 10 tiles, with no timer and no way to lose.
+- **The pilot pile** (Dan, Nov 20): you start with just **10 tiles, all level 1**, and nothing higher is ever dealt. A tile only goes on a habitat of its own level, so the pile alone can take a habitat to level 2 and no further. Level 3 and up come only from the copies a lock banks, so the loop (place, combine, lock, place the copies) is the challenge. The first three tiles are habitat, habitat, river, and each of the other seven is a river tile one time in ten. `stackSize: 80` and `levelOdds: 0.5` in `flowgrow.config.js` bring back the first build's game.
 - **Locking** (LOU-299): every 10 tiles you place earns a lock, and you can hold one. Tap **Lock**, tap a tile and confirm. Each neighbour at that tile's level or below is copied to the back of your pile, and the locked tile can't grow any more. The run ends when the pile is empty and no lock you hold would bank a copy.
 - Every number is in `flowgrow.config.js`. Add `?seed=123` to the address to replay the same pile.
 
@@ -35,8 +36,8 @@ then go to http://localhost:8000/.
 
 ## Check it
 
-- `node tools/flowgrow-sim.mjs --test` runs the rule checks. All must pass.
-- `node tools/flowgrow-sim.mjs` plays 1,000 runs with the game's own rules. No run may crash, stall or fail to rebuild from its seed and moves. Run it with `lockEnabled=false` and `lockEvery=0` as well, for example `node tools/flowgrow-sim.mjs 300 lockEvery=0`. Any config value can be changed as `key=value`.
+- `node tools/flowgrow-sim.mjs --test` runs the rule checks. All must pass. They use fixed first-build values (80 tiles, level odds 0.5), so tuning `flowgrow.config.js` never breaks them.
+- `node tools/flowgrow-sim.mjs` plays 1,000 runs of the game in `flowgrow.config.js` (the pilot pile now; add `stackSize=80 levelOdds=0.5` for the first build's game), with the game's own rules. No run may crash, stall or fail to rebuild from its seed and moves. Run it with `lockEnabled=false` and `lockEvery=0` as well, for example `node tools/flowgrow-sim.mjs 300 lockEvery=0`. Any config value can be changed as `key=value`.
 - Play one whole run in a browser at 390×844.
 
 ## Deploy
@@ -45,7 +46,7 @@ GitHub Pages, by the workflow in `.github/workflows/pages.yml`, on every push to
 
 ## Saved data
 
-Flowgrow shares its address (`danrossli.github.io`) with Flow Tile, so everything it keeps is named for it: browser storage keys start with `flowgrow.` (the best score, the run in progress) and its cache is `flowgrow-vN`. It never reads or clears anything of Flow Tile's, apart from carrying a best score and a run in progress saved before the move (`flowtile.flowgrow.`) across once.
+Flowgrow shares its address (`danrossli.github.io`) with Flow Tile, so everything it keeps is named for it: browser storage keys start with `flowgrow.` (the best score, kept per pile, and the run in progress) and its cache is `flowgrow-vN`. It never reads or clears anything of Flow Tile's, apart from carrying a best score and a run in progress saved before the move (`flowtile.flowgrow.`) across once.
 
 ## Credits
 
