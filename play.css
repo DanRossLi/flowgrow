@@ -1,0 +1,1055 @@
+/* Copied whole from Flow Tile's play.css (DanRossLi/flowtile, commit 7f58a99, Nov 20, 2026). Flowgrow uses part of it for the board, the top bar,
+   the menu sheet and the result sheet; the rest is the river game's and can be trimmed. */
+/* Flow Tile: shared layout for every map.
+   Everything lives inside the game window: title bar and stats float over the top of the board,
+   the message floats at the bottom, and the action buttons sit under the board at the thumb.
+   Look: bright, flat and chunky (Polytopia-style): solid panels with a darker bottom edge, bold rounded type. */
+:root{
+  --night:#13222e; --panel:#1e3a4e; --panel-2:#2a4d66; --ink:#eef6fb; --muted:#a9c3d3;
+  --water:#5cc0ff; --flow:#62e0c8; --blue:#2f9be8; --blue-d:#1d6aa6; --gold:#ffd166; --gold-d:#c98f1e; --warn:#ff9f5a; --green:#7cc94c;
+  --paper:#f4f1e8; --paper-ink:#23323b; --paper-line:#e2ddd0;
+  --glass:rgba(14,32,48,.82); --edge:inset 0 -3px 0 rgba(0,0,0,.28);
+  --display:"Fredoka","Nunito",system-ui,sans-serif; --body:"Nunito",system-ui,sans-serif;
+  --gap:8px; --btn-pad:14px;
+  color-scheme:dark;
+}
+html,body{height:100%;margin:0;overflow:hidden}
+body{position:fixed;inset:0;background:linear-gradient(180deg,#1a3346 0%,var(--night) 60%,#0f1c26 100%);color:var(--ink);font-family:var(--body);font-size:15px;
+  -webkit-tap-highlight-color:transparent;overscroll-behavior:none;-webkit-user-select:none;user-select:none}
+.app{max-width:560px;margin:0 auto;height:100%;height:100dvh;box-sizing:border-box;display:grid;gap:var(--gap);
+  grid-template-rows:minmax(0,1fr) auto;grid-template-areas:"board" "actions";
+  padding:max(8px,env(safe-area-inset-top,0px)) max(8px,env(safe-area-inset-right,0px)) max(10px,env(safe-area-inset-bottom,0px)) max(8px,env(safe-area-inset-left,0px))}
+
+/* ---------- the game window: an island in the sea */
+.board{grid-area:board;position:relative;min-height:0;border-radius:22px;overflow:hidden;touch-action:none;background:#2b68b0;
+  box-shadow:0 6px 0 #0b1620,inset 0 0 0 2px rgba(255,255,255,.08)}
+canvas{position:absolute;inset:0;width:100%;height:100%;display:block;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+.overlay{position:absolute;left:0;right:0;pointer-events:none;padding:10px}
+.overlay button{pointer-events:auto}
+.top{top:0;display:grid;gap:4px;padding:8px 10px 6px;background:linear-gradient(180deg,rgba(9,24,38,.55) 0%,rgba(9,24,38,.25) 65%,rgba(9,24,38,0) 100%)}
+/* ---------- top bar like Polytopia (LOU-267): Score · Turn · Water (+flow), a small label over a big number, straight on the map */
+.stats{display:grid;grid-template-columns:1fr 1fr 1.35fr;align-items:end;text-align:center}
+.stats .stat{display:block;background:none;box-shadow:none;border-radius:12px;padding:2px 0;margin:0;color:#fff;font-family:var(--body);min-width:0}
+.stats button.stat{pointer-events:auto;cursor:pointer}
+.stats button.stat:active{transform:translateY(1px);box-shadow:none}
+.stat span{display:block;font-size:12px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:#eaf4fa;white-space:nowrap;
+  text-shadow:0 1px 2px rgba(0,0,0,.9),0 0 6px rgba(0,0,0,.6)}
+.stat span small{font-size:11px;letter-spacing:.02em;text-transform:none;color:#cfe2ee}
+.stat b{display:flex;justify-content:center;align-items:baseline;gap:4px;font-family:var(--display);font-weight:700;font-size:26px;line-height:1.1;color:#fff;white-space:nowrap;
+  font-variant-numeric:tabular-nums;text-shadow:0 2px 0 rgba(0,0,0,.6),0 0 8px rgba(0,0,0,.5)}
+.stat b i{font-style:normal}
+.stat b small{font-size:16px;color:#dbe8f0}
+.stat.over b{color:var(--warn)}
+.stat.water b i{color:var(--water)}
+.stat.water b svg{width:21px;height:21px;align-self:center;fill:var(--water);stroke:#0b3a5e;stroke-width:1.2;filter:drop-shadow(0 2px 0 rgba(0,0,0,.5))}
+.stat.water b svg .hl{fill:none;stroke:#e6f6ff;stroke-width:1.8;stroke-linecap:round}
+.stat.water em{display:inline-block;font-style:normal;color:var(--flow);font-size:20px}
+.stat.water em i{color:var(--flow) !important}
+.stat.bump,.stat em.bump{animation:bump .35s ease-out}
+.stat.spill{animation:spill .5s ease-out}
+.subrow{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:5px}
+.wx{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:999px;background:rgba(10,26,40,.62);font-weight:800;font-size:12px;white-space:nowrap;color:#fff}
+.wx svg{width:15px;height:15px;fill:none;stroke:#fff;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
+.wx span{color:var(--muted);font-size:11px}
+.wx.rain b,.wx.cloud b{color:#9fd4ff}.wx.drought b{color:#ffbe5a}.wx.fire b{color:#ff7a5a}
+/* the Water card */
+.cells.big{margin:0}
+.cells.big i{height:14px;border-radius:6px;background:#d9d3c4;box-shadow:inset 0 2px 0 rgba(0,0,0,.12)}
+.cells.big i.f{background:#2f9be8;box-shadow:inset 0 -2px 0 rgba(0,0,0,.18)}
+.wline{display:flex;justify-content:space-between;gap:10px;font-weight:800;font-size:14px;padding:2px 2px}
+.wline span{color:#6c7b83}
+.wline b.flw{color:#178a76}
+.tcard .rivers button{background:#ebe5d6;color:#4c5c65;box-shadow:none}
+.tcard .rivers button small{color:var(--paper-ink)}
+.tcard .rivers button.on{box-shadow:inset 0 0 0 2px #2f9be8}
+.bottom{bottom:0}
+
+.bar{display:flex;align-items:center;gap:10px;min-width:0}
+.brand{font-family:var(--display);font-weight:700;font-size:21px;letter-spacing:.01em;white-space:nowrap;text-shadow:0 3px 0 #0b1620}
+.brand span{color:var(--water)}
+.lvl{flex:1;min-width:0;font-size:12px;color:#d6e6f0;font-weight:800;letter-spacing:.1em;text-transform:uppercase;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right;text-shadow:0 2px 0 rgba(0,0,0,.35)}
+.icon{width:40px;height:40px;padding:0;border-radius:50%;font-size:18px;flex:none;background:var(--panel-2);box-shadow:0 3px 0 #0f2232}
+
+.hud{display:flex;gap:0;background:#142d40;border-radius:14px;box-shadow:inset 0 3px 0 rgba(0,0,0,.22);padding:2px 0}
+/* stats sit in one solid strip, split by thin lines (LOU-260) */
+.hud .chip{background:none;box-shadow:none;border-radius:0;border-left:2px solid rgba(255,255,255,.07)}
+.hud .chip:first-child{border-left:0}
+.chip{flex:1;min-width:0;background:var(--glass);border-radius:14px;padding:5px 6px;text-align:center;box-shadow:var(--edge)}
+.chip span{display:block;font-size:10px;color:var(--muted);font-weight:800;letter-spacing:.08em;text-transform:uppercase;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chip b{display:block;font-family:var(--display);font-weight:700;font-size:20px;font-variant-numeric:tabular-nums;line-height:1.15;white-space:nowrap;text-shadow:0 2px 0 rgba(0,0,0,.35)}
+.chip i{font-style:normal}
+.chip small{font-size:.55em;font-weight:800;color:var(--muted);margin-left:2px;text-shadow:none}
+/* water tank: amount, storage cells, flow per turn */
+.chip.tank{text-align:left;padding:7px 10px}
+.tline{display:flex;align-items:baseline;gap:6px;min-width:0}
+.tank .tline span{display:inline;flex:none}
+.tank .tline b{display:inline;color:var(--water);font-size:22px}
+.tank .tline small{font-size:12px;margin:0;white-space:nowrap}
+.tank .tline em{margin-left:auto;font-style:normal;font-weight:800;font-size:12px;color:#0f2a12;background:#8fdc5e;border-radius:999px;padding:1px 8px;white-space:nowrap;box-shadow:inset 0 -2px 0 rgba(0,0,0,.2)}
+.cells{display:flex;gap:3px;margin-top:6px}
+.cells i{flex:1;height:9px;border-radius:4px;background:#244459;box-shadow:inset 0 2px 0 rgba(0,0,0,.25)}
+.cells i.f{background:var(--water);box-shadow:inset 0 -2px 0 rgba(0,0,0,.18)}
+.cells i.new{animation:fill .45s cubic-bezier(.3,1.6,.5,1) var(--d,0ms) both}
+@keyframes fill{0%{transform:scaleY(.2);background:#244459}60%{transform:scaleY(1.5);background:#bfe9ff}100%{transform:none}}
+.chip.spill{animation:spill .5s ease-out}
+@keyframes spill{20%,60%{transform:translateX(-3px)}40%,80%{transform:translateX(3px)}}
+.chip.mini{flex:none;width:70px}
+/* flow: its own teal chip (LOU-258). Water is blue, flow is teal, green means grass */
+.chip.flow{width:84px;padding-bottom:4px}
+.chip.flow span{color:var(--flow)}
+.chip.flow b{color:var(--flow);display:flex;align-items:center;justify-content:center;gap:3px}
+.chip.flow b svg{width:17px;height:17px;fill:none;stroke:var(--flow);stroke-width:2.6;stroke-linecap:round;flex:none}
+.chip.flow b i{font-style:normal}
+.chip.flow .per{display:block;margin:0;font-size:9px;line-height:1.1;color:var(--muted);white-space:nowrap}
+.hud.many .chip.flow{width:58px}
+.hud.many .chip.flow .per{display:none}
+.chip.mini.over b{color:var(--warn)}
+.chip.wind{width:56px}
+.chip.sky{width:72px;padding-left:4px;padding-right:4px}
+.chip.sky span{letter-spacing:.02em}
+.chip.sky b{font-size:17px;white-space:nowrap}
+.hud.many .chip.mini{width:56px}
+.hud.many .chip.sky{width:68px}
+.hud.many .chip.wind{width:48px}
+.tank .tline{flex-wrap:wrap;row-gap:2px}
+.chip.sky.rain b,.chip.sky.cloud b{color:#9fd4ff}
+.chip.sky.drought b{color:#ffbe5a}
+.chip.sky.fire b{color:#ff7a5a}
+.chip.wind svg{width:22px;height:22px;fill:none;stroke:#fff;stroke-width:3;stroke-linecap:round;stroke-linejoin:round;display:block;margin:1px auto 0}
+/* goals stay on screen */
+.goals{display:flex;flex-wrap:wrap;gap:5px;justify-content:center}
+.goal{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:999px;background:rgba(10,26,40,.62);font-weight:800;font-size:12px;white-space:nowrap}
+.goal svg{width:14px;height:14px;fill:none;stroke:var(--muted);stroke-width:2.2;stroke-linejoin:round}
+.goal.got{color:#3a2600;background:var(--gold);box-shadow:inset 0 -3px 0 var(--gold-d)}
+.goal.got svg{fill:#fff6d6;stroke:#3a2600}
+.goal.live{color:var(--gold)}
+dialog b.wtr{color:#1d6aa6}dialog b.flw{color:#178a76}
+.goal.live svg{stroke:var(--gold)}
+.goal.miss{color:var(--warn)}
+.goal.miss svg{stroke:var(--warn)}
+.goal.bump{animation:bump .35s ease-out}
+/* zoom button floats under the top bar */
+.zoom{position:absolute;right:10px;z-index:1;display:grid;place-items:center;border-radius:14px;color:var(--ink);background:var(--panel-2);box-shadow:0 3px 0 #0f2232}
+.sq svg,.zoom svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round;display:block;margin:auto}
+.chip.bump{animation:bump .35s ease-out}
+@keyframes bump{40%{transform:scale(1.1)}}
+
+.msg{background:var(--paper);color:var(--paper-ink);border-radius:16px;padding:9px 13px;
+  font-weight:800;font-size:14px;line-height:1.35;box-shadow:0 4px 0 #b9b19c,0 8px 18px rgba(0,0,0,.25);
+  min-height:calc(1.35em + 18px);box-sizing:border-box}
+.msg{transition:opacity .5s,transform .5s}
+.msg.fade{opacity:0;transform:translateY(6px)}
+.msg.warn{background:#ffe2c6;color:#6b2c00;box-shadow:0 4px 0 #d79a66,0 8px 18px rgba(0,0,0,.25)}
+.msg.pop{animation:msgpop .32s cubic-bezier(.3,1.5,.5,1)}
+@keyframes msgpop{from{transform:translateY(8px) scale(.97);opacity:.4}}
+
+/* ---------- win card, centred over the board: stars, a blue ribbon, the goals on paper */
+.win{position:absolute;inset:0;display:grid;place-items:center;padding:16px;background:rgba(8,20,32,.55);pointer-events:auto;animation:fadein .4s .7s both}
+.win[hidden]{display:none}
+@keyframes fadein{from{opacity:0}}
+.card{background:var(--panel);border-radius:22px;padding:14px 16px 16px;text-align:center;width:min(330px,100%);box-sizing:border-box;
+  box-shadow:0 6px 0 #0b1620,0 16px 40px rgba(0,0,0,.45);animation:cardin .45s .75s cubic-bezier(.3,1.4,.5,1) both}
+@keyframes cardin{from{transform:translateY(30px) scale(.9);opacity:0}}
+.stars{display:flex;justify-content:center;align-items:flex-end;gap:2px;height:72px}
+.stars .st svg{display:block;width:52px;height:52px}
+.stars .st.s1 svg{width:68px;height:68px}
+.stars .st path{fill:#2b4a5e;stroke:#16303f;stroke-width:1.2;stroke-linejoin:round}
+.stars .st path.glint{fill:rgba(255,255,255,.06);stroke:none}
+.stars .st.on path{fill:var(--gold);stroke:var(--gold-d)}
+.stars .st.on path.glint{fill:#ffe39a;stroke:none}
+.stars .st{animation:starpop .5s cubic-bezier(.3,1.8,.5,1) both}
+.stars .s0{animation-delay:1.05s}.stars .s1{animation-delay:1.3s}.stars .s2{animation-delay:1.55s}
+@keyframes starpop{from{transform:scale(0) rotate(-40deg);opacity:0}}
+.ribbon{display:inline-block;margin:6px 0 2px;background:var(--blue);padding:9px 26px;border-radius:12px;box-shadow:inset 0 -4px 0 var(--blue-d),0 6px 14px rgba(0,0,0,.3)}
+.card h2{font-family:var(--display);font-weight:700;font-size:23px;line-height:1.05;margin:0;color:#fff}
+.wsub{font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:6px 0 2px}
+.card ul{list-style:none;margin:10px 0 14px;padding:4px 12px;display:grid;font-size:14px;text-align:left;background:var(--paper);color:var(--paper-ink);border-radius:18px}
+.card li{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--paper-line);font-weight:800}
+.card li:last-child{border-bottom:0}
+.card li i{width:28px;height:28px;border-radius:50%;flex:none;background:#c9c3b3}
+.card li.g0 i{background:var(--blue)}.card li.g1 i{background:#5cb844}.card li.g2 i{background:#e2a41c}.card li.g3 i{background:#3f8a4a}
+.card li span{flex:1;min-width:0}
+.card li b{font-family:var(--display);font-size:18px;color:#b8b09b}
+.card li.got b{color:#e2a41c}
+.card li.extra b{color:var(--paper-ink)}
+.card .row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.card .row.one{grid-template-columns:1fr}
+.card a.btn{text-decoration:none;text-align:center}
+
+/* ---------- buttons: solid, with a darker bottom edge that presses in */
+.actions{grid-area:actions;display:grid;grid-template-columns:1fr 1fr 1fr 1.5fr;align-items:end;gap:4px;padding:6px 8px 4px;
+  background:var(--panel);border-radius:20px;box-shadow:0 4px 0 #0b1620}
+/* round labelled buttons, Polytopia-style (LOU-260) */
+button.rb{background:none;box-shadow:none;padding:0;display:grid;justify-items:center;gap:3px;min-width:0;border-radius:14px}
+button.rb:active:not(:disabled){transform:none;box-shadow:none}
+.rb>i{position:relative;display:grid;place-items:center;width:46px;height:46px;border-radius:50%;background:var(--panel-2);color:var(--ink);
+  box-shadow:0 4px 0 #0f2232,inset 0 2px 0 rgba(255,255,255,.08);transition:transform .08s}
+.rb:active:not(:disabled)>i{transform:translateY(3px);box-shadow:0 1px 0 #0f2232}
+.rb>i svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+.rb>span{font-size:11px;font-weight:700;line-height:1.1;color:var(--muted);text-align:center;letter-spacing:.02em}
+.rb.go>i{width:62px;height:62px;margin-top:-22px;background:var(--blue);color:#fff;box-shadow:0 5px 0 var(--blue-d),0 0 0 4px var(--panel),0 8px 16px rgba(0,0,0,.3)}
+.rb.go:active:not(:disabled)>i{box-shadow:0 2px 0 var(--blue-d),0 0 0 4px var(--panel)}
+.rb.go>i svg{width:32px;height:32px;stroke-width:2.4}
+.rb.go>span{color:#fff;font-size:12px}
+.rb.go .gain{position:absolute;top:-13px;left:50%;transform:translateX(-50%);font:800 11px var(--body);color:#06233a;background:#bfe4ff;padding:2px 7px;box-shadow:0 2px 0 rgba(0,0,0,.25);white-space:nowrap}
+.rb.go .gain.spill{background:var(--warn);color:#2a1608}
+.rb.go.ready>i{animation:ready 1.4s ease-in-out infinite}
+.rb:disabled{opacity:.45}
+
+/* ---------- turn banner: sweeps across the board at each water cycle (LOU-260) */
+.banner{position:absolute;left:0;right:0;top:42%;z-index:3;pointer-events:none;display:grid;justify-items:center;padding:10px 0 12px;
+  background:linear-gradient(90deg,rgba(29,106,166,0),rgba(29,106,166,.92) 18%,rgba(47,155,232,.95) 50%,rgba(29,106,166,.92) 82%,rgba(29,106,166,0));
+  box-shadow:0 4px 0 rgba(11,22,32,.35);opacity:0}
+.banner[hidden]{display:none}
+.banner b{font-family:var(--display);font-weight:700;font-size:34px;line-height:1;color:#fff;text-shadow:0 3px 0 var(--blue-d)}
+.banner small{font-weight:800;font-size:13px;color:#e4f4ff;margin-top:3px}
+.banner.go{animation:bswipe 1.7s cubic-bezier(.2,.9,.3,1) both}
+.banner.go b{animation:bpop 1.7s cubic-bezier(.3,1.6,.5,1) both}
+@keyframes bswipe{0%{opacity:0;transform:translateX(-60%) scaleY(.6)}18%{opacity:1;transform:none}78%{opacity:1;transform:none}100%{opacity:0;transform:translateX(60%) scaleY(.8)}}
+@keyframes bpop{0%{transform:scale(.4)}22%{transform:scale(1.12)}32%{transform:none}}
+@media (prefers-reduced-motion:reduce){.banner.go,.banner.go b{animation:none;opacity:1}}
+button,a.btn{font:inherit;font-family:var(--display);font-weight:700;font-size:17px;border:0;border-radius:16px;padding:var(--btn-pad) 10px;
+  color:var(--ink);background:var(--panel-2);cursor:pointer;touch-action:manipulation;display:block;box-shadow:0 4px 0 #0f2232;transition:transform .08s}
+button:active:not(:disabled),a.btn:active{transform:translateY(3px);box-shadow:0 1px 0 #0f2232}
+.end{background:var(--blue) !important;color:#fff !important;box-shadow:0 5px 0 var(--blue-d) !important;text-shadow:0 2px 0 rgba(0,0,0,.2)}
+.end:active:not(:disabled){transform:translateY(3px);box-shadow:0 2px 0 var(--blue-d) !important}
+button:disabled{opacity:.45}
+button:focus-visible,a.btn:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+.end{display:flex;align-items:center;justify-content:center;gap:4px 8px;flex-wrap:wrap;line-height:1.15}
+.gain{font-size:14px;padding:2px 9px;border-radius:999px;background:rgba(6,35,58,.28);text-shadow:none}
+.gain[hidden]{display:none}
+.gain.spill{background:var(--warn);color:#2a1608}
+.end.ready{animation:ready 1.4s ease-in-out infinite}
+@keyframes ready{50%{transform:translateY(-2px);box-shadow:0 7px 0 var(--blue-d),0 0 0 7px rgba(92,192,255,.3)}}
+
+/* ---------- goal card: what this map teaches and its star goals */
+dialog.goalcard .eyebrow{display:block;font-family:var(--display);font-weight:600;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:#2f9be8;margin:0 0 2px}
+dialog.goalcard .learn{margin:0 0 14px;font-size:16px}
+dialog.goalcard h3{font-family:var(--display);color:var(--paper-ink);font-size:16px;margin:0 0 8px}
+dialog.goalcard .aims{list-style:none;padding:0;margin:0 0 16px;gap:8px}
+dialog.goalcard .aims li{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:12px;background:#ebe5d6;font-weight:700;animation:aimin .4s both}
+dialog.goalcard .aims li:nth-child(2){animation-delay:.12s}dialog.goalcard .aims li:nth-child(3){animation-delay:.24s}
+dialog.goalcard .aims svg{width:22px;height:22px;flex:none;fill:#ffcf3a;stroke:#c9961a;stroke-width:1.5;stroke-linejoin:round}
+@keyframes aimin{from{opacity:0;transform:translateX(-10px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){dialog.goalcard .aims li{animation:none}}
+dialog .orow2{display:grid;gap:8px}
+dialog .orow2 a.btn{text-decoration:none;text-align:center}
+/* ---------- help dialog */
+dialog{background:var(--paper);color:#4c5c65;border:0;border-radius:20px;padding:18px 18px;font-size:15px;line-height:1.45;
+  width:min(420px,calc(100vw - 32px));max-height:calc(100dvh - 48px);overflow:auto;box-sizing:border-box;box-shadow:0 6px 0 #b9b19c}
+dialog[open]{animation:cardin .35s cubic-bezier(.3,1.4,.5,1)}
+dialog::backdrop{background:rgba(5,12,18,.65)}
+dialog h2{font-family:var(--display);color:var(--paper-ink);font-size:22px;margin:0 0 8px}
+dialog ul{margin:0 0 14px;padding-left:18px;display:grid;gap:7px}
+dialog b{color:var(--paper-ink)}
+dialog form button{width:100%}
+dialog a.btn{text-decoration:none;display:block}
+dialog .opts{display:grid;gap:10px;margin:0 0 14px;padding:12px;border-radius:14px;background:#ebe5d6}
+dialog .opts .hard{display:flex;align-items:center;gap:8px;font-weight:700}
+dialog .opts input{width:20px;height:20px;accent-color:#2f9be8}
+dialog .orow{display:flex;gap:8px}
+dialog .orow>*{flex:1;text-align:center;font-size:14px;padding:10px 8px}
+
+@media (prefers-reduced-motion:reduce){.stat.bump,.stat em.bump,.stat.spill,.msg.fade,.chip.bump,.goal.bump,.end.ready,.cells i.new,.chip.spill,.msg.pop,.win,.card,.stars .st,.tcard,dialog[open]{animation:none}}
+/* short phones: tighten */
+@media (max-height:680px){
+  :root{--gap:6px;--btn-pad:11px}
+  .overlay{padding:8px}
+  .top{gap:6px}
+  .brand{font-size:18px}
+  .chip{padding:3px 4px}
+  .chip b{font-size:16px}
+  .chip span{font-size:9px}
+  .tank .tline b{font-size:18px}
+  .cells{margin-top:3px}
+  .cells i{height:7px}
+  .goal{padding:3px 8px;font-size:11px}
+  button,a.btn{font-size:16px}
+  .rb>i{width:40px;height:40px}
+  .rb.go>i{width:54px;height:54px;margin-top:-18px}
+  .banner b{font-size:28px}
+}
+/* phone on its side: buttons in a column beside the game window */
+@media (orientation:landscape) and (max-height:540px){
+  .app{max-width:none;grid-template-columns:minmax(0,1fr) 170px;grid-template-rows:minmax(0,1fr);grid-template-areas:"board actions"}
+  .actions{grid-template-columns:1fr 1fr 1fr;align-content:end;padding:10px 6px;row-gap:12px}
+  .actions .rb.go{grid-column:1/-1;grid-row:1}
+  .rb.go>i{margin-top:0}
+  .rb>i{width:38px;height:38px}
+  .rb>span{font-size:10px}
+  .top{grid-template-columns:minmax(0,1fr) auto;align-items:center}
+  .bar,.rivers{grid-column:1/-1}
+  .goals{flex-wrap:nowrap}
+}
+
+/* ---------- several rivers (tributary maps): one pill per river, tap to switch */
+.rivers{display:flex;gap:6px}
+.rivers[hidden]{display:none}
+.rivers button{flex:1;min-width:0;min-height:40px;padding:4px 8px;border-radius:12px;background:var(--glass);color:var(--muted);font:800 12px var(--body);box-shadow:var(--edge);text-align:left;line-height:1.2}
+.rivers button small{display:block;font-size:12px;color:var(--ink);font-variant-numeric:tabular-nums}
+.rivers button.on{color:var(--ink);box-shadow:inset 0 0 0 2px var(--water),var(--edge)}
+.rivers button:disabled{opacity:.55}
+
+/* ---------- tile card: what a tile does and what you can do with it (paper card) */
+.tcard{position:absolute;left:8px;right:8px;bottom:8px;z-index:2;display:grid;gap:8px;padding:12px;border-radius:20px;background:var(--paper);color:var(--paper-ink);
+  box-shadow:0 5px 0 #b9b19c,0 12px 30px rgba(0,0,0,.4);max-height:calc(100% - 16px);overflow:auto;box-sizing:border-box;animation:tcin .28s cubic-bezier(.3,1.5,.5,1)}
+@keyframes tcin{from{transform:translateY(14px) scale(.96);opacity:0}}
+.tcard[hidden]{display:none}
+.tcard.up{bottom:auto}
+.tcard.left,.tcard.right{width:280px;max-width:60%}
+.tcard.left{right:auto}
+.tcard.right{left:auto}
+.thead{display:flex;align-items:center;gap:10px}
+.swatch{width:34px;height:34px;border-radius:10px;flex:none;box-shadow:inset 0 -3px 0 rgba(0,0,0,.2)}
+.tname{flex:1;min-width:0}
+.tname b{display:block;font-family:var(--display);font-weight:700;font-size:18px}
+.tname small{display:block;font-size:13px;font-weight:700;line-height:1.35;color:#4c5c65}
+button.tclose{flex:none;width:40px;height:40px;padding:0;border-radius:50%;display:grid;place-items:center;background:#e2ddd0;color:var(--paper-ink);box-shadow:0 3px 0 #c4bca7}
+.tclose svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2.8;stroke-linecap:round}
+button.act{display:flex;align-items:center;gap:10px;width:100%;min-height:58px;padding:7px 12px 7px 9px;border-radius:999px;text-align:left;background:var(--blue);color:#fff;box-shadow:0 4px 0 var(--blue-d)}
+button.act:active:not(:disabled){box-shadow:0 1px 0 var(--blue-d)}
+button.act.plant{background:#4caf3f;box-shadow:0 4px 0 #2f7a2a}
+button.act.trib{background:#3fb6c9;box-shadow:0 4px 0 #23818f}
+button.act.collect{background:#2f9be8;box-shadow:0 4px 0 #1d6aa6}
+button.act.moss{background:#7a9a4a;box-shadow:0 4px 0 #55702f}
+button.act:disabled{opacity:1;background:#d5d9dc;color:#6c7b83;box-shadow:0 4px 0 #b3b9be}
+.aico{flex:none;display:grid;place-items:center;width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,.22);box-shadow:inset 0 -3px 0 rgba(0,0,0,.18)}
+.aico svg{width:22px;height:22px;fill:none;stroke:#fff;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+button.act:disabled .aico{background:rgba(0,0,0,.07)}
+button.act:disabled .aico svg{stroke:#8a979e}
+.atext{flex:1;min-width:0}
+.atext b{display:block;font-weight:700;font-size:16px;line-height:1.2}
+.atext small{display:block;font-family:var(--body);font-weight:800;font-size:12px;line-height:1.3;opacity:.92}
+.atext small.awarn{color:#ffe0c2;opacity:1}
+button.act:disabled .atext small.awarn{color:#8a3a00}
+.acost{flex:none;font-size:14px;background:rgba(0,0,0,.18);border-radius:999px;padding:3px 9px}
+button.act:disabled .acost{background:rgba(0,0,0,.06)}
+
+/* ---------- tutorial objectives (LOU-264): one at a time, a tick when done, dots for progress */
+.obj{display:flex;align-items:center;gap:8px;margin:2px auto 0;max-width:420px;width:100%;box-sizing:border-box;padding:7px 8px 7px 7px;border-radius:16px;
+  background:var(--paper);color:var(--paper-ink);box-shadow:0 4px 0 #b9b19c,0 8px 16px rgba(0,0,0,.25);pointer-events:auto}
+.ock{flex:none;display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:var(--gold);box-shadow:inset 0 -3px 0 var(--gold-d)}
+.ock svg{width:16px;height:16px;fill:none;stroke:#3a2600;stroke-width:3;stroke-linecap:round;stroke-linejoin:round;opacity:0}
+.obj.all .ock{background:#5cb844;box-shadow:inset 0 -3px 0 #3f8a2e}.obj.all .ock svg{opacity:1;stroke:#fff}
+.otext{flex:1;min-width:0;font-weight:800;font-size:14px;line-height:1.25}
+.odots{flex:none;display:flex;gap:3px}
+.odots i{width:7px;height:7px;border-radius:50%;background:#d9d3c4}
+.odots i.d{background:#5cb844}.odots i.c{background:var(--gold-d)}
+button.oskip{flex:none;font:800 11px var(--body);padding:6px 8px;border-radius:10px;background:#e2ddd0;color:#4c5c65;box-shadow:0 2px 0 #c4bca7}
+.obj.tick .ock{animation:otick .7s cubic-bezier(.3,1.6,.5,1)}
+.obj.tick .ock svg{animation:ockon .7s both}
+.obj.tick .otext{animation:oin .45s .25s cubic-bezier(.3,1.4,.5,1) both}
+@keyframes otick{0%{background:#5cb844;transform:scale(1.35)}60%{background:#5cb844}100%{transform:none}}
+@keyframes ockon{0%,60%{opacity:1;stroke:#fff}100%{opacity:0}}
+@keyframes oin{from{opacity:0;transform:translateX(12px)}}
+/* a button the objective is about gets a pulsing gold ring */
+.rb.aim>i,.stat.aim{animation:aim 1.2s ease-in-out infinite}
+@keyframes aim{50%{box-shadow:0 0 0 5px rgba(255,209,102,.9),0 0 18px rgba(255,209,102,.6)}}
+@media (prefers-reduced-motion:reduce){.obj.tick .ock,.obj.tick .ock svg,.obj.tick .otext{animation:none}.rb.aim>i,.stat.aim{animation:none;box-shadow:0 0 0 4px var(--gold)}}
+
+/* ---------- LOU-270: full screen on desktop, tidier top bar, water/storage, muted Next Water Cycle */
+@media (min-width:700px) and (min-height:541px){
+  .app{max-width:none;padding:12px 12px 12px}
+  .actions{justify-self:center;width:min(560px,100%);box-sizing:border-box}
+  .board{border-radius:26px}
+  .stats{width:100%;max-width:520px;margin:0 auto}
+}
+.top{gap:5px;padding:8px 10px 10px}
+.stat span{font-size:11px;letter-spacing:.09em;color:#cfe2ee}
+.stat b .cap{font-size:15px;color:#9fc6df;align-self:baseline;margin-left:-2px}
+.stat b .cap i{color:#9fc6df !important}
+.stat.water em{font-size:17px}
+.goal{padding:2px 8px 2px 6px;font-size:11.5px;background:rgba(10,26,40,.45);color:#dbe8f0}
+.goal svg{width:12px;height:12px}
+.obj{padding:5px 6px 5px 5px;border-radius:14px;max-width:400px}
+.ock{width:24px;height:24px}
+.otext{font-size:13.5px}
+button.oskip{font-size:11px;padding:4px 8px;border-radius:9px;background:transparent;box-shadow:none;color:#7c8a92;text-decoration:underline;text-underline-offset:2px}
+.rb.go.muted>i{background:var(--panel-2);color:#cfe2ee;box-shadow:0 5px 0 #15293a,0 0 0 4px var(--panel),0 6px 12px rgba(0,0,0,.25)}
+.rb.go.muted>span{color:var(--muted)}
+.rb.go.muted .gain{background:#3b6683;color:#e6f4ff}
+.rb.go.ready>i{background:var(--blue)}
+
+/* ==========================================================================
+   A4 storybook theme (Nov 11): paper, ink and watercolour over everything above.
+   Fonts: Fraunces for numbers and buttons, Patrick Hand for hints and tags, Nunito for labels.
+   ========================================================================== */
+:root{
+  --paper:#fbf4e2; --paper-2:#efe3c4; --paper-ink:#3d2a17; --paper-line:#e2d3b0; --ink-b:#6b4f33; --label:#7a5c3c;
+  --water:#2f7fb8; --flow:#1d8f78; --teal:#62e0c8; --blue:#2f6f9e; --blue-d:#1f4a6b; --gold:#e0a030; --gold-d:#a8721c; --warn:#b5562f; --rust:#b5562f;
+  --display:"Fraunces",Georgia,serif; --hand:"Patrick Hand","Nunito",cursive; --body:"Nunito",system-ui,sans-serif;
+  color-scheme:light;
+}
+body{background:#d9c69c;color:var(--paper-ink)}
+.board{background:#efe3c4;border-radius:20px;box-shadow:0 0 0 1.5px var(--ink-b),3px 4px 0 rgba(107,79,51,.55)}
+/* paper grain and a warm brown vignette over the whole view */
+.board::after{content:"";position:absolute;inset:0;pointer-events:none;z-index:1;border-radius:inherit;
+  background:radial-gradient(120% 90% at 50% 45%,rgba(0,0,0,0) 55%,rgba(110,72,34,.28) 100%),
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .35 0 0 0 0 .25 0 0 0 0 .15 0 0 0 .09 0'/></filter><rect width='160' height='160' filter='url(%23n)'/></svg>");
+  mix-blend-mode:multiply}
+.overlay,.zoom,.tcard,.win,.banner{z-index:2}
+/* top bar (LOU-267/270 layout) on a paper fade */
+.top{background:linear-gradient(180deg,rgba(239,227,196,.96) 0%,rgba(239,227,196,.85) 55%,rgba(239,227,196,0) 100%);padding:8px 10px 14px}
+.stat span{color:var(--label);text-shadow:none;font-family:var(--body);font-weight:800;font-size:11px;letter-spacing:.09em}
+.stat b{color:var(--paper-ink);text-shadow:none;font-family:var(--display);font-weight:700;font-size:28px}
+.stat b small{color:var(--label);font-size:15px}
+.stat.over b{color:var(--rust)}
+.wx,.goal{background:rgba(251,244,226,.85);color:var(--label);box-shadow:inset 0 0 0 1.2px rgba(107,79,51,.45);font-family:var(--hand);font-weight:400;font-size:14px;padding:1px 9px}
+.wx svg{stroke:var(--ink-b)}
+.goal svg{stroke:var(--label)}
+.goal.got{background:#f5d98a;color:#5a3d12;box-shadow:inset 0 0 0 1.2px var(--gold-d)}
+.goal.got svg{fill:#fff3c4;stroke:#5a3d12}
+.goal.live{color:var(--gold-d)}.goal.live svg{stroke:var(--gold-d)}
+.goal.miss{color:var(--rust)}.goal.miss svg{stroke:var(--rust)}
+.wx.rain b,.wx.cloud b{color:var(--water)}.wx.drought b{color:#b5762f}.wx.fire b{color:var(--rust)}
+/* the water jar (LOU-278): water (blue), storage (notches), next cycle's flow (teal), spill (pours over the lip) */
+.stats{grid-template-columns:1fr 1fr 1.7fr}
+.stat.jar{display:flex;align-items:center;justify-content:center;gap:6px;padding:0}
+.jsvg{width:36px;height:47px;flex:none;overflow:visible}
+.jglass{fill:rgba(255,255,255,.45)}
+.jink{fill:none;stroke:var(--ink-b);stroke-width:1.6;stroke-linejoin:round}
+.jrim{fill:none;stroke:var(--ink-b);stroke-width:2.4;stroke-linecap:round}
+.jlvl{transition:transform .4s cubic-bezier(.3,1,.5,1)}
+.jteal{fill:var(--teal);opacity:.55;animation:jpulse 1.6s ease-in-out infinite}
+.jwave{fill:#5aa9d0;animation:jwave 2s linear infinite}
+.jn{stroke:var(--ink-b);stroke-width:1.2;stroke-linecap:round;opacity:.75;transition:transform .4s cubic-bezier(.3,1,.5,1)}
+@keyframes jwave{to{transform:translateX(20px)}}
+@keyframes jpulse{50%{opacity:.32}}
+.jpour{display:none}
+.spilling .jpour{display:inline}
+.jstream{fill:none;stroke:var(--teal);stroke-width:2.2;stroke-linecap:round}
+.jdrop{fill:var(--teal);animation:jdrop 1s ease-in infinite}
+.jdrop.d2{animation-delay:.5s}
+@keyframes jdrop{from{transform:translateY(0);opacity:1}to{transform:translateY(12px);opacity:0}}
+.jnums{display:grid;justify-items:start;line-height:1;min-width:0}
+.stat.jar b{display:block;font-size:28px;color:var(--water);line-height:1}
+.stat.jar b .cap{font-family:var(--display);font-size:15px;color:var(--label);margin:0}
+.stat.jar b .cap i{color:var(--label) !important}
+.stat.jar em{display:block;font-family:var(--hand);font-size:15px;font-style:normal;color:var(--flow);white-space:nowrap;margin-top:2px}
+.stat.jar em i{font-style:normal;color:var(--flow) !important}
+.stat.jar em .jsp{color:var(--rust) !important}
+.stat.jar.bump,.stat.jar em.bump{animation:none}
+@media (prefers-reduced-motion:reduce){.jteal,.jwave,.jdrop{animation:none}.jlvl,.jn{transition:none}.jdrop.d2{display:none}}
+/* zoom and round side buttons: paper with an ink border */
+.zoom{background:var(--paper);color:var(--ink-b);box-shadow:0 0 0 1.5px var(--ink-b),2px 3px 0 rgba(107,79,51,.5);border-radius:50%}
+/* hint: a paper note */
+.msg{background:var(--paper);color:var(--paper-ink);border:1.5px solid var(--ink-b);border-radius:6px;box-shadow:3px 4px 0 rgba(107,79,51,.35);
+  font-family:var(--hand);font-weight:400;font-size:17px;line-height:1.3;padding:8px 12px}
+.msg.warn{background:#f6dcc4;color:#6b2c10;border-color:#8a4a24;box-shadow:3px 4px 0 rgba(138,74,36,.35)}
+/* bottom bar */
+.actions{background:var(--paper-2);box-shadow:0 0 0 1.5px var(--ink-b),3px 4px 0 rgba(107,79,51,.45);border-radius:18px}
+.rb>i{background:var(--paper);color:var(--ink-b);box-shadow:0 0 0 1.5px var(--ink-b),2px 3px 0 rgba(107,79,51,.45)}
+.rb:active:not(:disabled)>i{transform:translate(2px,3px);box-shadow:0 0 0 1.5px var(--ink-b)}
+.rb>span{color:var(--label);font-family:var(--body);font-weight:800}
+/* Next Water Cycle: blue with paper text when active; muted while you can still afford something */
+.rb.go>i{background:var(--blue);color:var(--paper);box-shadow:0 0 0 2px var(--blue-d),3px 4px 0 var(--blue-d),0 0 0 6px var(--paper-2)}
+.rb.go:active:not(:disabled)>i{box-shadow:0 0 0 2px var(--blue-d),1px 1px 0 var(--blue-d),0 0 0 6px var(--paper-2)}
+.rb.go>span{color:var(--paper-ink);font-family:var(--display);font-weight:700;font-size:13px}
+.rb.go .cyc{transform-origin:50% 50%;animation:cyc 6s linear infinite}
+@keyframes cyc{to{transform:rotate(360deg)}}
+.rb.go.muted>i{background:#c9d3d6;color:#5e6f78;box-shadow:0 0 0 2px #8c9aa0,3px 4px 0 #8c9aa0,0 0 0 6px var(--paper-2)}
+.rb.go.muted .cyc{animation-duration:14s}
+.rb.go.muted>span{color:var(--label)}
+.rb.go .gain{font-family:var(--hand);font-weight:400;font-size:14px;color:var(--flow);background:var(--paper);box-shadow:0 0 0 1.2px var(--ink-b);border-radius:4px}
+.rb.go .gain.spill,.gain.spill{color:var(--rust);background:var(--paper)}
+.rb.go.muted .gain{background:var(--paper);color:var(--label)}
+.rb.go.ready>i{background:var(--blue);animation:ready 1.6s ease-in-out infinite}
+@keyframes ready{50%{box-shadow:0 0 0 2px var(--blue-d),3px 4px 0 var(--blue-d),0 0 0 9px rgba(47,111,158,.25)}}
+@media (prefers-reduced-motion:reduce){.rb.go .cyc{animation:none}}
+/* buttons in cards and dialogs */
+button,a.btn{font-family:var(--display);color:var(--paper-ink);background:var(--paper);box-shadow:0 0 0 1.5px var(--ink-b),2px 3px 0 rgba(107,79,51,.45);border-radius:10px}
+button:active:not(:disabled),a.btn:active{transform:translate(2px,3px);box-shadow:0 0 0 1.5px var(--ink-b)}
+.end{background:var(--blue) !important;color:var(--paper) !important;box-shadow:0 0 0 2px var(--blue-d),3px 4px 0 var(--blue-d) !important;text-shadow:none}
+.end:active:not(:disabled){box-shadow:0 0 0 2px var(--blue-d) !important}
+button:focus-visible,a.btn:focus-visible{outline:3px solid var(--gold);outline-offset:3px}
+/* win card */
+.win{background:rgba(61,42,23,.35)}
+.card{background:var(--paper);color:var(--paper-ink);border-radius:10px;box-shadow:0 0 0 1.5px var(--ink-b),4px 6px 0 rgba(107,79,51,.45)}
+.ribbon{background:var(--blue);border-radius:6px;box-shadow:0 0 0 2px var(--blue-d),3px 4px 0 var(--blue-d)}
+.card h2{color:var(--paper);font-family:var(--display)}
+.wsub{color:var(--label);font-family:var(--hand);font-size:16px;font-weight:400;letter-spacing:0;text-transform:none}
+.card ul{background:#fffaf0;box-shadow:inset 0 0 0 1.2px rgba(107,79,51,.35);border-radius:8px}
+.card li{border-bottom:1px dashed var(--paper-line)}
+.card li b{font-family:var(--display);color:#b8a27a}
+.card li.got b{color:var(--gold-d)}
+.card li.g0 i{background:#5aa9d0}.card li.g1 i{background:#93c565}.card li.g2 i{background:#e0a030}.card li.g3 i{background:#4f8a4a}
+.stars .st path{fill:#e2d3b0;stroke:#a8906a}
+.stars .st path.glint{fill:rgba(255,255,255,.25)}
+.stars .st.on path{fill:#f2c14e;stroke:var(--gold-d)}
+.stars .st.on path.glint{fill:#fde7a6}
+/* banner at each water cycle: a blue paper strip */
+.banner{background:linear-gradient(90deg,rgba(47,111,158,0),rgba(47,111,158,.94) 18%,rgba(47,111,158,.96) 50%,rgba(47,111,158,.94) 82%,rgba(47,111,158,0));box-shadow:none}
+.banner b{font-family:var(--display);color:var(--paper);text-shadow:2px 3px 0 var(--blue-d)}
+.banner small{font-family:var(--hand);font-weight:400;font-size:16px;color:#e8f1f5}
+/* dialogs and the tile card: paper with an ink border */
+dialog,.tcard{background:var(--paper);color:#5b4630;border-radius:10px;box-shadow:0 0 0 1.5px var(--ink-b),4px 6px 0 rgba(107,79,51,.4)}
+dialog::backdrop{background:rgba(61,42,23,.45)}
+dialog h2,dialog h3,dialog b,.tname b{color:var(--paper-ink)}
+dialog h2,.tname b{font-family:var(--display)}
+dialog.goalcard .eyebrow{font-family:var(--hand);color:var(--blue);font-size:16px;font-weight:400;letter-spacing:.02em;text-transform:none}
+dialog.goalcard .aims li,dialog .opts{background:#f3e6c8;border-radius:6px}
+dialog.goalcard .aims svg{fill:#f2c14e;stroke:var(--gold-d)}
+dialog b.wtr{color:var(--water)}dialog b.flw,.wline b.flw{color:var(--flow)}
+.tname small{color:#5b4630}
+.swatch{border-radius:8px;box-shadow:0 0 0 1.2px rgba(107,79,51,.55)}
+button.tclose{background:#f3e6c8;color:var(--ink-b)}
+.wline span{color:var(--label)}
+.cells.big i{background:#e2d3b0}.cells.big i.f{background:#5aa9d0}
+button.act{background:var(--blue);color:var(--paper);border-radius:10px;box-shadow:0 0 0 1.5px var(--blue-d),2px 3px 0 var(--blue-d)}
+button.act:active:not(:disabled){box-shadow:0 0 0 1.5px var(--blue-d)}
+button.act.plant{background:#5f9a48;box-shadow:0 0 0 1.5px #2e4a26,2px 3px 0 #2e4a26}
+button.act.trib{background:#3f9aa8;box-shadow:0 0 0 1.5px #1f5a63,2px 3px 0 #1f5a63}
+button.act.moss{background:#7a9a4a;box-shadow:0 0 0 1.5px #44582a,2px 3px 0 #44582a}
+button.act:disabled{background:#e4ddcc;color:#8a7d68;box-shadow:0 0 0 1.5px #b8a888}
+.atext b{font-family:var(--display)}
+.acost{font-family:var(--hand);font-weight:400;font-size:16px;background:rgba(251,244,226,.2)}
+.atext small.awarn{color:#ffe7c9}
+.rivers button{background:rgba(251,244,226,.85);color:var(--label);box-shadow:inset 0 0 0 1.2px rgba(107,79,51,.45)}
+.rivers button small{color:var(--paper-ink)}
+.rivers button.on{box-shadow:inset 0 0 0 2px var(--water)}
+.stat.jar span{display:inline;font:inherit;letter-spacing:0;text-transform:none;color:inherit;text-shadow:none}
+.stat.jar .jnums{display:grid}
+
+/* ==========================================================================
+   Painterly theme (LOU-280, Nov 12): a hand-painted backdrop under soft white panels.
+   Replaces the A4 paper and ink. Font: M PLUS Rounded 1c for numbers, labels and hints.
+   ========================================================================== */
+:root{
+  --paper:#ffffff; --paper-2:#eef4f2; --paper-ink:#1f3a3a; --paper-line:#dbe7e6; --ink-b:#7a9a96; --label:#5b7473;
+  --water:#2f7fb8; --flow:#1d8f78; --teal:#62e0c8; --blue:#4a8fb8; --blue-d:#2f6f94; --gold:#ffd98a; --gold-d:#c9962b;
+  --display:"M PLUS Rounded 1c","Nunito",system-ui,sans-serif; --hand:"M PLUS Rounded 1c","Nunito",system-ui,sans-serif; --body:"M PLUS Rounded 1c","Nunito",system-ui,sans-serif;
+  --glass:rgba(255,255,255,.8); --soft:0 6px 18px rgba(40,70,80,.16),0 1px 3px rgba(40,70,80,.12);
+}
+body{background:#cfe3ea;color:var(--paper-ink)}
+.board{background:#cfe3ea;border-radius:20px;box-shadow:var(--soft)}
+/* a very light film grain over the whole view */
+.board::after{background:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .5 0 0 0 0 .5 0 0 0 0 .5 0 0 0 .05 0'/></filter><rect width='160' height='160' filter='url(%23n)'/></svg>");mix-blend-mode:normal}
+.top{background:none;padding:8px 10px 10px}
+.stats{background:var(--glass);border-radius:22px;box-shadow:var(--soft);padding:6px 6px;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+.stat span{color:var(--label);font-family:var(--body);font-weight:800;font-size:12px;letter-spacing:.02em;text-transform:none}
+.stat b{color:var(--paper-ink);font-family:var(--display);font-weight:800;font-size:28px}
+.stat b small{color:var(--label);font-weight:500}
+.wx,.goal{background:var(--glass);color:var(--label);box-shadow:var(--soft);font-family:var(--hand);font-weight:500;font-size:13px;border-radius:999px}
+.wx svg,.goal svg{stroke:var(--label)}
+.goal.got{background:#fff3cf;color:#6b4f12;box-shadow:var(--soft)}
+/* the water jar: a clean glass jar, no ink outline, a soft white rim */
+.jglass{fill:rgba(255,255,255,.55)}
+.jink{stroke:rgba(255,255,255,.95);stroke-width:2;filter:drop-shadow(0 1px 1.5px rgba(40,70,80,.35))}
+.jrim{stroke:#ffffff;stroke-width:2.6;filter:drop-shadow(0 1px 1px rgba(40,70,80,.3))}
+.jn{stroke:rgba(47,127,184,.45)}
+.stat.jar b{font-family:var(--display);font-weight:800;color:var(--water)}
+.stat.jar b .cap{font-family:var(--display);font-weight:500;color:var(--label)}
+.stat.jar em{font-family:var(--hand);font-weight:800;font-size:13px}
+.zoom{background:var(--glass);color:var(--paper-ink);box-shadow:var(--soft);border-radius:50%}
+.msg{background:var(--glass);color:var(--paper-ink);border:0;border-radius:18px;box-shadow:var(--soft);font-family:var(--hand);font-weight:500;font-size:15px;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+.msg.warn{background:rgba(255,236,224,.92);color:#7a3418;border:0;box-shadow:var(--soft)}
+.actions{background:none;box-shadow:none}
+.rb>i{background:var(--glass);color:var(--paper-ink);box-shadow:var(--soft);border-radius:50%}
+.rb:active:not(:disabled)>i{transform:translateY(2px);box-shadow:0 2px 6px rgba(40,70,80,.2)}
+.rb>span{color:var(--label);font-family:var(--body);font-weight:800}
+/* Next Water Cycle: a mint-teal pill with a lip when active; muted grey-blue while you can still afford something */
+.rb.go>i{background:linear-gradient(180deg,#9fd7c9,#5fae9c);color:#0f3a33;border-radius:999px;box-shadow:0 4px 0 #3f8a7a,var(--soft)}
+.rb.go:active:not(:disabled)>i{transform:translateY(3px);box-shadow:0 1px 0 #3f8a7a,var(--soft)}
+.rb.go>span{color:var(--paper-ink);font-family:var(--display);font-weight:800}
+.rb.go.muted>i{background:linear-gradient(180deg,#e3ecee,#c7d5da);color:#5b7473;box-shadow:0 4px 0 #9fb2b8,var(--soft)}
+.rb.go.ready>i{background:linear-gradient(180deg,#9fd7c9,#5fae9c);animation:ready2 1.6s ease-in-out infinite}
+@keyframes ready2{50%{box-shadow:0 4px 0 #3f8a7a,0 0 0 8px rgba(98,224,200,.3)}}
+.rb.go .gain{font-family:var(--hand);font-weight:800;color:var(--flow);background:#fff;box-shadow:var(--soft);border-radius:999px}
+.rb.go.muted .gain{background:#fff;color:var(--label)}
+button,a.btn{font-family:var(--display);font-weight:800;color:var(--paper-ink);background:#fff;box-shadow:var(--soft);border-radius:14px}
+button:active:not(:disabled),a.btn:active{transform:translateY(2px);box-shadow:0 2px 6px rgba(40,70,80,.2)}
+.end{background:linear-gradient(180deg,#9fd7c9,#5fae9c) !important;color:#0f3a33 !important;box-shadow:0 4px 0 #3f8a7a,var(--soft) !important}
+.end:active:not(:disabled){box-shadow:0 1px 0 #3f8a7a !important}
+.win{background:rgba(30,60,70,.3)}
+.card,dialog,.tcard{background:rgba(255,255,255,.94);color:var(--paper-ink);border-radius:22px;box-shadow:var(--soft)}
+dialog::backdrop{background:rgba(30,60,70,.35)}
+.ribbon{background:linear-gradient(180deg,#9fd7c9,#5fae9c);border-radius:999px;box-shadow:0 4px 0 #3f8a7a}
+.card h2{color:#0f3a33}
+.wsub,dialog.goalcard .eyebrow{font-family:var(--hand);font-weight:800;color:var(--blue)}
+.card ul,dialog.goalcard .aims li,dialog .opts{background:#f2f7f6;box-shadow:none;border-radius:12px}
+.card li{border-bottom:1px solid var(--paper-line)}
+dialog,dialog h2,dialog h3,dialog b,.tname b,.tname small{color:var(--paper-ink)}
+button.tclose{background:#eef4f2;color:var(--paper-ink)}
+.swatch{border-radius:12px;box-shadow:none}
+.banner{background:linear-gradient(90deg,rgba(74,143,184,0),rgba(74,143,184,.9) 18%,rgba(74,143,184,.92) 50%,rgba(74,143,184,.9) 82%,rgba(74,143,184,0))}
+.banner b{font-family:var(--display);font-weight:800;color:#fff;text-shadow:0 2px 0 rgba(30,70,100,.4)}
+.banner small{font-family:var(--hand);font-weight:500}
+button.act{background:#4a8fb8;color:#fff;border-radius:14px;box-shadow:0 3px 0 #2f6f94}
+button.act:active:not(:disabled){box-shadow:0 1px 0 #2f6f94}
+button.act.plant{background:#5fae6c;box-shadow:0 3px 0 #3f8a4c}
+button.act.trib{background:#3f9aa8;box-shadow:0 3px 0 #1f5a63}
+button.act.moss{background:#7a9a4a;box-shadow:0 3px 0 #44582a}
+button.act:disabled{background:#e3e8e8;color:#7d8b8b;box-shadow:none}
+.acost,.atext b{font-family:var(--display)}
+.rivers button{background:var(--glass);color:var(--label);box-shadow:var(--soft)}
+.rivers button small{color:var(--paper-ink)}
+/* Directed tutorial (LOU-281): instruction card at the thumb, pointing hand, callouts, dimmed UI while a step is locked */
+.tut #msg,.tut #cScore,.tut #goals,.tut #cTurn small{display:none}
+.tutc{display:flex;align-items:center;gap:10px;max-width:420px;margin:0 auto;padding:10px 12px;border-radius:18px;background:rgba(255,255,255,.95);color:var(--paper-ink);box-shadow:var(--soft);font-family:var(--hand)}
+.tutc .ock{flex:none;display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:#ffe7a8;box-shadow:none}
+.tutc .ock svg{width:16px;height:16px;fill:none;stroke:#fff;stroke-width:3;stroke-linecap:round;stroke-linejoin:round;opacity:0}
+.tutc.ok .ock,.tutc.all .ock{background:#5fae6c}.tutc.ok .ock svg,.tutc.all .ock svg{opacity:1}
+.tutx{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+#tutT{font-size:17px;font-weight:500;line-height:1.25}#tutT b{font-weight:800;color:#0f3a33}
+.tutc.ok #tutT{font-weight:800;color:#3f8a4c}
+#tutS{font-size:13px;color:var(--label,#5b7473);line-height:1.25}#tutS:empty{display:none}
+.tutc .odots{flex:none;display:flex;flex-wrap:wrap;gap:3px;max-width:52px;justify-content:flex-end}
+.tutc .odots i{width:6px;height:6px;border-radius:50%;background:#d6e2e0}.tutc .odots i.d{background:#5fae6c}.tutc .odots i.c{background:#e0b04a}
+.tutc.tick .ock{animation:otick .7s cubic-bezier(.3,1.6,.5,1)}
+.tutc.shake{animation:tshake .42s}
+@keyframes tshake{20%{transform:translateX(-7px)}40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(2px)}}
+.tutskip{position:absolute;left:10px;top:calc(100% + 6px);border:0;border-radius:999px;padding:6px 12px;background:rgba(255,255,255,.85);color:var(--label,#5b7473);font:500 13px var(--hand);box-shadow:var(--soft);cursor:pointer}
+#top{position:relative}
+.hand{position:fixed;z-index:30;width:34px;height:44px;pointer-events:none}
+.hand .hsvg{position:relative;width:34px;height:44px;transform-origin:13px 2px;filter:drop-shadow(0 4px 5px rgba(20,45,50,.28));animation:hpress 1.3s cubic-bezier(.45,0,.3,1) infinite}
+.hand .hout rect{fill:#2f5552;stroke:#2f5552;stroke-width:3.4;stroke-linejoin:round}
+.hand .hin rect{fill:#fff}
+.hand .hcrease{fill:none;stroke:#cfdcda;stroke-width:1.3;stroke-linecap:round}
+.hand .hcuff{fill:#7fd6c3}
+.hand .htap{position:absolute;left:3px;top:-8px;width:20px;height:20px;border-radius:50%;border:2.5px solid #fff;box-shadow:0 0 0 1.5px rgba(47,85,82,.35);opacity:0;animation:htap 1.3s ease-out infinite}
+.hand .harrow{display:none}
+@keyframes hpress{0%,100%{transform:translate(4px,12px) rotate(-8deg)}38%,52%{transform:translate(0,2px) rotate(0) scale(.94)}}
+@keyframes htap{0%,36%{opacity:0;transform:scale(.3)}44%{opacity:.95;transform:scale(.6)}100%{opacity:0;transform:scale(1.6)}}
+.callout{position:fixed;z-index:31;max-width:240px;padding:7px 12px;border-radius:14px;background:#fff;color:var(--paper-ink);font:500 14px var(--hand);box-shadow:var(--soft);pointer-events:none}
+.callout::after{content:"";position:absolute;left:calc(var(--ax,50%) - 7px);bottom:-6px;border:7px solid transparent;border-bottom:0;border-top-color:#fff}
+.callout.below::after{bottom:auto;top:-6px;border:7px solid transparent;border-top:0;border-bottom-color:#fff}
+.callout.pop{animation:msgpop .32s cubic-bezier(.3,1.5,.5,1)}
+.tlock .stats>.stat:not(.aim),.tlock .actions .rb:not(.aim){opacity:.45;filter:grayscale(1);transition:opacity .3s,filter .3s}
+.tlock .actions #helpBtn{opacity:1}
+@media (prefers-reduced-motion:reduce){.hand .hsvg,.hand .htap{display:none}.hand .harrow{display:block;width:28px;height:28px;fill:none;stroke:#fff;stroke-width:3.4;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 0 2px #2f4a4a)}.tutc.shake,.tutc.tick .ock,.callout.pop{animation:none}}
+/* Tutorial win card: a compact "what you learned" list that fits a phone */
+.tut .card{max-height:calc(100% - 8px);overflow:auto}
+.tut .card ul{padding:2px 10px}
+.tut .card li{display:grid;grid-template-columns:auto auto 1fr;align-items:center;gap:8px;padding:5px 0}
+.tut .card li i{width:12px;height:12px}
+.tut .card li span{font-size:13px;font-weight:800}
+.tut .card li b{font-family:inherit;font-size:13px;font-weight:500;color:#5b7473;text-align:right;line-height:1.25}
+/* The instruction card next to the action (Dan, Nov 12): under the target with a notch pointing up, or above it pointing down */
+.tutc.near{box-sizing:border-box;position:fixed;z-index:29;margin:0;max-width:none;transition:left .35s cubic-bezier(.3,1.2,.5,1),top .35s cubic-bezier(.3,1.2,.5,1)}
+.tutc.near::before{content:"";position:absolute;left:calc(var(--ax,50%) - 8px);top:-7px;border:8px solid transparent;border-top:0;border-bottom-color:rgba(255,255,255,.95)}
+.tutc.near.up::before{top:auto;bottom:-7px;border:8px solid transparent;border-bottom:0;border-top-color:rgba(255,255,255,.95)}
+@media (prefers-reduced-motion:reduce){.tutc.near{transition:none}}
+/* Tutorial polish (LOU-282): no welcome popup. The title rides the glide, step 1 fades in as the camera settles, the card shows
+   a water drop and "1 / 15", callouts take their turn alone, and the jar refills with a teal pour. */
+.tutc,.hand{opacity:0;transition:opacity .3s}
+.tutc.show,.hand.show{opacity:1}
+.tutc.near{transition:left .35s cubic-bezier(.3,1.2,.5,1),top .35s cubic-bezier(.3,1.2,.5,1),opacity .3s}
+.tutc .ock{position:relative;background:#dff1fa}
+.tutc .ock svg{position:absolute;transition:opacity .2s}
+.tutc .ock .odrop{opacity:1;fill:#4a9cc8;stroke:none}
+.tutc.ok .ock .odrop,.tutc.all .ock .odrop{opacity:0}
+.tutn{flex:none;align-self:flex-start;font:800 12px var(--hand);color:var(--label,#5b7473);white-space:nowrap;padding-top:2px}
+.tutn:empty{display:none}
+.ttitle{position:absolute;left:0;right:0;top:14%;z-index:3;text-align:center;pointer-events:none;opacity:0;color:#2f5552;text-shadow:0 0 14px rgba(255,255,255,.9),0 0 4px rgba(255,255,255,.8)}
+.ttitle[hidden]{display:none}
+.ttitle b{display:block;font:800 42px/1.1 var(--display)}
+.ttitle span{display:block;margin-top:4px;font:500 18px var(--hand)}
+.tut #top,.tut .actions,.tut .zoom{transition:opacity .3s}
+.arriving #top,.arriving .actions,.arriving .zoom,.arriving #bottom{opacity:0;pointer-events:none}
+.callout small{display:block;margin-top:2px;font-size:13px;color:var(--label,#5b7473)}
+.callout b{font-weight:800}
+.callout.bye{opacity:0;transition:opacity .2s}
+.tlock .stats>.stat.lit{opacity:1;filter:none}
+.tcall .stats>.stat:not(.lit),.tcall .actions .rb{opacity:.45;filter:grayscale(1);transition:opacity .3s,filter .3s}
+.jfill{fill:none;stroke:var(--teal,#62e0c8);stroke-width:4;stroke-linecap:round;stroke-dasharray:14 40;stroke-dashoffset:14;opacity:0}
+.jar.fill .jfill{animation:jfill .9s ease-in}
+@keyframes jfill{0%{opacity:0;stroke-dashoffset:14}15%{opacity:.95}80%{opacity:.95}100%{opacity:0;stroke-dashoffset:-40}}
+.tut .card li.sum{grid-template-columns:auto 1fr;gap:12px;padding:8px 0}
+.tut .card li.sum span{font-size:14px;font-weight:500;line-height:1.3;color:var(--paper-ink)}
+.tut .card li.sum b{font-family:inherit;font-size:15px;font-weight:800;text-align:left}
+.sum b.wtr{color:#2f7fb8}.sum b.flw{color:#1d8f78}.sum b.sto{color:var(--paper-ink)}
+.sjar{width:30px;height:39px}
+.sjar .jglass{fill:#eef6f8}.sjar .jink,.sjar .jrim{stroke:#86a6ae;filter:none}.sjar .jn{stroke:#86a6ae;opacity:1}
+@media (prefers-reduced-motion:reduce){.tutc,.hand,.callout.bye{transition:none}.jar.fill .jfill{animation:none}}
+.tut .card li.sum b.wtr{color:#2f7fb8}.tut .card li.sum b.flw{color:#1d8f78}.tut .card li.sum b.sto{color:var(--paper-ink)}
+.tut #wStars{display:none}
+/* The sheet (LOU-283, LOU-284): while your river or a tile is selected, a white glass panel (and a tile's round action buttons)
+   takes the bottom bar's place. Closing it brings the bottom bar back. */
+.app{position:relative}
+.sheet{position:absolute;left:0;right:0;bottom:max(24px,env(safe-area-inset-bottom,0px));z-index:6;display:grid;gap:14px;width:100%;max-width:560px;margin:0 auto;padding:0 12px;box-sizing:border-box;pointer-events:none;font-family:var(--hand)}
+.sheet[hidden]{display:none}
+.sheet.in{animation:sheetin .22s cubic-bezier(.3,1.3,.5,1)}
+.sheet.out{opacity:0;transition:opacity .15s}
+@keyframes sheetin{from{transform:translateY(12px);opacity:0}}
+.sheeted .actions{visibility:hidden}
+.spanel{pointer-events:auto;display:flex;align-items:center;gap:12px;padding:14px 14px 14px 12px;border-radius:24px;background:rgba(255,255,255,.86);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);box-shadow:0 8px 24px rgba(30,60,60,.18);color:#24434a}
+.sico{flex:none;display:grid;place-items:center;width:52px;height:52px;border-radius:50%}
+.sico.riv{background:linear-gradient(180deg,#bfe9f3,#7fbfd6);box-shadow:inset 0 -3px 0 rgba(0,0,0,.08)}
+.sico.riv svg{width:30px;height:20px;fill:none;stroke:#fff;stroke-width:3;stroke-linecap:round}
+.stx{flex:1;min-width:0}
+.sttl{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.sttl b{font-weight:800;font-size:19px;line-height:1.15;color:#24434a}
+.fpill{font-weight:800;font-size:13px;color:#13917a;background:#d9f3ec;border-radius:999px;padding:2px 8px;white-space:nowrap}
+.stx small{display:block;margin-top:3px;font-size:15px;line-height:1.3;color:#4f6f70}
+.sclose{flex:none;display:grid;place-items:center;width:44px;height:44px;padding:0;border:0;border-radius:50%;background:#fff;box-shadow:0 3px 10px rgba(0,0,0,.12);cursor:pointer}
+.sclose:active{transform:translateY(2px)}
+.sclose svg{width:18px;height:18px;fill:none;stroke:#24434a;stroke-width:2.8;stroke-linecap:round;stroke-linejoin:round}
+@media (prefers-reduced-motion:reduce){.sheet.in{animation:none}.sheet.out{transition:none}}
+/* Tile panel (LOU-284): what the tile is and does, then every option as its own round button along the bottom */
+.tblock{flex:none;width:64px;height:54px}
+.sheet[data-mode="tile"] .spanel{padding:12px 14px 12px 10px;gap:10px}
+.sttl b.tnm{font-size:20px}
+.sheet[data-mode="tile"] .stx small{font-size:14px;margin-top:2px}
+.stx small b{font-weight:800}.stx small b.wtr{color:#3f86b0}.stx small b.flw{color:#13917a}.stx .nw{white-space:nowrap}
+.sheet[data-mode="tile"] .sclose{width:40px;height:40px}.sheet[data-mode="tile"] .sclose svg{width:16px;height:16px}
+.sacts{display:flex;flex-wrap:wrap;justify-content:center;align-items:flex-start;gap:12px 14px;padding:0 0 0;pointer-events:none}
+.sacts:empty{display:none}
+.sacts[data-n="4"]{gap:12px 4px}
+button.sact{pointer-events:auto;flex:0 1 96px;min-width:0;display:flex;flex-direction:column;align-items:center;gap:6px;padding:0;border:0;border-radius:18px;background:none;box-shadow:none;color:#24434a;font-family:var(--hand);cursor:pointer}
+.sacts[data-n="4"] button.sact{flex-basis:86px}
+button.sact:active:not(:disabled){transform:none;box-shadow:none}
+.sbtn{display:grid;place-items:center;width:66px;height:66px;border-radius:50%;background:#fff;box-shadow:0 5px 0 rgba(0,0,0,.08),0 8px 18px rgba(30,60,60,.18);transition:transform .08s}
+.sbtn svg{width:32px;height:32px}
+button.sact:active .sbtn{transform:translateY(3px)}
+button.sact.main .sbtn{background:linear-gradient(180deg,#9fd7c9,#5fae9c);box-shadow:0 5px 0 #3f8a7a,0 8px 18px rgba(30,60,60,.18)}
+button.sact>b{font-weight:800;font-size:14px;line-height:1.1;text-align:center;text-shadow:0 0 6px rgba(255,255,255,.9),0 0 2px #fff}
+.scost{display:flex;align-items:center;gap:3px;font-weight:800;font-size:13px;line-height:1.3;color:#24434a;background:rgba(255,255,255,.85);border-radius:999px;padding:2px 8px}
+.cdrop{width:11px;height:14px;fill:#3f86b0}
+button.sact small{font-weight:500;font-size:11px;line-height:1.2;text-align:center;color:#3f5c5d;background:rgba(255,255,255,.72);border-radius:8px;padding:2px 5px;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+button.sact small.swarn{color:#a14a22}
+button.sact.cant .sbtn{background:#e3e8e8;box-shadow:0 5px 0 rgba(0,0,0,.06);filter:grayscale(1);opacity:.6}
+button.sact.cant>b,button.sact.cant small{opacity:.6}
+button.sact.cant .scost{color:#7d8589;background:rgba(240,242,242,.85)}button.sact.cant .cdrop{fill:#9aa3a8}
+button.sact.off{opacity:.4;filter:grayscale(1)}
+button.sact.nope .sbtn{animation:tshake .4s}
+@media (max-height:560px){.sbtn{width:52px;height:52px}.sbtn svg{width:26px;height:26px}button.sact small{display:none}.sheet{gap:8px;bottom:8px}}
+@media (prefers-reduced-motion:reduce){button.sact.nope .sbtn{animation:none}}
+.sheet.out *{pointer-events:none!important}
+/* Level start (LOU-285): no goal modal. A glass banner under the top bar, goal popovers on the star chips, an empty jar before a source is chosen. */
+.lvb{position:absolute;left:50%;top:var(--lvbTop,112px);z-index:4;transform:translateX(-50%);max-width:calc(100% - 24px);box-sizing:border-box;padding:8px 16px;border-radius:18px;background:rgba(255,255,255,.86);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);box-shadow:0 8px 24px rgba(30,60,60,.18);color:#24434a;font-family:var(--hand);text-align:center;pointer-events:none}
+.lvb[hidden]{display:none}
+.lvb b{display:block;font-weight:800;font-size:17px;line-height:1.2}
+.lvb span{display:block;font-weight:500;font-size:14px;line-height:1.25;color:#4f6f70}
+.lvb.in{animation:lvbin .35s cubic-bezier(.3,1.2,.5,1)}
+.lvb.bye{opacity:0;transform:translate(-50%,-10px);transition:opacity .25s,transform .25s}
+@keyframes lvbin{from{opacity:0;transform:translate(-50%,-18px)}}
+.goals .goal{pointer-events:auto;cursor:pointer}
+.gpop{position:absolute;z-index:5;max-width:min(300px,calc(100% - 16px));box-sizing:border-box;padding:9px 13px;border-radius:14px;background:#fff;color:#24434a;font:500 14px/1.3 var(--hand);box-shadow:0 8px 24px rgba(30,60,60,.18);pointer-events:none;animation:msgpop .25s cubic-bezier(.3,1.5,.5,1)}
+.gpop[hidden]{display:none}
+.gpop b{font-weight:800}.gpop>b{display:block;font-weight:500}
+.gpop small{display:block;margin-top:5px;font-size:13px;color:#4f6f70}
+.gpop::before{content:"";position:absolute;left:calc(var(--ax,50%) - 7px);top:-6px;border:7px solid transparent;border-top:0;border-bottom-color:#fff}
+.jar.nosrc #cFlow{visibility:hidden}
+@media (prefers-reduced-motion:reduce){.lvb.in,.gpop{animation:none}.lvb.in{animation:fadein .3s both}.lvb.bye{transform:translateX(-50%)}}
+/* Bottom bar (LOU-286): Menu, a big Next water cycle pill, Undo. Restart lives in the menu. */
+.app .actions{display:flex;align-items:center;gap:10px;padding:8px 10px 6px;background:none;box-shadow:none}
+button.bbtn{position:relative;flex:none;display:grid;place-items:center;width:52px;height:52px;padding:0;border:0;border-radius:50%;background:var(--glass,#fff);color:var(--paper-ink);box-shadow:var(--soft)}
+button.bbtn svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+button.bbtn:disabled{opacity:.4}
+.ubadge{position:absolute;right:-3px;top:-3px;min-width:18px;height:18px;padding:0 4px;box-sizing:border-box;border-radius:999px;background:#24434a;color:#fff;font:800 11px/18px var(--hand);text-align:center}
+.ubadge[hidden]{display:none}
+button.nwc{flex:1;min-width:0;min-height:58px;display:flex;align-items:center;justify-content:center;gap:9px;padding:6px 14px;border:0;border-radius:999px;background:linear-gradient(180deg,#9fd7c9,#5fae9c);color:#0f3a33;box-shadow:0 4px 0 #3f8a7a,var(--soft);font-family:var(--display);font-weight:800;font-size:17px;white-space:nowrap}
+button.nwc:active:not(:disabled){transform:translateY(3px);box-shadow:0 1px 0 #3f8a7a,var(--soft)}
+button.nwc .cyc{flex:none;width:26px;height:26px;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round;transform-origin:50% 50%;animation:cyc 6s linear infinite}
+button.nwc .nwl{overflow:hidden;text-overflow:ellipsis}
+button.nwc .gain{flex:none;font-style:normal;font-family:var(--hand);font-weight:800;font-size:15px;color:#0f6f5e;background:rgba(255,255,255,.9);border-radius:999px;padding:2px 9px}
+button.nwc .gain[hidden]{display:none}
+button.nwc .gain .sp{color:#b5562f}
+button.nwc.muted{background:linear-gradient(180deg,#e3ecee,#c7d5da);color:#4c6468;box-shadow:0 4px 0 #9fb2b8,var(--soft)}
+button.nwc.muted .cyc{animation-duration:14s}
+button.nwc.ready{animation:ready2 1.6s ease-in-out infinite}
+button.nwc:disabled{opacity:.5}
+button.nwc.aim{animation:aim 1.2s ease-in-out infinite}
+.tlock .actions>button:not(.aim),.tcall .actions>button{opacity:.45;filter:grayscale(1);transition:opacity .3s,filter .3s}
+.tlock .actions #menuBtn{opacity:1;filter:none}
+@media (max-width:359px){button.nwc{font-size:15px;gap:6px;padding:6px 10px}button.nwc .cyc{width:22px;height:22px}}
+@media (orientation:landscape) and (max-height:540px){.app .actions{flex-wrap:wrap;align-content:flex-end;justify-content:space-between;padding:10px 6px}button.nwc{order:-1;flex:0 0 100%;white-space:normal;line-height:1.1;font-size:15px;flex-wrap:wrap}}
+/* Menu sheet */
+.mwrap{position:fixed;inset:0;z-index:60;display:flex;align-items:flex-end;justify-content:center;background:rgba(36,67,74,.28);animation:fadein .18s both}
+.mwrap[hidden]{display:none}
+.mwrap.bye{opacity:0;transition:opacity .18s}
+.msheet{width:min(560px,100%);box-sizing:border-box;padding:10px 12px calc(14px + env(safe-area-inset-bottom,0px));border-radius:24px 24px 0 0;background:rgba(255,255,255,.97);box-shadow:0 -8px 30px rgba(30,60,60,.2);display:grid;gap:4px;font-family:var(--hand);animation:msup .24s cubic-bezier(.3,1.2,.5,1)}
+@keyframes msup{from{transform:translateY(40px);opacity:0}}
+.mrow,button.mrow{display:flex;align-items:center;gap:12px;width:100%;min-height:52px;box-sizing:border-box;padding:8px 12px;border:0;border-radius:14px;background:none;box-shadow:none;color:#24434a;font:800 16px var(--hand);text-align:left;text-decoration:none;cursor:pointer}
+.mrow:active,button.mrow:active:not(:disabled){background:#eef4f2;transform:none;box-shadow:none}
+.mrow svg{flex:none;width:22px;height:22px;fill:none;stroke:#4f6f70;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.mrow span{flex:1}.mrow small{display:block;font-weight:500;font-size:13px;color:#4f6f70}
+.mrow input{position:absolute;opacity:0;pointer-events:none}
+.msw{flex:none;position:relative;width:44px;height:26px;border-radius:999px;background:#cfdadb;transition:background .15s}
+.msw::after{content:"";position:absolute;left:3px;top:3px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:transform .15s}
+.mrow input:checked+.msw{background:#5fae9c}.mrow input:checked+.msw::after{transform:translateX(18px)}
+.mrow input:focus-visible+.msw{outline:3px solid var(--gold);outline-offset:2px}
+.mconf{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:8px 12px 10px 46px;font:500 14px var(--hand);color:#4f6f70}
+.mconf[hidden]{display:none}
+.mconf span{flex:1 1 100%}
+.mconf button{padding:8px 16px;border-radius:999px;font:800 14px var(--hand);background:#eef4f2;box-shadow:none}
+.mconf button.mgo{background:#b5562f;color:#fff}
+/* Stuck helper: a small card above the bar */
+.stuck{pointer-events:auto;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px 12px;margin:0 2px 8px;padding:10px 14px;border-radius:18px;background:rgba(255,255,255,.95);box-shadow:var(--soft);color:#24434a;font-family:var(--hand);animation:msgpop .3s cubic-bezier(.3,1.5,.5,1)}
+.stuck[hidden]{display:none}
+.stuck b{font-weight:800;font-size:16px}
+.stuck div{display:flex;gap:8px}
+.stuck button{padding:8px 14px;border-radius:999px;font:800 14px var(--hand);background:#eef4f2;box-shadow:none;color:#24434a}
+.stuck button:first-child{background:linear-gradient(180deg,#9fd7c9,#5fae9c);color:#0f3a33}
+.stuck button:disabled{display:none}
+/* How to play: the tile guide */
+dialog.guide{width:min(440px,calc(100% - 20px));max-height:calc(100% - 24px);box-sizing:border-box;padding:16px 16px 14px;overflow:auto;font-family:var(--hand)}
+dialog.guide h2{margin:0 0 8px;font-size:22px}
+dialog.guide h3{margin:14px 0 6px;font:800 13px var(--hand);letter-spacing:.05em;text-transform:uppercase;color:#4f6f70}
+.gjars,.gaims{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.gjars li{display:flex;align-items:center;gap:10px;font-size:15px;font-weight:500;color:#24434a}
+.gjars .sjar{flex:none;width:24px;height:31px}
+.gjars b{font-weight:800}.gjars b.wtr{color:#2f7fb8}.gjars b.flw{color:#1d8f78}
+.ggrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(74px,1fr));gap:6px}
+button.gtile{display:grid;justify-items:center;gap:2px;padding:6px 2px 5px;border:0;border-radius:14px;background:#f1f6f5;box-shadow:none;color:#24434a;font:800 12px/1.15 var(--hand)}
+button.gtile .tblock{width:48px;height:40px}
+button.gtile.on{background:#d9f3ec;box-shadow:inset 0 0 0 2px #5fae9c}
+.gdet{display:flex;align-items:center;gap:10px;min-height:64px;margin-top:8px;padding:8px 12px;border-radius:14px;background:#f1f6f5;color:#24434a}
+.gdet .tblock{flex:none}
+.gdet b{display:block;font-weight:800;font-size:17px}
+.gdet span{display:block;font-size:14px;line-height:1.3;color:#3f5c5d}
+.gdet em{display:inline-block;margin-top:4px;font-style:normal;font-weight:800;font-size:13px;color:#2f7fb8;background:#fff;border-radius:999px;padding:1px 9px}
+.gdet small{font-size:14px;color:#4f6f70}
+.gaims li{font-size:15px;color:#24434a;padding-left:22px;position:relative}
+.gaims li::before{content:"\2605";position:absolute;left:0;color:#e0b04a}
+.grow2{display:flex;gap:8px;margin:14px 0 4px}
+.grow2 .btn,.grow2 button{flex:1;text-align:center;text-decoration:none;padding:9px 8px;border-radius:999px;font:800 14px var(--hand);background:#eef4f2;box-shadow:none;color:#24434a}
+dialog.guide form .end{width:100%;margin-top:10px}
+@media (prefers-reduced-motion:reduce){button.nwc .cyc,button.nwc.ready,button.nwc.aim,.msheet,.mwrap,.stuck{animation:none}}
+/* LOU-292: no Score on levels without a score goal (Turn and the jar share the bar), and the "Finish here?" card */
+.stats.two{grid-template-columns:.8fr 2fr}
+.seaq span{flex:1 1 150px;min-width:0}
+.seaq small{display:block;font-weight:500;font-size:13px;line-height:1.25;color:#4f6f70}
+/* Guided levels (LOU-289): full colour, no veil. The instruction card sits at the bottom, just above the bar, and stays there. */
+.guiding #msg{display:none}
+.tutc{margin:0 2px 8px;max-width:none}
+.tutskip{left:auto;right:10px;background:none;box-shadow:none;text-decoration:underline;padding:4px 6px;color:#3f5c5d;text-shadow:0 0 6px rgba(255,255,255,.9)}
+.tutskip[hidden]{display:none}
+#wGoals li.learn{display:block;padding:3px 0 3px 22px;position:relative;font:500 13.5px/1.3 var(--hand);color:#3f5c5d;border:0}
+#wGoals li.learn::before{content:"";position:absolute;left:6px;top:9px;width:6px;height:6px;border-radius:50%;background:#5fae9c}
+#wGoals li.learn:first-of-type{margin-top:6px}
+/* Launch designs (LOU-294): the river strip above an always-visible bar, one hint at a time, tile panel sizes, banner, pill, menu */
+.rstrip{pointer-events:none;display:flex;align-items:center;gap:9px;min-height:44px;box-sizing:border-box;margin:0 58px 8px 4px;padding:7px 14px 7px 8px;border-radius:999px;background:rgba(255,255,255,.88);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);box-shadow:0 8px 24px rgba(30,60,60,.16);font-family:var(--hand);color:#24434a;animation:sheetin .2s cubic-bezier(.3,1.3,.5,1)}
+.rstrip[hidden]{display:none}
+.rsico{flex:none;display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:linear-gradient(180deg,#bfe9f3,#7fbfd6)}
+.rsico svg{width:18px;height:12px;fill:none;stroke:#fff;stroke-width:3;stroke-linecap:round}
+.rstrip b{font-weight:800;font-size:14px;white-space:nowrap}
+.rstrip .fpill{font-size:12px}
+.rshint{font-weight:700;font-size:13px;color:#4f6f70;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* one hint at a time: the strip or the tile panel stands in for the message line */
+.striped #msg,.sheeted #msg{display:none}
+.sheeted .rstrip{display:none}
+/* tile panel: 66px buttons, 14px bold labels, plain grey effect lines of at most two lines, 14px apart, 10px under the info card */
+.sheet{gap:10px}
+.sacts,.sacts[data-n="4"]{gap:10px 14px}
+.sacts[data-n="4"]{gap:10px 2px}
+.sbtn{width:66px;height:66px}.sbtn svg{width:32px;height:32px}
+button.sact small{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;max-width:96px;padding:0;border-radius:0;background:none;font-size:11.5px;line-height:1.25;color:#4f6f70;text-shadow:0 0 5px rgba(255,255,255,.95),0 0 2px #fff}
+button.sact small.swarn{color:#a14a22}
+button.sact small.sneed{font-weight:800}
+/* level banner: the name stays on one line */
+.lvb{border-radius:16px;white-space:nowrap}
+.lvb b{font-size:14px}.lvb span{font-size:12.5px;white-space:normal}
+/* Next water cycle: label and amount on two lines inside the pill, so nothing overflows at 390px */
+button.nwc{min-height:60px;gap:10px;padding:6px 12px}
+.nwt{display:flex;flex-direction:column;align-items:flex-start;min-width:0;line-height:1.15}
+button.nwc .nwl{font-size:17px;white-space:nowrap}
+button.nwc .gain{padding:0;background:none;border-radius:0;font-size:13px;color:#13917a;white-space:nowrap}
+button.nwc.muted{background:rgba(255,255,255,.88);color:#24434a;box-shadow:0 8px 24px rgba(30,60,60,.16)}
+.app .actions{padding:8px 6px 6px}
+.app{min-width:0}.board,.actions{min-width:0}
+/* menu: grip, title row, round icons, a note under each title, Restart in rust */
+.msheet{border-radius:30px 30px 0 0;padding:10px 20px calc(18px + env(safe-area-inset-bottom,0px));gap:0;box-shadow:0 -10px 30px rgba(30,60,60,.25)}
+.mgrip{display:block;width:44px;height:5px;border-radius:3px;background:#d5dfe0;margin:0 auto 10px}
+.mhead{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:0 4px 8px;color:#24434a}
+.mhead b{font-weight:800;font-size:18px}.mhead span{font-weight:700;font-size:13px;color:#4f6f70;white-space:nowrap}
+.mrow,button.mrow{gap:14px;min-height:0;padding:11px 4px;border-radius:0;border-top:1px solid rgba(36,67,74,.08);font-size:16px}
+.mico{flex:none;display:grid;place-items:center;width:40px;height:40px;border-radius:50%;background:#eef5f6}
+.mrow .mico svg{width:20px;height:20px;stroke:#24434a}
+.mrow small{font-size:12.5px;margin-top:1px}
+.mrow.rust>span{color:#b5562f}.mrow.rust small{color:#4f6f70}.mrow.rust .mico svg{stroke:#b5562f}
+.mconf{padding:0 4px 12px 58px}
+.lvb{width:max-content;white-space:normal}.lvb b{white-space:nowrap}
+/* The sea tile (LOU-295): the opening banner on the bay, and the edge pointer */
+.lvb{display:flex;align-items:center;gap:10px;text-align:left}
+.lvb>div{min-width:0}
+.lvb:not(.sea){text-align:center}.lvb:not(.sea) .lvbi{display:none}
+.lvbi{flex:none;display:grid;place-items:center;width:34px;height:34px;border-radius:50%;background:linear-gradient(180deg,#8fc7e6,#3f86b0)}
+.lvbi svg{width:20px;height:14px;fill:none;stroke:#fff;stroke-width:3;stroke-linecap:round}
+.lvb.sea b{font-size:17px}.lvb.sea span{font-size:12.5px}
+button.seaptr{position:absolute;z-index:4;display:flex;align-items:center;gap:6px;padding:4px 12px 4px 4px;border:2px solid #f2c14e;border-radius:999px;background:rgba(255,255,255,.9);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);box-shadow:0 8px 24px rgba(30,60,60,.16);font-family:var(--hand);color:#24434a;white-space:nowrap;cursor:pointer}
+button.seaptr[hidden]{display:none}
+button.seaptr:active:not(:disabled){transform:scale(.97);box-shadow:0 8px 24px rgba(30,60,60,.16)}
+#seaArrow{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:linear-gradient(180deg,#8fc7e6,#3f86b0)}
+#seaArrow svg{width:16px;height:16px;fill:none;stroke:#fff;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
+.seaptr .spw{width:18px;height:12px;fill:none;stroke:#3f86b0;stroke-width:3;stroke-linecap:round}
+.seaptr b{font-weight:800;font-size:14px}.seaptr span{font-weight:700;font-size:13px;color:#4f6f70}
+/* Guided card, skip link and callouts as on design boards 4 and 5 (LOU-289) */
+.tutc{gap:12px;margin:0 4px 8px;padding:12px 14px;border-radius:22px;background:rgba(255,255,255,.88);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);box-shadow:0 8px 24px rgba(30,60,60,.16)}
+.tutc .ock{width:34px;height:34px;background:#e3f1f6}
+.tutc .ock svg{width:18px;height:18px}
+.tutc.ok .ock,.tutc.all .ock{background:linear-gradient(180deg,#9fd7c9,#5fae9c)}
+.tutc.ok .ock .otick,.tutc.all .ock .otick{stroke:#0f3a33;opacity:1}
+#tutT{font-size:17px;font-weight:500;line-height:1.25;color:#24434a}
+.tutn{align-self:center;font-size:12px;font-weight:800;color:#4f6f70;padding:0}
+.tutskip{left:auto;right:6px;top:calc(100% + 4px);padding:3px 10px;border-radius:999px;background:rgba(255,255,255,.7);box-shadow:none;text-decoration:none;font:700 12px var(--hand);color:#4f6f70;text-shadow:none}
+.callout{max-width:230px;padding:8px 12px;border-radius:14px;font-size:13.5px;line-height:1.3;box-shadow:0 6px 18px rgba(30,60,60,.22)}
+.callout b.wtr{color:#3f86b0}.callout b.flw{color:#13917a}
+/* Chapter banner (LOU-290): the first level of a chapter shows its chapter once, in the level banner, with a gold rim */
+.lvb.chapter{outline:2.5px solid #ffd98a}
+.lvb.chapter b{font-size:17px}.lvb.chapter span{font-size:13px;text-transform:none}
+.lvb.chapter span::first-letter{text-transform:uppercase}
+/* Skip guidance sits on the left under the chips, clear of the zoom button on the right (LOU-290) */
+.tutskip{left:6px;right:auto}
+/* Hint (LOU-291): a 42px lightbulb above the bottom bar, right of the river strip, with the hints left on a small badge */
+button.hintb{pointer-events:auto;position:absolute;right:12px;bottom:9px;z-index:3;display:grid;place-items:center;width:42px;height:42px;padding:0;border:0;border-radius:50%;background:rgba(255,255,255,.88);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);box-shadow:0 8px 24px rgba(30,60,60,.16);color:#24434a;cursor:pointer}
+button.hintb[hidden]{display:none}
+button.hintb:active{transform:scale(.94);box-shadow:0 8px 24px rgba(30,60,60,.16)}
+.hintb svg{width:21px;height:21px;fill:none;stroke:#24434a;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+.hintb span{position:absolute;right:-3px;top:-3px;display:flex;align-items:center;justify-content:center;box-sizing:border-box;min-width:18px;height:18px;padding:0 4px;border-radius:9px;background:#24434a;color:#fff;font:800 11px var(--hand)}
+.hintb.none{opacity:.55}.hintb.none span{background:#8fa0a3}
+.sheeted .hintb,#stuck:not([hidden])~.hintb,#seaq:not([hidden])~.hintb{display:none}
+.mrow .mnote{margin-left:auto;font-style:normal;font-weight:800;font-size:13px;color:#4f6f70;white-space:nowrap}
+/* the ghost icon over the tile to grow next, and the glow on Next water cycle when that's the next step */
+.hghost{position:fixed;z-index:5;pointer-events:none;display:grid;place-items:center;width:46px;height:46px;margin:-46px 0 0 -23px;border-radius:50%;background:rgba(255,255,255,.82);box-shadow:0 0 0 2.5px #ffd98a,0 8px 20px rgba(30,60,60,.2);animation:hbob 1s ease-in-out infinite}
+.hghost[hidden]{display:none}
+.hghost svg{width:28px;height:28px;opacity:.9}
+@keyframes hbob{50%{transform:translateY(-4px)}}
+button.nwc.hinted{box-shadow:0 0 0 3px #ffd98a,0 0 18px 4px rgba(255,217,138,.9),0 8px 24px rgba(30,60,60,.16);animation:hglow 1s ease-in-out infinite}
+@keyframes hglow{50%{box-shadow:0 0 0 5px #ffd98a,0 0 26px 8px rgba(255,217,138,.95),0 8px 24px rgba(30,60,60,.16)}}
+@media (prefers-reduced-motion:reduce){.hghost,button.nwc.hinted{animation:none}}
+.mrow[hidden],button.mrow[hidden]{display:none}
+/* Live star chips (LOU-287, design board 8): white glass pills on one centred line. Open: an outlined star. Holds so far: a teal
+   check. Earned: a gold star on a pale gold pill, with a short pulse and sparkle. Missed: grey with a thin strike. */
+.goals{flex-wrap:nowrap;gap:6px;max-width:100%;overflow:hidden;padding:2px 2px 4px}
+.goals .goal{position:relative;display:inline-flex;align-items:center;gap:4px;padding:4px 9px 4px 7px;border-radius:999px;background:rgba(255,255,255,.88);box-shadow:0 2px 6px rgba(30,60,60,.1);font:700 12px var(--hand);color:#24434a;white-space:nowrap}
+.goals .goal svg{flex:none;width:14px;height:14px;fill:none;stroke:#8fa5a8;stroke-width:2;stroke-linejoin:round}
+.goals .goal .gck{width:13px;height:13px;stroke:#13917a;stroke-width:3.2;stroke-linecap:round}
+.goals .goal.live{color:#24434a}
+.goals .goal.got{background:#fff3cf;color:#6b4f12}
+.goals .goal.got svg{fill:#f2b632;stroke:#d99a1c;stroke-width:1.2}
+.goals .goal.miss{background:rgba(255,255,255,.6);box-shadow:none;color:#8fa0a3}
+.goals .goal.miss>span{text-decoration:line-through;text-decoration-thickness:1px}
+.goals .goal.miss svg{stroke:#b9c7c9}
+.goals .goal.earn{animation:chipearn .4s ease-out}
+.goals .goal.earn::after{content:"";position:absolute;left:14px;top:50%;width:5px;height:5px;margin:-2.5px;border-radius:50%;background:#fff;box-shadow:-9px -9px 0 -1px #ffd98a,10px -8px 0 -1px #fff3cf,-8px 9px 0 -1.5px #fff,11px 8px 0 -1px #ffd98a;animation:chipspark .4s ease-out both;pointer-events:none}
+.goals .goal.lose{animation:chiplose .4s ease-out}
+@keyframes chipearn{0%{transform:scale(1)}40%{transform:scale(1.14)}100%{transform:scale(1)}}
+@keyframes chipspark{0%{opacity:0;transform:scale(.3)}40%{opacity:1}100%{opacity:0;transform:scale(1.5)}}
+@keyframes chiplose{0%{opacity:.3}100%{opacity:1}}
+/* Level complete (LOU-287): the island behind a soft white wash, three big stars at the top, and a sheet that slides up */
+.lvdone{position:fixed;inset:0;z-index:30;pointer-events:auto;font-family:var(--hand);color:#24434a;background:linear-gradient(180deg,rgba(255,255,255,0) 20%,rgba(255,255,255,.55) 60%);animation:fadein .5s var(--t0,1s) both}
+.lvdone[hidden]{display:none}
+.app.won #top,.app.won .zoom,.app.won #seaptr,.app.won .tutskip{opacity:0;pointer-events:none;transition:opacity .4s}
+.dstars{position:absolute;left:0;right:0;top:max(54px,calc(env(safe-area-inset-top,0px) + 30px));display:flex;justify-content:center;gap:6px;filter:drop-shadow(0 4px 8px rgba(0,0,0,.18))}
+.dst{width:52px;height:52px}.dst.s1{width:64px;height:64px;margin-top:-12px}
+.dst svg,.rst svg{display:block;width:100%;height:100%;overflow:visible}
+.dst .so{fill:none;stroke:#fff;stroke-width:2;stroke-linejoin:round}
+.dst{animation:fadein .3s var(--t0,1s) both}
+.sg{fill:#f2b632;stroke:#d99a1c;stroke-width:1.2;stroke-linejoin:round;transform-origin:12px 12px;transform-box:view-box;animation:starfill .45s cubic-bezier(.3,1.5,.5,1) var(--d,1.4s) both}
+@keyframes starfill{0%{opacity:0;transform:scale(.2) rotate(-25deg)}100%{opacity:1;transform:none}}
+.dsheet{position:absolute;left:0;right:0;bottom:0;max-width:460px;margin:0 auto;box-sizing:border-box;padding:10px 22px calc(22px + env(safe-area-inset-bottom,0px));border-radius:30px 30px 0 0;background:rgba(255,255,255,.96);box-shadow:0 -10px 30px rgba(30,60,60,.2);animation:dsheet .45s cubic-bezier(.25,1,.4,1) var(--t0,1s) both}
+@keyframes dsheet{0%{transform:translateY(105%)}100%{transform:none}}
+.dsheet .mgrip{margin:0 auto 12px}
+.dname{font-weight:800;font-size:13px;color:#3f86b0}
+.dsheet h2{margin:2px 0 10px;font:800 26px/1.15 var(--hand);color:#24434a}
+.dscore{margin:-6px 0 10px;font-weight:700;font-size:14px;color:#4f6f70}.dscore b{font-weight:800;font-size:17px;color:#24434a}
+.dscore[hidden]{display:none}
+#wGoals{list-style:none;margin:0;padding:0}
+#wGoals li{display:flex;align-items:center;gap:12px;padding:9px 0;border-top:1px solid rgba(36,67,74,.08)}
+#wGoals .rst{flex:none;width:30px;height:30px}
+#wGoals .rst .so{fill:none;stroke:#b9c7c9;stroke-width:2;stroke-linejoin:round}
+#wGoals li>div{flex:1;min-width:0}
+#wGoals li b{display:block;font-weight:800;font-size:16px;line-height:1.2;color:#24434a}
+#wGoals li.missed b{color:#7f9396}
+#wGoals li small{display:block;font-weight:500;font-size:13px;line-height:1.25;color:#4f6f70}
+#wGoals li>.gck{flex:none;width:18px;height:18px;fill:none;stroke:#13917a;stroke-width:3;stroke-linecap:round;stroke-linejoin:round;animation:fadein .3s var(--d,1.4s) both}
+#wGoals li.learn{display:block;position:relative;padding:3px 0 3px 22px;border:0;font:500 13px/1.3 var(--hand);color:#4f6f70}
+#wGoals li.learn::before{content:"";position:absolute;left:6px;top:9px;width:6px;height:6px;border-radius:50%;background:#5fae9c}
+#wGoals li.learn:first-of-type{margin-top:4px;padding-top:9px;border-top:1px solid rgba(36,67,74,.08)}
+#wGoals li.learn:first-of-type::before{top:15px}
+.dnext,a.dnext,button.dnext{display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;min-height:64px;margin-top:14px;padding:6px 16px;box-sizing:border-box;border:0;border-radius:999px;background:linear-gradient(180deg,#9fd7c9,#5fae9c);box-shadow:0 5px 0 #3f8a7a,0 10px 20px rgba(0,0,0,.14);color:#0f3a33;font-family:var(--hand);text-decoration:none;cursor:pointer}
+.dnext:active{transform:translateY(3px);box-shadow:0 2px 0 #3f8a7a,0 6px 12px rgba(0,0,0,.14)}
+.dnext b{font-weight:800;font-size:19px;line-height:1.1}
+.dnext small{font-weight:700;font-size:12.5px;opacity:.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.dnext small:empty{display:none}
+.dlinks{display:flex;justify-content:space-around;margin-top:16px}
+.dlinks a,.dlinks button{display:flex;align-items:center;gap:5px;padding:6px 4px;border:0;background:none;box-shadow:none;font:800 14px var(--hand);color:#3f86b0;text-decoration:none;cursor:pointer}
+.dlinks button:active{transform:none;box-shadow:none;opacity:.7}
+.dlinks svg{width:16px;height:16px;fill:none;stroke:#3f86b0;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round}
+.dnext:focus-visible,.dlinks a:focus-visible,.dlinks button:focus-visible{outline:3px solid #2f7fb8;outline-offset:3px}
+@media (max-height:700px){.dsheet h2{font-size:22px;margin-bottom:6px}#wGoals li{padding:6px 0}.dnext,a.dnext,button.dnext{min-height:56px;margin-top:10px}.dlinks{margin-top:10px}}
+@media (prefers-reduced-motion:reduce){.lvdone,.dst,.sg,.dsheet,#wGoals li>.gck,.goals .goal.earn,.goals .goal.earn::after,.goals .goal.lose{animation:none}.goals .goal.earn::after{display:none}}
+/* Poster mode (LOU-288): "?poster" is just the island, for the home page's picture. No bars, no input. */
+.poster,.poster body{pointer-events:none;background:transparent}
+.poster .overlay,.poster .actions,.poster .zoom,.poster .lvb,.poster .seaptr,.poster .lvdone,.poster .sheet,.poster .mwrap,.poster .hand,.poster .callout,.poster .tcard,.poster .gpop,.poster .banner,.poster .hghost,.poster dialog{display:none!important}
+/* the Daily island's result: best for today and the streak on a second line; a toast when the share line is copied */
+.dscore span{display:block;margin-top:2px;font-weight:500;font-size:13px;color:#4f6f70}
+.dtoast{margin:10px auto 0;width:max-content;max-width:100%;padding:6px 14px;border-radius:999px;background:#24434a;color:#fff;font:700 13px var(--hand)}
+.dtoast[hidden]{display:none}
+.dtoast.in{animation:fadein .2s both}
+.poster .app{display:block;max-width:none;padding:0}
+.poster .board{position:absolute;inset:0;border-radius:0;box-shadow:none}
+/* ---------- Launch basics (LOU-293) */
+/* Colour-blind check. Nothing is told by colour alone: water carries the drop, flow a "+" and the cycle arrow, a spill its own
+   icon. Text colours keep their hue but are a little darker, so each has at least 4.5:1 on white glass and water, flow and
+   spill differ in lightness as well as hue. */
+:root{--flow:#0f7a66}
+.sum b.flw,.tut .card li.sum b.flw,.gjars b.flw{color:#0f7a66}
+.fpill,.stx small b.flw,button.nwc .gain,.callout b.flw{color:#0f7a66}
+.stx small b.wtr,.callout b.wtr{color:#2c6e99}
+.dname,.dlinks a,.dlinks button{color:#2c6e99}.dlinks svg{stroke:#2c6e99}
+#wGoals li.missed b{color:#5f7579}
+.jdrop{flex:none;width:9px;height:12px;margin-right:3px;fill:#2f7fb8;vertical-align:1px}
+.jnums .jdrop{animation:none} /* the drop beside the water number is a still icon; it had picked up the jar's falling-drop animation (same class name) */
+.jcyc{width:11px;height:11px;margin-right:2px;fill:none;stroke:currentColor;stroke-width:3;stroke-linecap:round;stroke-linejoin:round;vertical-align:-1px}
+.spi{width:13px;height:11px;margin-right:2px;fill:#b5562f;stroke:none;vertical-align:-1px}
+.spi .spl{fill:none;stroke:#b5562f;stroke-width:1.600;stroke-linecap:round}
+/* No double-tap zoom, text selection or pull-to-refresh while playing */
+html,body{overscroll-behavior:none;touch-action:manipulation;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+/* Reduced motion forced on in Settings: the same as the device asking for it */
+html.reduce *,html.reduce *::before,html.reduce *::after{animation-duration:.001s!important;animation-delay:0s!important;animation-iteration-count:1!important;transition-duration:.001s!important}
+/* The Settings sheet in a level (the list itself is drawn by settings.js) */
+#setw .msheet{max-height:86dvh;overflow:auto}
+.setx,button.setx{border:0;border-radius:999px;padding:6px 14px;background:#eef5f6;box-shadow:none;font:800 13px var(--hand);color:#24434a;cursor:pointer}
+/* "New version · Reload" */
+.uptoast{position:fixed;left:50%;top:calc(12px + env(safe-area-inset-top,0px));transform:translateX(-50%);z-index:60;display:flex;align-items:center;gap:10px;padding:7px 7px 7px 16px;border-radius:999px;background:#24434a;color:#fff;font:700 14px var(--hand);box-shadow:0 8px 24px rgba(30,60,60,.3);white-space:nowrap;pointer-events:auto}
+.uptoast[hidden]{display:none}
+.uptoast button{border:0;border-radius:999px;padding:7px 14px;background:#9fd7c9;box-shadow:none;color:#0f3a33;font:800 14px var(--hand);cursor:pointer}
+/* A phone on its side: a gentle card, since the game is laid out for portrait */
+.turncard{display:none;position:fixed;inset:0;z-index:70;place-items:center;padding:20px;background:linear-gradient(180deg,#cfe3ea,#eef4f2);font-family:var(--hand);color:#24434a;text-align:center}
+.turncard svg{display:block;width:46px;height:46px;margin:0 auto 8px;fill:none;stroke:#3f86b0;stroke-width:1.800;stroke-linecap:round;animation:turnit 2.4s ease-in-out infinite}
+.turncard b{display:block;font-weight:800;font-size:18px}.turncard span{display:block;font-size:14px;color:#4f6f70}
+@keyframes turnit{0%,20%{transform:rotate(90deg)}60%,100%{transform:none}}
+@media (orientation:landscape) and (max-height:480px) and (pointer:coarse){.turncard{display:grid}}
+.poster .turncard,.poster .uptoast{display:none!important}
+
+/* ---------- Weather test (LOU-296): an experiment behind one switch. Every rule here needs .app.wt or an element that
+   only exists when the switch is on. Flood is blue, drying is amber, and each also carries its word. */
+.app.wt .goals{display:none}
+.wtstrip{display:flex;justify-content:center;gap:5px;width:100%;margin:1px 0 0;padding:0 2px 3px;border:0;background:none;font:inherit;color:#24434a;cursor:pointer;pointer-events:auto;-webkit-tap-highlight-color:transparent}
+.wtc{flex:0 1 62px;min-width:0;display:grid;justify-items:center;gap:0;padding:3px 4px 4px;border-radius:12px;background:rgba(255,255,255,.62);box-shadow:0 3px 10px rgba(30,60,60,.1);line-height:1.1;opacity:.92}
+.wtc small{font:700 10px var(--hand);color:#4f6f70;white-space:nowrap}
+.wtc b{display:flex;align-items:center;gap:2px;font:800 13.5px var(--hand);white-space:nowrap}
+.wtc svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.wtc.flood b{color:#2c6e99}.wtc.drought b{color:#8a5200}.wtc.normal b{color:#3d5a5f}
+.wtc.next{flex-basis:70px;background:#fff;opacity:1;box-shadow:0 0 0 2px #9fb7bd,0 6px 14px rgba(30,60,60,.16)}
+.wtc.next small{color:#24434a}.wtc.next b{font-size:15px}
+.wtc.next.flood{box-shadow:0 0 0 2px #2f7fb8,0 6px 14px rgba(30,60,60,.16);background:#eaf4fb}
+.wtc.next.drought{box-shadow:0 0 0 2px #d9860a,0 6px 14px rgba(30,60,60,.16);background:#fdf3dc}
+.jamber{fill:#f3a52a;fill-opacity:.7;opacity:0;transition:transform .4s cubic-bezier(.3,1,.5,1),opacity .3s}
+.jres{opacity:0;transition:transform .4s cubic-bezier(.3,1,.5,1),opacity .3s}
+.jres path{fill:none;stroke-linecap:round}.jres .jr0{stroke:rgba(255,255,255,.9);stroke-width:3.2}.jres .jr1{stroke:#24434a;stroke-width:1.5;stroke-dasharray:3 2.6}
+.stat.jar.wtflood em .jsp{color:#2c6e99 !important}.stat.jar.wtdry em .jsp{color:#8a5200 !important}
+button.nwc .gain .wtf{color:#2c6e99}button.nwc .gain .wtd{color:#8a5200}
+.sact .scost.low{background:#fdecc8;color:#7a4a00}.sact .scost.low svg path{fill:#b9720a}
+.app.wt #shareLv{display:none}
+#rsHint.wtlow{color:#8a5200;font-weight:800}
+.app.wt .rstrip{margin-right:4px}
+.wtsheet{max-height:86dvh;overflow:auto}
+.wtsaid{margin:0 2px 8px;font:500 13px/1.3 var(--hand);color:#4f6f70}
+.wtrows{display:grid;grid-template-columns:1fr 1fr;gap:8px 10px}
+.wtrow{display:grid;gap:3px;min-width:0;font:800 13px/1.2 var(--hand);color:#24434a}
+.wtrow.wide{grid-column:1 / -1}
+.wtrow small{display:block;font:500 11.5px/1.2 var(--hand);color:#4f6f70}
+.wtrow input,.wtrow select{width:100%;min-width:0;box-sizing:border-box;height:40px;padding:0 10px;border:1.5px solid #c3d2d4;border-radius:12px;background:#fff;color:#24434a;font:700 16px var(--hand)}
+.wtrow input:focus-visible,.wtrow select:focus-visible{outline:3px solid #2f7fb8;outline-offset:1px}
+.wtbtns{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 4px}
+.wtbtns button{flex:1 1 auto;min-height:44px;padding:0 14px;border:0;border-radius:999px;background:#eef5f6;color:#24434a;font:800 14px var(--hand);cursor:pointer;box-shadow:none}
+.wtbtns #wtReset{flex:0 0 auto;color:#b5562f}
+.wtout{display:block;width:100%;box-sizing:border-box;height:110px;margin-top:8px;padding:8px 10px;border:1.5px solid #c3d2d4;border-radius:12px;font:500 12px/1.35 ui-monospace,Menlo,Consolas,monospace;color:#24434a;background:#f6fafa;resize:vertical}
+.wtout[hidden]{display:none}
+@media (prefers-reduced-motion:reduce){.jamber,.jres{transition:none}}
+html.reduce .jamber,html.reduce .jres{transition:none !important}
