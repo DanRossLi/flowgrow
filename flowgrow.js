@@ -286,22 +286,30 @@ const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches, now = () 
 let S = null, opts = [], landSig = "", wonShown = false, msgT = 0, lockMode = false, lockSel = null, lockList = [];
 const pops = {}, fx = [];
 
-// ---------- the hex projection (from play.js): pointy-top hexes built flat in world space (radius R), then projected isometrically
+// ---------- the look (Dan, Nov 20): "simple" is flat blue and green hexes with a number on each, for piloting; "painted" is the first look.
+// The page opens on the simple look. ?look=painted shows the painted one for that visit, and the menu's Look row switches and remembers.
+const LOOKS = ["simple", "painted"];
+let skin = (() => { const u = new URLSearchParams(location.search).get("look"), m = mem.get("look"); return LOOKS.includes(u) ? u : LOOKS.includes(m) ? m : "simple" })();
+const flat = () => skin === "simple";
+$("app").classList.toggle("simple", flat());
+
+// ---------- the hex projection (from play.js): pointy-top hexes built flat in world space (radius R), then projected isometrically (or, in the simple look, not at all)
 const cv = $("cv"), ctx0 = cv.getContext("2d"); let ctx = ctx0;
 const R = 46, SQ3 = Math.sqrt(3), DEPTH = 30, TAU = Math.PI * 2, HAND = "'M PLUS Rounded 1c', Nunito, sans-serif";
 const world = (x, y) => [x * SQ3 * R + (y & 1 ? SQ3 * R / 2 : 0), y * 1.5 * R];
-const proj = (wx, wy) => ({x:(wx - wy) * .7071, y:(wx + wy) * .3536});
+const proj = (wx, wy) => flat() ? {x:wx, y:wy} : {x:(wx - wy) * .7071, y:(wx + wy) * .3536};
 const iso = (x, y) => { const [wx, wy] = world(x, y); return proj(wx, wy) };
 const ORDER = []; for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) ORDER.push([x, y]);
-ORDER.sort((a, b) => iso(...a).y - iso(...b).y || iso(...a).x - iso(...b).x); // back to front
+const resort = () => ORDER.sort((a, b) => iso(...a).y - iso(...b).y || iso(...a).x - iso(...b).x); resort(); // back to front
 function hexPts(p, r = R) { const [wx, wy] = world(...p); return [0, 1, 2, 3, 4, 5].map(i => { const a = (60 * i - 90) * Math.PI / 180, q = proj(wx + r * Math.cos(a), wy + r * Math.sin(a)); return [q.x, q.y] }) }
 // edge i of a hex runs from corner i to corner i + 1 and faces neighbour (7 - i) mod 6; it faces the viewer when its normal points down the screen
 const EDGE_FACE = i => (7 - i) % 6, FRONT = [0, 1, 2, 3, 4, 5].map(i => { const a = (60 * i - 60) * Math.PI / 180; return Math.cos(a) + Math.sin(a) > .01 });
 function rpath(pts, rad = 8) { const n = pts.length, m = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
   ctx.beginPath(); ctx.moveTo(...m(pts[n - 1], pts[0])); for (let i = 0; i < n; i++) ctx.arcTo(...pts[i], ...m(pts[i], pts[(i + 1) % n]), rad); ctx.closePath() }
 const hexPath = (tiles, r = R + 1) => { const P = new Path2D(); for (const p of tiles) { hexPts(p, r).forEach(([x, y], i) => i ? P.lineTo(x, y) : P.moveTo(x, y)); P.closePath() } return P };
-const B = (() => { let a = 1e9, b = 1e9, c = -1e9, d = -1e9; for (const p of ORDER) for (const [x, y] of hexPts(p)) { a = Math.min(a, x); c = Math.max(c, x); b = Math.min(b, y); d = Math.max(d, y) }
-  return {x:a - 14, y:b - 112, w:c - a + 28, h:d - b + 112 + DEPTH + 16} })(); // room above for the tallest tree
+const bounds = () => { let a = 1e9, b = 1e9, c = -1e9, d = -1e9; for (const p of ORDER) for (const [x, y] of hexPts(p)) { a = Math.min(a, x); c = Math.max(c, x); b = Math.min(b, y); d = Math.max(d, y) }
+  return flat() ? {x:a - 12, y:b - 12, w:c - a + 24, h:d - b + 24} : {x:a - 14, y:b - 112, w:c - a + 28, h:d - b + 112 + DEPTH + 16} }; // painted: room above for the tallest tree
+let B = bounds();
 
 // ---------- paint helpers (from play.js)
 function poly(pts, fill) { ctx.beginPath(); pts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.closePath(); ctx.fillStyle = fill; ctx.fill() }
@@ -393,7 +401,7 @@ function hsprite(l) { l = Math.max(1, Math.min(l, 7)); if (sprites[l]) return sp
   const keep = ctx; ctx = c.getContext("2d"); ctx.setTransform(SPX, 0, 0, SPX, HB.ox * SPX, HB.oy * SPX); LEVEL[l](rng("lv", l)); ctx = keep; return sprites[l] = c }
 // A tile as a small picture, for the pile: a habitat's own sprite, or a stretch of river.
 const ICON = [0, [62, .6], [66, .62], [70, .72], [74, .82], [88, .85], [106, .87], [124, .88]]; // per level: the world units the picture spans, and how far down the tile's centre sits
-function tileIcon(t, px) { const c = document.createElement("canvas"), d = Math.min(devicePixelRatio || 1, 3); c.width = c.height = Math.round(px * d); c.style.width = c.style.height = px + "px";
+function tileIcon(t, px) { if (flat()) return simpleIcon(t, px); const c = document.createElement("canvas"), d = Math.min(devicePixelRatio || 1, 3); c.width = c.height = Math.round(px * d); c.style.width = c.style.height = px + "px";
   const keep = ctx; ctx = c.getContext("2d");
   if (t.k === "h") { const [span, cy] = ICON[Math.min(t.l, 7)], u = px / span * d; ctx.drawImage(hsprite(t.l), px * d / 2 - HB.ox * u, px * d * cy - HB.oy * u, HB.w * u, HB.h * u) }
   else { const u = px / 64 * d, w = t.l > 1 ? 15 : 9; ctx.setTransform(u, 0, 0, u, px * d / 2, px * d / 2);
@@ -422,7 +430,7 @@ const view = {z:null, cx:0, cy:0}, lay = {w:0, h:0, topH:0, availH:0, dpr:1, fit
 const SRC = unkey(Object.keys(fresh(CFG, 1).r)[0]);
 function resize() { const box = $("board"), w = box.clientWidth, h = box.clientHeight, dpr = Math.min(devicePixelRatio || 1, 3); if (!w || !h) return;
   const topH = $("top").offsetHeight, k = [w, h, topH, dpr].join(); if (k === lastSize) return; lastSize = k;
-  const availH = Math.max(40, h - topH), fit = Math.min(w / B.w, availH / B.h), play = Math.min(1.3, w / (CFG.tilesAcross * 89)); // a hex is about 89 world px across
+  const availH = Math.max(40, h - topH), fit = Math.min(w / B.w, availH / B.h), play = Math.min(1.3, w / (CFG.tilesAcross * (flat() ? 80 : 89))); // a hex is about 89 world px across when tilted, 80 flat
   Object.assign(lay, {w, h, topH, availH, dpr, fit, zAuto:Math.max(1, play / fit)});
   if (view.z === null) { view.z = lay.zAuto; const o = iso(...SRC); view.cx = o.x; view.cy = o.y }   // open on the source, with about tilesAcross tiles across
   cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); $("fitBtn").style.top = topH + 6 + "px"; applyView() }
@@ -434,7 +442,7 @@ function applyView() { view.z = Math.min(Math.max(5, lay.zAuto * 1.6), Math.max(
   fb.innerHTML = zoomed ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>' : '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21M10.5 7.5v6M7.5 10.5h6"/></svg>';
   fb.setAttribute("aria-label", zoomed ? "Show the whole island" : "Zoom in"); draw() }
 function tileAt(cx, cy) { const r = cv.getBoundingClientRect(), d = cv.width / r.width, x = ((cx - r.left) * d - off.x) / scale, y = ((cy - r.top) * d - off.y) / scale;
-  const a = x / .7071, b = y / .3536, wx = (a + b) / 2, wy = (b - a) / 2, ry = Math.round(wy / (1.5 * R)); let best = null, bd = 1e9;
+  const a = x / .7071, b = y / .3536, wx = flat() ? x : (a + b) / 2, wy = flat() ? y : (b - a) / 2, ry = Math.round(wy / (1.5 * R)); let best = null, bd = 1e9;
   for (let yy = ry - 1; yy <= ry + 1; yy++) { const rx = Math.round((wx - (yy & 1 ? SQ3 * R / 2 : 0)) / (SQ3 * R));
     for (let xx = rx - 1; xx <= rx + 1; xx++) { if (!inside(CFG, [xx, yy])) continue; const [qx, qy] = world(xx, yy), dd = Math.hypot(qx - wx, qy - wy); if (dd < bd) { bd = dd; best = [xx, yy] } } }
   return best && bd <= R ? best : null }
@@ -443,6 +451,7 @@ const scr = p => { const r = cv.getBoundingClientRect(), d = cv.width / r.width,
 // ---------- drawing, every frame: the sea, the island, the river, then everything standing on it from back to front
 const easeBack = k => 1 + 2.70158 * Math.pow(k - 1, 3) + 1.70158 * Math.pow(k - 1, 2);
 function draw() { if (!S || !lay.w) return; const T = now(), t = T / 1000;
+  if (flat()) return drawSimple(T, t);
   land(); ctx = ctx0; ctx.setTransform(1, 0, 0, 1, 0, 0);
   const g = ctx.createLinearGradient(0, 0, 0, cv.height); g.addColorStop(0, "#cfe3ea"); g.addColorStop(.3, "#cfe6ea"); g.addColorStop(1, "#8fbccb"); ctx.fillStyle = g; ctx.fillRect(0, 0, cv.width, cv.height);
   ctx.setTransform(scale, 0, 0, scale, off.x, off.y); ctx.drawImage(landC, B.x - LPAD, B.y - LPAD, landC.width / ps, landC.height / ps);
@@ -465,11 +474,53 @@ function draw() { if (!S || !lay.w) return; const T = now(), t = T / 1000;
   for (let i = fx.length - 1; i >= 0; i--) { const f = fx[i], k = (T - f.t0) / 900; if (k >= 1) { fx.splice(i, 1); continue } const o = iso(...f.p), y = o.y - f.up - 26 * (1 - Math.pow(1 - k, 2)); // points float up in pale gold
     ctx.globalAlpha = k < .5 ? 1 : (1 - k) / .5; ctx.font = `800 ${17 * lay.dpr / scale}px ${HAND}`; ctx.lineWidth = 3.5 * lay.dpr / scale; ctx.strokeStyle = "rgba(60,45,10,.6)"; ctx.lineJoin = "round"; ctx.strokeText(f.text, o.x, y); ctx.fillStyle = "#ffe9a8"; ctx.fillText(f.text, o.x, y); ctx.globalAlpha = 1 } }
 
+// ---------- the simple look (Dan, Nov 20: "just have basic blue tile for water and green tiles, then have a number on them, the locking
+// mechanism"). Flat hexes seen from above: blue is the river (darker once it is level 2), green is a habitat (darker with each level),
+// pale green is empty land the river reaches, off-white is land it doesn't, grey is a mountain. Every river tile and habitat carries
+// its level as a number, and a locked tile carries a padlock. The rules, the pile and the buttons are the same as in the painted look.
+const SK = {sea:"#e9f0f3", bare:"#f4f3ee", reach:"#dff1d6", mtn:"#aeb7bf", mtnInk:"#77828d", edge:"rgba(25,55,65,.28)",
+  river:[null, "#5aaeea", "#2f86d6"], hab:[null, "#a8dc84", "#86cf74", "#5fba61", "#3fa258", "#2a894c", "#1f7040", "#165830"]};
+const tileFill = t => t.k === "r" ? SK.river[Math.min(t.l, 2)] : SK.hab[Math.min(t.l, 7)];
+const numInk = t => t.k === "r" || t.l >= 4 ? "#ffffff" : "#173c2a";
+const flatHex = r => [0, 1, 2, 3, 4, 5].map(i => { const a = (60 * i - 90) * Math.PI / 180; return [r * Math.cos(a), r * Math.sin(a)] });
+function padlock(x, y, s, col) { ctx.save(); ctx.translate(x, y); ctx.scale(s, s); ctx.fillStyle = col; ctx.strokeStyle = col; ctx.lineWidth = 2.6; ctx.lineCap = "round";
+  ctx.beginPath(); ctx.arc(0, -3, 5, Math.PI, 0); ctx.stroke(); ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(-7.5, -3, 15, 11.5, 2.5); else ctx.rect(-7.5, -3, 15, 11.5); ctx.fill(); ctx.restore() }
+// A tile as a small picture, for the pile and the menu: a flat hex in its colour with its level on it.
+function simpleIcon(t, px) { const c = document.createElement("canvas"), d = Math.min(devicePixelRatio || 1, 3); c.width = c.height = Math.round(px * d); c.style.width = c.style.height = px + "px";
+  const keep = ctx; ctx = c.getContext("2d"); const u = px * d / 100; ctx.setTransform(u, 0, 0, u, px * d / 2, px * d / 2);
+  rpath(flatHex(47), 10); ctx.fillStyle = tileFill(t); ctx.fill(); ink(SK.edge, 4);
+  ctx.fillStyle = numInk(t); ctx.font = `800 ${t.l > 9 ? 44 : 58}px ${HAND}`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(String(t.l), 0, 4);
+  ctx = keep; return c }
+function drawSimple(T, t) { ctx = ctx0; ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = SK.sea; ctx.fillRect(0, 0, cv.width, cv.height);
+  ctx.setTransform(scale, 0, 0, scale, off.x, off.y);
+  const reach = reachOf(S), pu = reduce ? .5 : .5 + .5 * Math.sin(t * 3), hex = flatHex(R - 2.2);
+  for (const p of ORDER) { const k = key(p), o = iso(...p), rv = S.r[k], hl = S.h[k], code = CFG.map[p[1]][p[0]], tile = rv ? {k:"r", l:rv.l} : hl ? {k:"h", l:hl} : null;
+    const fill = code === "B" ? SK.mtn : tile ? tileFill(tile) : reach.has(k) ? SK.reach : SK.bare;
+    const a = pops[k] ? (T - pops[k]) / 280 : 1, s = a < 1 && !reduce ? .78 + .22 * easeBack(Math.max(0, a)) : 1; if (a >= 1) delete pops[k]; // a quick pop when a tile lands
+    ctx.save(); ctx.translate(o.x, o.y); ctx.scale(s, s); rpath(hex, 7); ctx.fillStyle = fill; ctx.fill(); ink(SK.edge, 1.6);
+    if (code === "B") { ctx.beginPath(); ctx.moveTo(-17, 13); ctx.lineTo(0, -17); ctx.lineTo(17, 13); ctx.closePath(); ctx.fillStyle = SK.mtnInk; ctx.fill() }
+    if (code === "T") { ctx.beginPath(); ctx.arc(0, 0, R - 9, 0, TAU); ink("rgba(255,255,255,.85)", 2.4) }   // the source has a white ring inside its tile
+    if (tile) { ctx.fillStyle = numInk(tile); ctx.font = `800 ${R * .98}px ${HAND}`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(String(tile.l), 0, 3);
+      if (k in S.lk) padlock(0, -R * .6, 1.05, numInk(tile)) }                                                  // a locked tile carries a padlock
+    ctx.restore() }
+  // what the tile in hand can do: a green outline on land it can be planted on, a gold ring on a tile it combines with (and its points),
+  // a teal ring on a river tile it widens, a dashed blue ring on land it extends the river onto
+  if (!S.over && !lockMode) for (const o of opts) { const c = iso(...o.p), ring = col => { rpath(hexPts(o.p, R - 4), 7); ink("rgba(255,255,255,.95)", 7); rpath(hexPts(o.p, R - 4), 7); ink(col, 3.4) };
+    if (o.does === "plant") { rpath(hexPts(o.p, R - 5), 7); ink(`rgba(60,150,90,${.55 + .35 * pu})`, 2.4) }
+    else if (o.does === "extend") { rpath(hexPts(o.p, R - 5), 7); ctx.fillStyle = "rgba(90,174,234,.32)"; ctx.fill(); ctx.setLineDash([7, 6]); ink("#2f86d6", 3); ctx.setLineDash([]) }
+    else if (o.does === "combine") { ring("#e0a31c"); tag(c.x, c.y - R * .62, "+" + o.pts, "#7a5a10", 15) }
+    else { ring("#1f9c86"); tag(c.x, c.y - R * .62, "wider", "#0f7a66", 14) } }
+  if (lockMode) lockHints();
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  for (let i = fx.length - 1; i >= 0; i--) { const f = fx[i], k = (T - f.t0) / 900; if (k >= 1) { fx.splice(i, 1); continue } const o = iso(...f.p), y = o.y - R * .3 - 34 * (1 - Math.pow(1 - k, 2)); // points float up
+    ctx.globalAlpha = k < .5 ? 1 : (1 - k) / .5; ctx.font = `800 ${17 * lay.dpr / scale}px ${HAND}`; ctx.lineWidth = 3.5 * lay.dpr / scale; ctx.strokeStyle = "rgba(40,60,20,.55)"; ctx.lineJoin = "round"; ctx.strokeText(f.text, o.x, y); ctx.fillStyle = "#fff3b8"; ctx.fillText(f.text, o.x, y); ctx.globalAlpha = 1 } }
+
 // Lock mode: every tile that can be locked shows how many copies it would bank. Once one is picked, each copy is marked on
 // the neighbour it comes from, and a neighbour that is too high to copy says so.
 function lockHints() { const up = k => TALL[Math.min(S.h[k] || 0, 7)] || 8;
-  const ring = (p, a, b) => { const c = iso(...p); ctx.beginPath(); ctx.ellipse(c.x, c.y + 1, 32, 16, 0, 0, 7); ink(a, 4.5); ctx.beginPath(); ctx.ellipse(c.x, c.y + 1, 32, 16, 0, 0, 7); ink(b, 1.6) };
-  const over = (k, text, col, locked) => { const c = iso(...GRID.at[k]); tag(c.x, c.y - up(k) - 14, text, col, 14, locked) };
+  const ring = flat() ? (p, a, b) => { rpath(hexPts(p, R - 4), 7); ink(a, 7); rpath(hexPts(p, R - 4), 7); ink(b, 3) }
+    : (p, a, b) => { const c = iso(...p); ctx.beginPath(); ctx.ellipse(c.x, c.y + 1, 32, 16, 0, 0, 7); ink(a, 4.5); ctx.beginPath(); ctx.ellipse(c.x, c.y + 1, 32, 16, 0, 0, 7); ink(b, 1.6) };
+  const over = (k, text, col, locked) => { const c = iso(...GRID.at[k]); tag(c.x, c.y - (flat() ? R * .62 : up(k) + 14), text, col, 14, locked) };
   if (!lockSel) { for (const L of lockList) ring(L.p, "rgba(255,244,214,.95)", "#d9a520"); for (const L of lockList) over(key(L.p), L.n + (L.n === 1 ? " copy" : " copies"), "#7a5a10"); return }
   const got = copiesOf(S, lockSel); ring(lockSel, "rgba(255,244,214,.95)", "#d9a520"); for (const k of got.from) ring(GRID.at[k], "rgba(232,255,248,.95)", "rgba(63,191,164,.9)");
   for (const k of got.from) over(k, "copy " + (k in S.h ? S.h[k] : "river"), "#0f7a66"); for (const k of got.high) over(k, "too high", "#6b7b7e"); over(key(lockSel), "lock", "#7a5a10", true) }
@@ -541,14 +592,18 @@ $("lockNo").onclick = () => { lockSel = null; sync() };
 $("endYes").onclick = () => { if (end(S)) sync() };
 $("copyLog").onclick = async () => { const e = $("dToast"); e.textContent = await copyText(logText(S)) ? "Run log copied." : "Couldn't copy on this device."; e.hidden = false; setTimeout(() => { e.hidden = true }, 2200) };
 // The menu: how to play, the seven levels, a new run, the run log and Home. Tap outside to close.
-const menu = open => { $("mConf").hidden = true; tx("mSeed", "Seed " + S.seed); $("menu").hidden = !open };
+const menu = open => { $("mConf").hidden = true; tx("mSeed", "Seed " + S.seed); tx("lookNote", flat() ? "Simple. Tap for the painted look" : "Painted. Tap for the simple look"); $("menu").hidden = !open };
 $("menuBtn").onclick = () => menu(true);
 $("menu").addEventListener("click", async e => { if (e.target === $("menu")) { menu(false); return } const b = e.target.closest("[data-m]"); if (!b) return; const k = b.dataset.m;
   if (k === "new") { $("mConf").hidden = false; return } if (k === "newNo") { $("mConf").hidden = true; return }
   if (k === "log") { const ok = await copyText(logText(S)); menu(false); say(ok ? "Run log copied." : "Couldn't copy on this device."); return }
-  menu(false); if (k === "newYes") newRun(); else if (k === "zoom") { view.z = view.z > 1.02 ? 1 : lay.zAuto; applyView() } });
+  menu(false); if (k === "newYes") newRun(); else if (k === "look") setSkin(flat() ? "painted" : "simple"); else if (k === "zoom") { view.z = view.z > 1.02 ? 1 : lay.zAuto; applyView() } });
 addEventListener("keydown", e => { if (e.key === "Escape") menu(false) });
-{ const L = $("ladder"); for (let l = 1; l <= Math.min(7, CFG.maxLevel); l++) { const d = document.createElement("div"); d.appendChild(tileEl({k:"h", l}, 40, "")); const n = document.createElement("small"); n.innerHTML = `${levelName(CFG, l)}<b>+${scoreOf(CFG, l)}</b>`; d.appendChild(n); L.appendChild(d) } }
+function fillLadder() { const L = $("ladder"); L.textContent = ""; for (let l = 1; l <= Math.min(7, CFG.maxLevel); l++) { const d = document.createElement("div"); d.appendChild(tileEl({k:"h", l}, 40, "")); const n = document.createElement("small"); n.innerHTML = `${levelName(CFG, l)}<b>+${scoreOf(CFG, l)}</b>`; d.appendChild(n); L.appendChild(d) } }
+fillLadder();
+// Switch the look and remember it. The camera starts again on the source, since the two looks have different bounds.
+function setSkin(v) { if (!LOOKS.includes(v) || v === skin) return; skin = v; mem.set("look", v); $("app").classList.toggle("simple", flat());
+  B = bounds(); resort(); landKey = ""; lastSize = ""; view.z = null; fillLadder(); resize(); sync() }
 
 addEventListener("resize", resize);
 if (window.ResizeObserver) { const ro = new ResizeObserver(resize); ro.observe($("board")); ro.observe($("top")) }
@@ -558,6 +613,6 @@ resize(); if (document.fonts && document.fonts.ready) document.fonts.ready.then(
 if (reduce) draw(); else loop();
 if ("serviceWorker" in navigator) addEventListener("load", () => navigator.serviceWorker.register(SW_URL).catch(() => {}));
 // for checking the page from a script
-Object.assign(G.Flowgrow, {run:() => S, tap, undo, lockMode:() => lockMode, discard:() => $("discardBtn").click(), newRun, scr, options:() => opts,
+Object.assign(G.Flowgrow, {run:() => S, tap, undo, lockMode:() => lockMode, discard:() => $("discardBtn").click(), newRun, scr, options:() => opts, skin:() => skin, setSkin,
   show(h, r) { S.h = h; if (r) S.r = r; S.top = Math.max(0, ...Object.values(h)); sync() }, look(p, z) { const o = iso(...p); view.cx = o.x; view.cy = o.y; if (z) view.z = z; applyView() }});
 })();

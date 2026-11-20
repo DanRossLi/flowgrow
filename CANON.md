@@ -62,6 +62,7 @@ Also from Dan: "take the existing hexagon and aesthetics", and "this will be a w
 ### Instructions from Dan (Nov 20)
 
 - **Own repo** (Dan: "make a new repo, call it "flowgrow" this way it doesn't conflict with flowtile (old). move the flowgrow stuff there"): Flowgrow lives in this repo, `DanRossLi/flowgrow`. Flow Tile's repo (`DanRossLi/flowtile`, "flowtile (old)") no longer holds any of it. What the move did is under "The move to its own repo".
+- **Simple look for piloting** (Dan: "to pilot/test create a simplier version of the game graphically and just have basic blue tile for water and green tiles, then have a number on them, the locking mechanism. this will let us test the basics"): a second look for the same game, built the same day. See "The simple look, as built". The painted look stays.
 
 ### The move to its own repo (Nov 20)
 
@@ -70,6 +71,12 @@ Also from Dan: "take the existing hexagon and aesthetics", and "this will be a w
 - **Nothing is shared with Flow Tile any more:** this repo has its own `manifest.webmanifest`, its own `sw.js` (caches named `flowgrow-vN`; it only ever deletes caches that start with `flowgrow-`) and its own saved data (keys start with `flowgrow.`: the best score and the run in progress). Both sites share one address (`danrossli.github.io`), which is why the names matter. On first load the game carries across a best score and a run in progress saved before the move (`flowtile.flowgrow.`), once.
 - **What Flow Tile keeps:** `/flowgrow/` and `/city-test/` there are pages that point on to the new site. Its CANON.md marks its Flowgrow section as moved and keeps it as the record. Its README and Test maps line no longer list Flowgrow.
 - **History:** this repo starts with one commit, the Flowgrow files as they were in Flow Tile at `7f58a99`, with only the changes the move needs (paths, no links to Flow Tile's home, the saved-data names). The earlier history (`5c6477f`, `efcac91`, `b4518f9`, `7f58a99`) stays in Flow Tile's git log.
+
+### The simple look, as built (Nov 20)
+
+- **What it shows:** flat hexes seen from above. A **blue** tile is a river tile (the source too) and a **green** tile is a habitat, and each carries its level as a **number**. A river tile is level 1, or the darker blue level 2; habitat levels 1 to 7 run from light to dark green. **The locking mechanism is all there:** the Lock button, lock mode with the copies each tile would bank, the confirm card, a padlock on every locked tile, and the banked copies at the back of the pile, drawn in the same blue and green.
+- **Everything else is the same game:** the rules, the pile, the buttons, scoring, undo, saving and the seeded piles. Part 1 of `flowgrow.js` (the rules) was not edited. Only the picture of the island, the pictures of tiles in the pile and the menu's seven levels, the tap-to-tile maths and the camera's bounds know about the look. The painted look is unchanged and is still in the game.
+- **Choosing a look:** the page opens on the simple look. The menu's Look row switches to the painted look and back, in the middle of a run, and remembers the choice on the device; `?look=painted` or `?look=simple` picks one for a single visit.
 
 ### What is built (LOU-298)
 
@@ -114,6 +121,7 @@ Also from Dan: "take the existing hexagon and aesthetics", and "this will be a w
 - **Opening view:** centred on the source, with about 5 tiles across a phone.
 - **Score is called Score,** not Life as on the Weather test.
 - **The move** (chosen Nov 20 so the move could be done, not set by Dan): the page's title is just "Flowgrow"; the Home links to Flow Tile's home page are gone (Flowgrow has no home page of its own yet); the app icons are Flow Tile's drop, as stand-ins; `play.css` is copied whole and not trimmed; Flow Tile keeps pointer pages for `/flowgrow/` and `/city-test/`; the old history was not carried across.
+- **The simple look** (chosen Nov 20, not set by Dan): it is the default look; the island is flat from above instead of tilted; river tiles carry their level (1 or 2) as well as habitats; empty land is pale green where the river reaches and off-white where it doesn't; mountains are grey with a triangle; the source has a white ring; the colours, and the gold, teal and dashed-blue rings that mark what the tile in hand can do, are placeholders.
 
 ### Not built yet
 

@@ -57,3 +57,7 @@
 .fgladder small{display:block;font:700 9.5px/1.15 var(--hand);color:#173c2a;text-align:center}
 .fgladder small b{display:block;font-weight:800;font-size:11px;color:#0f3a33}
 .fg .dlinks{justify-content:space-around}
+
+/* the simple look (Dan, Nov 20): the number is on the tile itself, so the level badge on the pile's tiles isn't needed, and the board is flat and clean */
+.fg.simple .fgl{display:none}
+.fg.simple .board::after{display:none}

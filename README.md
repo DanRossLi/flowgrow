@@ -16,6 +16,13 @@ Plain HTML/JS, no build step, no framework, and nothing loaded from other sites.
 - **Locking** (LOU-299): every 10 tiles you place earns a lock, and you can hold one. Tap **Lock**, tap a tile and confirm. Each neighbour at that tile's level or below is copied to the back of your pile, and the locked tile can't grow any more. The run ends when the pile is empty and no lock you hold would bank a copy.
 - Every number is in `flowgrow.config.js`. Add `?seed=123` to the address to replay the same pile.
 
+## Two looks
+
+- **Simple** (the page opens on it, for piloting): flat hexes seen from above. **Blue** tiles are the river (a darker blue once it is level 2, the widest) and **green** tiles are habitats (darker with each level). Every one carries its level as a **number**. Empty land the river reaches is pale green, land it doesn't reach is off-white, mountains are grey, and the source has a white ring. A locked tile carries a padlock. A gold ring marks a tile you can combine with (and its points), a teal ring a river tile you can widen, and a dashed blue ring land the river can extend onto.
+- **Painted:** the first look, a hand-painted tilted island with seven kinds of habitat.
+
+The rules, the pile, locking and the saved run are the same in both. Switch with **Look** in the menu (it remembers your choice, and you can switch in the middle of a run), or add `?look=simple` or `?look=painted` to the address for one visit.
+
 ## Run it
 
 Open `index.html` in a browser, or serve the folder to try the service worker too:
