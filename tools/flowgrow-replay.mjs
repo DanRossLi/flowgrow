@@ -46,6 +46,7 @@ try {
   for (const m of body) { const before = await b.ev("Flowgrow.run().moves.length");
     if (m.a === "p") await b.ev(`Flowgrow.tap([${m.x}, ${m.y}])`); else if (m.a === "d") await b.ev("document.getElementById('discardBtn').click()");
     else if (m.a === "l") { await b.ev(`Flowgrow.tap([${m.x}, ${m.y}])`); await b.ev("document.getElementById('lockYes').click()") }
+    else if (m.a === "u") await b.ev(`document.querySelector('#pickq [data-f="${m.f}"]').click()`);
     n++; if ((await b.ev("Flowgrow.run().moves.length")) !== before + 1) throw new Error(`The page didn't take move ${n} (${JSON.stringify(m)}). Its rules are not the ones this run was found under.`) }
   const over = await b.ev("Flowgrow.run().over");
   if (out) { fs.mkdirSync(out, {recursive: true}); await b.ev("document.getElementById('fitBtn').click()"); await sleep(1200); await b.ev("Flowgrow.look([6, 4])"); await sleep(400); await b.shot(path.join(out, "island.png")) }

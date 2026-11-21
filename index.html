@@ -33,6 +33,7 @@
     </div>
     <button type="button" class="icon sq zoom" id="fitBtn" aria-label="Show the whole island"></button>
     <div class="overlay bottom" id="bottom">
+      <div class="pickq" id="pickq" role="alertdialog" aria-label="Choose an upgrade" hidden><b>Choose an upgrade</b><div class="pickrow"><button type="button" id="pick0"></button><button type="button" id="pick1"></button></div></div>
       <div class="stuck seaq" id="lockq" role="alertdialog" aria-label="Lock this tile?" hidden><span><b id="lockT"></b><small id="lockS"></small></span><div><button type="button" id="lockYes">Lock</button><button type="button" id="lockNo">Cancel</button></div></div>
       <div class="stuck seaq" id="endq" role="status" hidden><span><b>The pile is empty</b><small>Lock a tile for more copies, or end the run.</small></span><div><button type="button" id="endYes">End run</button></div></div>
       <div class="msg fade" id="msg" role="status"></div>

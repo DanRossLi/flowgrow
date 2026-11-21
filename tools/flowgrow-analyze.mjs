@@ -40,14 +40,14 @@ if (CFG.marshNeedsRiver || CFG.prairieSpreads) { const T = R.fresh(CFG, run.seed
     if (t && t.k === "h" && (t.b === "m" || t.b === "p")) { const pl = R.options(T, mv.i).filter(x => x.does === "plant"), reach = R.reachOf(T);
       if (t.b === "m") { m.marshTurns++; if (!pl.length) m.marshNoBank++; if (mv.a === "d") m.marshDiscards++ }
       else { m.prairieTurns++; const beyond = pl.filter(x => !reach.has(R.key(x.p))).map(x => R.key(x.p)); m.spreadOffered += beyond.length; if (mv.a === "p" && beyond.includes(mv.x + "," + mv.y)) m.spreadPlanted++ } }
-    mv.a === "p" ? R.place(T, mv.i, [mv.x, mv.y]) : mv.a === "d" ? R.discard(T, mv.i) : mv.a === "l" ? R.lock(T, [mv.x, mv.y]) : R.end(T) }
+    mv.a === "p" ? R.place(T, mv.i, [mv.x, mv.y]) : mv.a === "d" ? R.discard(T, mv.i) : mv.a === "l" ? R.lock(T, [mv.x, mv.y]) : mv.a === "u" ? R.pick(T, mv.x + "," + mv.y, mv.f) : R.end(T) }
   const land = CFG.map.join("").split("_").length - 1, empty = land - Object.keys(S.h).length - (Object.keys(S.r).length - 1);
   console.log(`marsh: ${m.marshTurns} marsh tiles in hand, nothing to plant on in ${m.marshNoBank} of those turns, ${m.marshDiscards} discarded · prairie: ${m.prairieTurns} in hand, ${m.spreadPlanted} planted beyond the river's reach, ${m.prairieTurns ? (m.spreadOffered / m.prairieTurns).toFixed(1) : 0} extra tiles offered per prairie tile in hand · island: ${empty} of ${land} land cells empty at the end`) }
 // What trees did in this run (LOU-302; replayed move by move): tree tiles in hand, how many had no legal target and how many were discarded, and what the overgrows took.
 if (CFG.treeShare > 0 || S.log.some(e => e.t && e.t.b === "t")) { const T = R.fresh(CFG, run.seed), m = {turns:0, copies:0, none:0, discarded:0, grew:{"":0, p:0, m:0}, pts:0, plain:0};
   for (const mv of run.moves) { const t = (mv.a === "p" || mv.a === "d") && T.q[mv.i], tree = t && t.k === "h" && t.b === "t";
     if (tree) { m.turns++; if (t.c) m.copies++; if (!R.options(T, mv.i).length) m.none++; if (mv.a === "d") m.discarded++ }
-    const r = mv.a === "p" ? R.place(T, mv.i, [mv.x, mv.y]) : mv.a === "d" ? R.discard(T, mv.i) : mv.a === "l" ? R.lock(T, [mv.x, mv.y]) : R.end(T);
+    const r = mv.a === "p" ? R.place(T, mv.i, [mv.x, mv.y]) : mv.a === "d" ? R.discard(T, mv.i) : mv.a === "l" ? R.lock(T, [mv.x, mv.y]) : mv.a === "u" ? R.pick(T, mv.x + "," + mv.y, mv.f) : R.end(T);
     if (tree && mv.a === "p") { if (r.does === "overgrow") { m.grew[r.from]++; m.pts += r.pts } else m.plain++ } }
   const grew = m.grew[""] + m.grew.p + m.grew.m;
   console.log(`trees: ${m.turns} tree tiles in hand (${m.copies} copies), ${m.none} with no legal target, ${m.discarded} discarded · ${grew} overgrows (${m.grew[""]} green, ${m.grew.p} prairie, ${m.grew.m} marsh) for ${m.pts} points · ${m.plain} tree-on-tree combines · ${Object.values(S.hb).filter(b => b === "t").length} tree habitats at the end`) }
@@ -56,7 +56,7 @@ if (CFG.upgradeLevel > 0) { const T = R.fresh(CFG, run.seed), up = CFG.upgradeLe
   for (const mv of run.moves) { const t = (mv.a === "p" || mv.a === "d") && T.q[mv.i], marsh = t && t.k === "h" && t.b === "m";
     if (marsh) { m.inHand++; const pl = R.options(T, mv.i).filter(x => x.does === "plant"), via = CFG.marshNeedsRiver ? pl.filter(x => !R.nbrs(CFG, x.p).some(q => R.key(q) in T.r)) : [];
       if (via.length && via.length === pl.length) m.rescued++; if (mv.a === "p" && !((mv.x + "," + mv.y) in T.h)) { m.planted++; if (via.some(x => R.key(x.p) === mv.x + "," + mv.y)) m.viaReed++ } }
-    const r = mv.a === "p" ? R.place(T, mv.i, [mv.x, mv.y]) : mv.a === "d" ? R.discard(T, mv.i) : mv.a === "l" ? R.lock(T, [mv.x, mv.y]) : R.end(T);
+    const r = mv.a === "p" ? R.place(T, mv.i, [mv.x, mv.y]) : mv.a === "d" ? R.discard(T, mv.i) : mv.a === "l" ? R.lock(T, [mv.x, mv.y]) : mv.a === "u" ? R.pick(T, mv.x + "," + mv.y, mv.f) : R.end(T);
     if (marsh && mv.a === "p" && r && ((r.does === "combine" && r.l === up) || (r.does === "plant" && r.l >= up))) m.reached++ }
   console.log(`reed beds: ${m.reached} marsh tiles reached level ${up}, ${Object.keys(S.h).filter(k => S.hb[k] === "m" && S.h[k] >= up).length} reed beds on the island at the end · ${m.planted} marsh planted, ${m.viaReed} of them only because of a reed bed (${m.rescued} marsh tiles had no other place to plant) · ${m.inHand} marsh tiles in hand`) }
 const W = CFG.map[0].length, H = CFG.map.length, rows = [];

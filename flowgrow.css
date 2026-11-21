@@ -49,6 +49,17 @@
 @media (max-width:379px){.fgt{width:32px;height:32px}.fgt.now{width:54px;height:54px}.fgtray{gap:6px}.fgq{gap:5px}.fgstack{width:50px}.fgstack i{left:7px}
   .fgw{display:none}.fg button.fgbw{width:44px;padding:0;justify-content:center}}
 
+/* the pick (LOU-305): a small card above the pile with one large button for each of the two upgrades */
+.pickq{pointer-events:auto;display:grid;gap:8px;margin:0 2px 8px;padding:10px 12px 12px;border-radius:18px;background:rgba(255,255,255,.96);box-shadow:var(--soft);color:#24434a;font-family:var(--hand);animation:msgpop .3s cubic-bezier(.3,1.5,.5,1)}
+.pickq[hidden]{display:none}
+.pickq>b{font-weight:800;font-size:15px}
+.pickrow{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.fg .pickq button{display:grid;grid-template-columns:26px 1fr;column-gap:8px;row-gap:2px;align-items:center;align-content:start;text-align:left;min-height:70px;padding:9px 10px;border:0;border-radius:14px;background:#eef4f2;color:#24434a;box-shadow:none;font:800 15px/1.15 var(--hand)}
+.fg .pickq button canvas{position:static;display:block;grid-column:1;grid-row:1 / span 2;align-self:start}
+.fg .pickq button b{grid-column:2;grid-row:1;font-weight:800}
+.fg .pickq button small{grid-column:2;grid-row:2;display:block;font:500 12px/1.25 var(--hand);color:#4f6f70}
+.fg .pickq button:active{background:#d9efe7}
+
 /* the menu: how to play, and the levels side by side */
 .fghow{margin:0 4px 10px;font:500 14px/1.4 var(--hand);color:#24434a}
 .fgladder{display:grid;grid-template-columns:repeat(auto-fill,minmax(52px,1fr));gap:8px 4px;margin:0 0 10px;padding:10px 4px 8px;border-radius:16px;background:linear-gradient(180deg,#a9d98e,#86c46f)}

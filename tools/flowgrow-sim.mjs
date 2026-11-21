@@ -34,6 +34,7 @@ function bestLock(S) { let best = null, n = -1;
   for (const k of [...Object.keys(S.h), ...Object.keys(S.r)]) { const p = R.unkey(k); if (!R.lockable(S, p)) continue; const c = R.copiesOf(S, p).copies.length; if (c > n) { n = c; best = p } }
   return best ? {p:best, n} : null }
 function turn(S) { const c = S.cfg;
+  if (S.pend.length) { const k = S.pend[0]; return R.pick(S, k, R.PICKS[S.hb[k] || ""][0]) }   // a pick to make (LOU-305): the fixed first choice
   if (c.lockEnabled) { const b = R.hasLock(S) ? bestLock(S) : null;
     if (!S.q.length) return b && b.n > 0 ? R.lock(S, b.p) : R.end(S);                            // the pile is empty: lock while that banks a copy
     if (b && b.n > 0 && c.lockEvery > 0 && S.toLock === c.lockEvery - 1) return R.lock(S, b.p) } // use each lock just before the next one arrives
@@ -55,7 +56,7 @@ function tally(m, pre, res) { if (pre.b === "t") { m.treeTurns++; if (pre.copy) 
 // One whole run. Returns the run, how many turns were tight, and what went wrong (if anything).
 function play(cfg, seed) { const out = {S:null, tight:0, error:"", m:{marshTurns:0, marshNoBank:0, prairieTurns:0, spreadOffered:0, spreadPlanted:0, treeTurns:0, treeCopyTurns:0, treeNoTarget:0, marshPlanted:0, reedPlanted:0, reedRescued:0}};
   try { const S = out.S = R.fresh(cfg, seed), cap = 6000; let n = 0;
-    while (!S.over) { if (++n > cap) { out.error = "stalled"; break } if (S.q.length && R.plantable(S).length <= 2) out.tight++; const pre = S.q.length ? watch(S) : null, res = turn(S); if (!res) { out.error = "a move was refused"; break } if (pre) tally(out.m, pre, res) }
+    while (!S.over) { if (++n > cap) { out.error = "stalled"; break } if (S.q.length && R.plantable(S).length <= 2) out.tight++; const pre = S.q.length && !S.pend.length ? watch(S) : null, res = turn(S); if (!res) { out.error = "a move was refused"; break } if (pre) tally(out.m, pre, res) }
     if (!out.error && !same(S, R.replay(cfg, seed, S.moves))) out.error = "did not rebuild from its seed and moves";
   } catch (e) { out.error = "crashed: " + (e && e.message || e) }
   return out }
@@ -555,11 +556,11 @@ function checks() { let n = 0; const fails = [];
   for (const [name, mode] of [["refuse", RF], ["downgrade", DG]]) { let wrong = 0, via = 0, marshPlanted = 0, ends = 0, replays = 0, sums = 0, made = null, madeCfg = null;   // six seeded runs of random legal moves, upgrade level 2 so that a random run makes reed beds: two marsh tiles of level 1 combine into one
     for (const sd of [21, 22, 23, 24, 25, 26]) { const cfg = cfgWith({...mode, ...MR, upgradeLevel:2, marshShare:.6, prairieShare:.2, treeShare:.1, opening:["marsh 1", "marsh 1", "habitat 1", "river", "marsh 1"], lockEvery:0, stackSize:40, riverShare:.1}), S = R.fresh(cfg, sd);
       let z = 17 + sd, guard = 0; const rn = () => (z = (z * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
-      while (!S.over && guard++ < 4000) { if (!S.q.length) { const lk = [...Object.keys(S.h), ...Object.keys(S.r)].map(R.unkey).find(p => R.lockable(S, p) && R.copiesOf(S, p).copies.length); if (!lk) { R.end(S); break } R.lock(S, lk); continue }
+      while (!S.over && guard++ < 4000) { if (S.pend.length) { const k = S.pend[0], ch = R.PICKS[S.hb[k] || ""]; R.pick(S, k, ch[Math.floor(rn() * ch.length)]); continue } if (!S.q.length) { const lk = [...Object.keys(S.h), ...Object.keys(S.r)].map(R.unkey).find(p => R.lockable(S, p) && R.copiesOf(S, p).copies.length); if (!lk) { R.end(S); break } R.lock(S, lk); continue }
         const o = R.options(S, 0); if (!o.length || rn() < .08) { R.discard(S, 0); continue } R.place(S, 0, o[Math.floor(rn() * o.length)].p) }
       const T = R.fresh(cfg, sd);   // every marsh planting touches a river tile or a reed bed at the moment it is made
       for (const m of S.moves) { if (m.a === "p") { const t = T.q[m.i], k = m.x + "," + m.y; if (t.k === "h" && t.b === "m" && !(k in T.h)) { marshPlanted++; const nb = R.nbrs(cfg, [m.x, m.y]).map(R.key), river = nb.some(q => q in T.r), reed = nb.some(q => T.hb[q] === "m" && T.h[q] >= 2); if (!river && !reed) wrong++; if (!river && reed) via++ } }
-        m.a === "p" ? R.place(T, m.i, [m.x, m.y]) : m.a === "d" ? R.discard(T, m.i) : m.a === "l" ? R.lock(T, [m.x, m.y]) : R.end(T) }
+        m.a === "p" ? R.place(T, m.i, [m.x, m.y]) : m.a === "d" ? R.discard(T, m.i) : m.a === "l" ? R.lock(T, [m.x, m.y]) : m.a === "u" ? R.pick(T, m.x + "," + m.y, m.f) : R.end(T) }
       if (S.over && guard < 4000) ends++; if (same(S, R.replay(cfg, sd, S.moves))) replays++; if (S.planted + S.combined + S.extended + S.widened + S.discarded === S.used) sums++;
       const e = !made && S.log.find(e => e.did === "combine" && e.t.b === "m" && e.l === 2); if (e) made = {e, sd, moves:S.moves}, madeCfg = cfg }
     ok(`a whole run of random legal moves with reed beds (${name}): six runs end and replay from their seeds, every marsh planting touched a river tile or a reed bed, and some touched only a reed bed`, ends === 6 && replays === 6 && sums === 6 && wrong === 0 && marshPlanted > 0 && via > 0);
@@ -567,6 +568,77 @@ function checks() { let n = 0; const fails = [];
     ok(`reed bed (${name}): undo steps back over the move that made one (nothing was stored: it was only the tile's level), and a reload brings it back`, !!made && R.reedBedAt(R.replay(madeCfg, made.sd, made.moves.slice(0, made.e.n)), k) && !R.reedBedAt(R.replay(madeCfg, made.sd, made.moves.slice(0, made.e.n - 1)), k) && same(R.replay(madeCfg, made.sd, made.moves.slice(0, made.e.n)), R.replay(madeCfg, made.sd, made.moves.slice(0, made.e.n)))) }
   for (const [name, mode] of [["refuse", RF], ["downgrade", DG]]) { const bad = []; let via = 0; for (let s = 1; s <= 8; s++) { const a = play(cfgWith({...mode, ...MR, upgradeLevel:2, marshShare:.6, lockEvery:0, stackSize:20}), s); if (a.error || !a.S.over) bad.push(s); else via += a.m.reedPlanted }
     ok(`the simple player ends every run with reed beds (${name}), and uses them`, bad.length === 0 && via > 0) }
+
+  // ----- the pick, and the prairie's steppe and meadow (LOU-305; Dan: "At level 4 one of the upgrades can be "spreader", where every time that tile levels up, it plants a free level 1 prairie adjacent to
+  // it until no more slots available", "Also instead of spreader call the ability steppe", "instead of Bloom, make it "meadow" and it adds the score of neighboring marsh and trees as a multiplier").
+  // When a prairie habitat first reaches the upgrade level the player picks Steppe or Meadow: a move of its own, stored on the tile. Steppe: each level-up plants a free level 1 prairie beside it. Meadow: each
+  // level-up scores times 1 + the marsh and trees beside it, up to meadowMax. REF has upgradeLevel 0, so every check above is about the game as it was. Real runs use upgrade level 2 so that two taps reach it.
+  const PK = {upgradeLevel:4}, STEP = ["8,5", "9,6", "8,7", "7,7", "7,6", "7,5"], C6 = [8, 6];   // the six tiles round (8,6), clockwise from the top right
+  const prairies = (S, ks, f) => { for (const k of ks) { S.h[k] = S.h[k] || 1; S.hb[k] = "p"; if (f) S.hf[k] = f } };
+  for (const [name, mode] of [["refuse", RF], ["downgrade", DG]]) {
+    { const cfg = cfgWith({...mode, upgradeLevel:2, opening:["prairie 1", "prairie 1", "habitat 1", "habitat 1"], stackSize:20, lockEvery:0}), S = R.fresh(cfg, 7); R.place(S, 0, E); const a = R.place(S, 0, E);
+      ok(`pick (${name}): a prairie tile that reaches the upgrade level has a pick to make, and nothing else can be done until it is made`,
+        a && a.does === "combine" && same(S.pend, ["7,4"]) && !S.hf["7,4"] && R.options(S, 0).length === 0 && R.place(S, 0, W) === null && R.discard(S, 0) === null && R.why(S, 0, W) === "Choose an upgrade first." && !S.over && !R.lockable(S, E) && R.end(S) === null && same(R.PICKS.p, ["steppe", "meadow"]));
+      ok(`pick (${name}): only one of the kind's upgrades can be picked, and only for the first tile waiting`, R.pick(S, "7,4", "roots") === null && R.pick(S, "7,4", "reed") === null && R.pick(S, "6,3", "steppe") === null && S.pend.length === 1);
+      const m0 = S.moves.length, b = R.pick(S, "7,4", "steppe");
+      ok(`pick (${name}): choosing is a move of its own: stored on the tile, nothing planted and nothing scored, and the run goes on`, b && b.f === "steppe" && S.hf["7,4"] === "steppe" && !S.pend.length && S.moves.length === m0 + 1 && S.moves[m0].a === "u" && S.free === 0 && S.score === 4 && R.upgradeOf(cfg, {k:"h", l:2, b:"p", f:"steppe"}) === "steppe" && R.options(S, 0).length > 0 && /Picked Steppe for the prairie tile at 7,4/.test(R.logText(S)));
+      const back = R.replay(cfg, 7, S.moves.slice(0, S.moves.length - R.undoCount(S.moves))), wait = R.replay(cfg, 7, S.moves.slice(0, -1));
+      ok(`pick (${name}): undo takes back the pick and the combine together, a pick still pending goes with the combine alone, and a reload brings the pick back`, R.undoCount(S.moves) === 2 && back.moves.length === 1 && back.h["7,4"] === 1 && !back.pend.length && R.undoCount(S.moves.slice(0, -1)) === 1 && same(wait.pend, ["7,4"]) && same(R.replay(cfg, 7, S.moves), S)) }
+    { const S = setup({"8,6":2, "9,6":3}, {}, {...mode, upgradeLevel:2, lockEvery:0, stackSize:1, queueShown:0}); prairies(S, ["8,6"], "steppe"); prairies(S, ["9,6"], "meadow"); R.discard(S, 0); R.lock(S, [9, 6]);   // the level 3 meadow copies the level 2 steppe beside it
+      const copy = S.q[0];
+      ok(`pick (${name}): a lock copy of a tile with an upgrade keeps it`, same(copy, {k:"h", l:2, c:1, b:"p", f:"steppe"}) && R.upgradeOf(S.cfg, copy) === "steppe");
+      const a = R.place(S, 0, [8, 6]);
+      ok(`pick (${name}): the copy combined onto the steppe offers no pick, and the steppe fires: a level 3 steppe plants a free prairie`, a && a.does === "combine" && !S.pend.length && S.hf["8,6"] === "steppe" && S.h["8,6"] === 3 && a.free.length === 1 && S.h["8,5"] === 1 && S.hb["8,5"] === "p") }
+    { const S = setup({"9,6":3}, {}, {...mode, bareGroundMaxLevel:24, upgradeLevel:2, lockEvery:0, stackSize:1, queueShown:0}); prairies(S, ["9,6"], "steppe"); S.h["8,6"] = 2; S.hb["8,6"] = "p"; S.hf["8,6"] = "meadow"; S.top = 3; R.discard(S, 0); R.lock(S, [9, 6]);
+      const a = R.place(S, 0, [5, 4]);   // the level 2 meadow copy, planted on bare ground where any level plants
+      ok(`pick (${name}): a copy that lands at the upgrade level keeps its upgrade and offers no pick (and one that lands as level 1 has none)`, a && a.l === 2 && S.hf["5,4"] === "meadow" && !S.pend.length);
+      const T = setup({"9,6":3}, {}, {...DG, upgradeLevel:2, lockEvery:0, stackSize:1, queueShown:0}); prairies(T, ["9,6"], "steppe"); T.h["8,6"] = 2; T.hb["8,6"] = "p"; T.hf["8,6"] = "meadow"; T.top = 3; R.discard(T, 0); R.lock(T, [9, 6]); const d = R.place(T, 0, [5, 4]);
+      if (name === "downgrade") ok("pick (downgrade): the same copy planted as level 1 has no upgrade and no pick", d && d.l === 1 && !("5,4" in T.hf) && !T.pend.length) }
+    { const S = setup({"6,2":2, "8,6":2, "3,5":2}, {}, {...mode, upgradeLevel:2, lockEnabled:false, stackSize:1, queueShown:0}); prairies(S, ["8,6", "6,2", "3,5"]); R.needPick(S, "8,6"); R.needPick(S, "6,2"); R.needPick(S, "3,5");
+      ok(`pick (${name}): several picks at once are asked one at a time, in reading order (row, then column), and all are made before the next move`, same(S.pend, ["6,2", "3,5", "8,6"]) && R.pick(S, "8,6", "meadow") === null && R.options(S, 0).length === 0);
+      R.pick(S, "6,2", "steppe"); R.pick(S, "3,5", "meadow"); const mid = R.options(S, 0).length === 0; S.q.length = 0; R.fill(S);
+      ok(`pick (${name}): the run doesn't end with the pile empty while a pick is waiting, and ends once it is made`, mid && same(S.pend, ["8,6"]) && !S.over && R.pick(S, "8,6", "steppe") && S.over && S.hf["6,2"] === "steppe" && S.hf["3,5"] === "meadow" && S.hf["8,6"] === "steppe") }
+    { const S = setup({"8,6":4}, {}, {...mode, ...PK, opening:["prairie 4", "prairie 5", "prairie 6"]}); prairies(S, ["8,6"], "steppe");
+      ok(`steppe (${name}): the free tiles go to the first free tile clockwise from the top right, and never onto a mountain, a river tile or an occupied tile`, same(R.freeSpots(S, "8,6"), STEP) && same(R.freeSpots(setup({"5,5":1, "6,6":1, "5,7":1, "4,5":1}, {}, {...mode, ...PK}), "5,6"), ["4,7"]) && same(R.freeSpots(setup({"7,4":1, "7,5":1, "7,6":1, "6,6":1, "5,5":1}, {}, {...mode, ...PK}), "6,5"), []));
+      const a = R.place(S, 0, C6);
+      ok(`steppe (${name}): a level-up plants one free level 1 prairie beside it, scores 1 for it, and uses no tile`, a && a.does === "combine" && a.l === 5 && a.free.length === 1 && S.h["8,5"] === 1 && S.hb["8,5"] === "p" && !S.hf["8,5"] && a.pts === 16 && S.score === 16 && S.free === 1 && S.planted === 0 && S.used === 1 && /Steppe planted 1 free/.test(R.logText(S)));
+      const b = R.place(S, 0, C6);
+      ok(`steppe (${name}): the next level-up plants the next one, and a free tile plays as usual`, b && b.free[0] === "9,6" && S.h["9,6"] === 1 && S.free === 2 && S.score === 16 + 21 + 1) }
+    { const S = setup({"8,6":4}, {}, {...mode, ...PK, opening:["prairie 4"]}); prairies(S, ["8,6"], "steppe"); for (const k of STEP) { S.h[k] = 1 } const a = R.place(S, 0, C6);
+      ok(`steppe (${name}): with no free tile beside it nothing is planted, and the level-up still scores`, a && a.free.length === 0 && S.free === 0 && a.pts === 15 && S.h["8,6"] === 5) }
+    { const S = setup({"8,6":4}, {}, {...mode, ...PK, steppePerLevel:6, opening:["prairie 4"]}), T = setup({"8,6":4}, {}, {...mode, ...PK, steppePerLevel:0, opening:["prairie 4"]}); prairies(S, ["8,6"], "steppe"); prairies(T, ["8,6"], "steppe"); const a = R.place(S, 0, C6), z = R.place(T, 0, C6);
+      ok(`steppe (${name}): steppePerLevel 6 fills every free slot, and 0 plants none`, a.free.length === 6 && same(a.free, STEP) && S.free === 6 && a.pts === 15 + 6 && z.free.length === 0 && T.free === 0 && z.pts === 15) }
+    { const S = setup({"8,6":4, "9,6":1, "8,5":2, "7,6":1, "7,5":1, "8,7":1}, {"7,7":1}, {...mode, ...PK, opening:["prairie 4", "prairie 4", "prairie 4", "prairie 4", "prairie 4"]}); prairies(S, ["8,6"], "meadow"); S.hb["9,6"] = "m"; S.hb["8,5"] = "t"; S.lk["8,5"] = 1; S.hb["7,5"] = "p"; S.hb["8,7"] = "m";   // marsh, a locked tree, green, prairie, marsh and a river tile round a meadow
+      const pre = R.options(S, 0).find(o => o.p + "" === C6 + ""), a = R.place(S, 0, C6);
+      ok(`meadow (${name}): a level-up scores the points times 1 + the marsh and trees beside it (locked ones count; green, prairie and river tiles don't), and the preview says so`, pre.pts === 15 * 4 && pre.mult === 4 && R.meadowMult(S, "8,6") === 4 && a.pts === 60 && a.mult === 4 && S.score === 60 && /Meadow ×4/.test(R.logText(S)) && a.free.length === 0) }
+    { const S = setup({"8,6":4, "9,6":1, "8,5":2}, {}, {...mode, ...PK, opening:["prairie 4"]}); prairies(S, ["8,6"], "meadow"); S.hb["9,6"] = "m"; S.hb["8,5"] = "t"; const a = R.place(S, 0, C6);
+      const T = setup({"8,6":4, "9,6":1}, {}, {...mode, ...PK, opening:["prairie 4"]}); prairies(T, ["8,6"], "meadow"); T.hb["9,6"] = "p"; const z = R.place(T, 0, C6);
+      const U = setup({"8,6":4, "9,6":1}, {}, {...mode, ...PK, meadowMax:1, opening:["prairie 4"]}); prairies(U, ["8,6"], "meadow"); U.hb["9,6"] = "m"; const y = R.place(U, 0, C6), V = setup({"8,6":4, "9,6":1, "8,5":1, "7,6":1}, {}, {...mode, ...PK, meadowMax:2, opening:["prairie 4"]}); prairies(V, ["8,6"], "meadow"); V.hb["9,6"] = "m"; V.hb["8,5"] = "m"; V.hb["7,6"] = "t"; const x = R.place(V, 0, C6);
+      ok(`meadow (${name}): two neighbours make ×3, no marsh or trees beside it makes ×1, meadowMax 1 gives nothing and meadowMax 2 caps it`, a.pts === 45 && a.mult === 3 && z.pts === 15 && z.mult === undefined && y.pts === 15 && x.pts === 30 && x.mult === 2) }
+    { const S = setup({"8,6":3, "9,6":1}, {}, {...mode, ...PK, opening:["prairie 3"]}); prairies(S, ["8,6"]); S.hb["9,6"] = "m"; const a = R.place(S, 0, C6);
+      ok(`meadow (${name}): the level-up that reaches the upgrade level is not multiplied (there is no upgrade until it is picked), and the pick comes next`, a.pts === 10 && a.mult === undefined && same(S.pend, ["8,6"]) && S.score === 10) }
+    { const S = setup({"8,6":2}, {}, {...mode, upgradeLevel:2, opening:["trees 2"]}); prairies(S, ["8,6"], "steppe"); const a = R.place(S, 0, C6);
+      ok(`pick (${name}): the upgrade is lost when the tile stops being prairie: a tree grows over a steppe`, a && a.does === "overgrow" && S.hb["8,6"] === "t" && !("8,6" in S.hf)) }
+  }
+  { const t = R.tidy({...REF, steppePerLevel:7, meadowMax:0}, REF), u = R.tidy({...REF, steppePerLevel:"x", meadowMax:13}, REF);
+    ok("a bad steppe or meadow value is refused and the old value stands", same(t.bad, ["steppePerLevel", "meadowMax"]) && t.cfg.steppePerLevel === 1 && t.cfg.meadowMax === 4 && same(u.bad, ["steppePerLevel", "meadowMax"])) }
+  ok("the ruleset key changes with the steppe and meadow values", R.rulesKey(cfgWith({steppePerLevel:2})) !== R.rulesKey(REF) && R.rulesKey(cfgWith({meadowMax:2})) !== R.rulesKey(REF));
+  ok("the config file has one free prairie a steppe level-up and meadow up to ×4", BASE.steppePerLevel === 1 && BASE.meadowMax === 4 && R.UPGRADE.steppe.line === "Steppe: plants a free prairie each time it levels up" && R.UPGRADE.meadow.line === "Meadow: level-ups score more with marsh and trees next to it");
+  for (const [name, mode] of [["refuse", RF], ["downgrade", DG]]) { let ends = 0, replays = 0, sums = 0, picks = 0, frees = 0, mults = 0, clean = 0, undone = 0;
+    for (const sd of [31, 32, 33, 34, 35, 36]) { const cfg = cfgWith({...mode, upgradeLevel:2, prairieShare:.6, marshShare:.2, treeShare:.1, opening:["prairie 1", "prairie 1", "prairie 1", "river", "marsh 1"], lockEvery:0, stackSize:40, riverShare:.1, steppePerLevel:2}), S = R.fresh(cfg, sd);
+      let z = 5 + sd, guard = 0; const rn = () => (z = (z * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+      while (!S.over && guard++ < 4000) { if (S.pend.length) { const k = S.pend[0], ch = R.PICKS[S.hb[k] || ""]; R.pick(S, k, ch[Math.floor(rn() * ch.length)]); continue }
+        if (!S.q.length) { const lk = [...Object.keys(S.h), ...Object.keys(S.r)].map(R.unkey).find(p => R.lockable(S, p) && R.copiesOf(S, p).copies.length); if (!lk) { R.end(S); break } R.lock(S, lk); continue }
+        const o = R.options(S, 0); if (!o.length || rn() < .08) { R.discard(S, 0); continue } R.place(S, 0, o[Math.floor(rn() * o.length)].p) }
+      if (S.over && guard < 4000) ends++; if (same(S, R.replay(cfg, sd, S.moves))) replays++;
+      if (S.planted + S.combined + S.extended + S.widened + S.discarded === S.used && S.log.reduce((n, e) => n + e.pts, 0) === S.score) sums++;
+      if (!S.pend.length && Object.keys(S.hf).every(k => R.PICKS[S.hb[k] || ""] && S.h[k] >= 2)) clean++;
+      picks += S.moves.filter(m => m.a === "u").length; frees += S.free; mults += S.log.filter(e => e.mult > 1).length;
+      const m = S.moves.findIndex(x => x.a === "u"); if (m >= 0 && R.undoCount(S.moves.slice(0, m + 1)) === 2 && R.replay(cfg, sd, S.moves.slice(0, m + 1 - 2)).pend.length === 0 && R.replay(cfg, sd, S.moves.slice(0, m)).pend.length === 1) undone++ }
+    ok(`a whole run of random legal moves with picks, steppe and meadow (${name}): six runs end and replay from their seeds, no pick is left, every stored upgrade is on a prairie habitat at the upgrade level, the score is the sum of the moves, steppe planted free tiles, and undo steps back over a pick`,
+      ends === 6 && replays === 6 && sums === 6 && clean === 6 && picks > 0 && frees > 0 && undone > 0) }
+  for (const [name, mode] of [["refuse", RF], ["downgrade", DG]]) { const bad = []; let picks = 0; for (let s = 1; s <= 8; s++) { const a = play(cfgWith({...mode, upgradeLevel:2, prairieShare:.6, lockEvery:0, stackSize:20}), s); if (a.error || !a.S.over || a.S.pend.length) bad.push(s); else picks += a.S.moves.filter(m => m.a === "u").length }
+    ok(`the simple player makes every pick and ends every run (${name})`, bad.length === 0 && picks > 0) }
 
   for (const f of fails) console.log("FAILED: " + f);
   console.log(fails.length ? `${fails.length} of ${n} rule checks failed` : `all ${n} rule checks passed`);
