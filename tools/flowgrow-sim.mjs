@@ -23,7 +23,7 @@ const BASE = R.tidy(base).cfg;
 // The rule checks are written for these values, the first build's, so tuning flowgrow.config.js never breaks them (the pilot pile, for one,
 // changes the pile). The report and the command line use the config file as it is.
 const REF = (() => { const t = R.tidy({...base, map:["_____________", "_BB__________", "__B_______B__", "__________BB_", "______T______", "_____________", "___BB________", "_____________", "_____________"],
-  stackSize:80, queueShown:3, pickFrom:1, riverShare:.1, opening:["habitat 1", "habitat 1", "river"], maxLevel:7, levelOdds:.5, scoreByLevel:[1, 3, 6, 10, 15, 21, 28], riverReach:[1, 2],
+  stackSize:80, queueShown:3, pickFrom:1, riverShare:.1, opening:["habitat 1", "habitat 1", "river"], maxLevel:7, levelOdds:.5, scoreByLevel:[1, 3, 6, 10, 15, 21, 28], riverReach:[1, 2], riverMonotone:false,
   levelNames:["Sprouts", "Meadow", "Thicket", "Saplings", "Grove", "Forest", "Old forest"], lockEnabled:true, lockLevelCap:true, lockCopiesGo:"back", lockRivers:true, lockEvery:10, lockHold:1}, base);
   if (t.bad.length) throw new Error("bad reference config: " + t.bad); return t.cfg })();
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -206,6 +206,25 @@ function checks() { let n = 0; const fails = [];
   ok("the config file has no lock limit: lockEvery 0, so a lock is always at hand", BASE.lockEnabled === true && BASE.lockEvery === 0);
   { const k = R.rulesKey(REF); ok("a ruleset's key changes with any rule, and not with names or zoom",
       /^[0-9a-z]{1,7}$/.test(k) && R.rulesKey(cfgWith({})) === k && R.rulesKey(cfgWith({lockEvery:0})) !== k && R.rulesKey(cfgWith({stackSize:10})) !== k && R.rulesKey(cfgWith({levelOdds:0})) !== k && R.rulesKey(cfgWith({tilesAcross:7, levelNames:["A"]})) === k) }
+
+  // ----- rivers rise downstream (Dan, Nov 20: "all river tiles must be equal or greater than the river tile behind it")
+  { const S = run(["river", "river", "river", "river", "river"], {riverMonotone:true}); R.place(S, 0, E); R.place(S, 0, E);          // E joins the source, then is widened (nothing joins it)
+    ok("rivers rise downstream: after a level 2 river tile only a level 2 tile can follow, a level 1 tile can't",
+      riv(S, E).l === 2 && does(S, [8, 4]) === undefined && R.place(S, 0, [8, 4]) === null && R.why(S, 0, [8, 4]) === "A river tile can't be lower than the one it flows from (level 2).") }
+  { const S = run(["river", "river", "river", "river"], {riverMonotone:true}); R.place(S, 0, E);
+    ok("a river tile can't be widened while a tile after it is lower: widen downstream first", does(S, SRC) === undefined && does(S, E) === "widen" && R.place(S, 0, SRC) === null && R.why(S, 0, SRC) === "The river after this tile is lower. Widen downstream first.");
+    R.place(S, 0, E); ok("once the tile after it is level 2, the source can be widened too", riv(S, E).l === 2 && does(S, SRC) === "widen" && !!R.place(S, 0, SRC) && riv(S, SRC).l === 2) }
+  { const S = run(["river", "river", "river 2", "river"], {riverMonotone:true}); R.place(S, 0, E); R.place(S, 0, E);
+    ok("equal is allowed: a level 2 river tile can follow a level 2 one", does(S, [8, 4]) === "extend" && !!R.place(S, 0, [8, 4]) && riv(S, [8, 4]).l === 2 && riv(S, [8, 4]).from === "7,4") }
+  { const S = run(["river", "river", "river", "river"], {riverMonotone:true}); R.place(S, 0, E); R.place(S, 0, E);
+    ok("branches are each checked against the tile they join: a level 1 branch off the level 1 source is fine while the other branch is level 2", riv(S, E).l === 2 && does(S, W) === "extend" && !!R.place(S, 0, W) && riv(S, W).from === "6,4" && riv(S, W).l === 1) }
+  { const S = run(["river", "river", "river"], {riverMonotone:true}); R.place(S, 0, SRC);
+    ok("widening the source first leaves a later level 1 river tile with no move at all: a river is widened from its end", riv(S, SRC).l === 2 && R.options(S, 0).length === 0) }
+  { const cfg = cfgWith({riverMonotone:true}), S = R.fresh(cfg, 5); let z = 12345, guard = 0; const rn = () => (z = (z * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+    while (!S.over && guard++ < 400) { if (!S.q.length) { R.end(S); break } const o = R.options(S, 0); if (!o.length) { R.discard(S, 0); continue } R.place(S, 0, o[Math.floor(rn() * o.length)].p) }
+    let low = 0; for (const k in S.r) { const f = S.r[k].from; if (f != null && S.r[k].l < S.r[f].l) low++ }
+    ok("a whole run of random legal moves with rivers rising downstream: no river tile is lower than the one it joins, and it replays from its seed", S.over && low === 0 && Object.keys(S.r).length > 3 && same(S, R.replay(cfg, 5, S.moves))) }
+  ok("the config file has the river rule on", BASE.riverMonotone === true && R.rulesKey(cfgWith({riverMonotone:true})) !== R.rulesKey(REF));
 
   for (const f of fails) console.log("FAILED: " + f);
   console.log(fails.length ? `${fails.length} of ${n} rule checks failed` : `all ${n} rule checks passed`);

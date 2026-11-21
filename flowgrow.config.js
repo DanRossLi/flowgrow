@@ -30,6 +30,7 @@ window.FLOWGROW = {
 
   // River: how many tiles out a level 1 and a level 2 river tile reach. Its length is also the widest a river tile can get.
   riverReach: [1, 2],
+  riverMonotone: true,      // rivers rise downstream (Dan, Nov 20): a river tile can't be lower than the one it flows from, so a river is widened from its end back towards the source. false: the first build's rule
 
   tilesAcross: 5,           // opening zoom: about this many tiles fit across a phone
 

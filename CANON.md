@@ -65,6 +65,7 @@ Also from Dan: "take the existing hexagon and aesthetics", and "this will be a w
 - **Simple look for piloting** (Dan: "to pilot/test create a simplier version of the game graphically and just have basic blue tile for water and green tiles, then have a number on them, the locking mechanism. this will let us test the basics"): a second look for the same game, built the same day. See "The simple look, as built". The painted look stays.
 - **Pilot pile** (Dan: "make starting tiles only level 1 and have 10 tiles only, which makes the loop the challenge"): the pile is 10 tiles and every tile dealt is level 1, so higher levels can only come from combining and from the copies a lock banks. See "The pilot pile, as built".
 - **No lock limit** (Dan: "there is no lock limit, a user can lock as many times as they want"): locks are free and unlimited, so `lockEvery` is 0 in the config. See "No lock limit, as built".
+- **Rivers rise downstream** (Dan: "make a new rule such that all river tiles must be equal or greater than the river tile "behind it" i.e. rivers must always be greater on the way down"): `riverMonotone: true` in the config. See "The river rule, as built".
 
 ### The move to its own repo (Nov 20)
 
@@ -91,7 +92,13 @@ Also from Dan: "take the existing hexagon and aesthetics", and "this will be a w
 
 - **What changed:** `lockEvery` 10 to 0 in `flowgrow.config.js`. A lock is always at hand, the Lock button shows ∞ and no "next in", and `lockHold` is not used. The first build's pacing is one value away: `lockEvery: 10` with `lockHold: 1`.
 - **What still limits the loop:** a tile can be locked once, and a locked tile can't be copied, combined onto, widened or locked again, so the loop runs out when no unlocked tile has a copyable neighbour. The run then ends by itself, or when you tap **End run**.
-- **What it does:** `node tools/flowgrow-sim.mjs` now reports about 47 points for its simple player over about 300 moves and 77 locks. That player locks whichever tile banks the most copies, river tiles included, so the river spreads over most of the island and scores nothing. A player who locks only habitats stops by itself after 2 to 3 locks and about 20 moves, with 47 to 57 points (best 64), against 29 to 35 with one lock.
+- **What it does:** `node tools/flowgrow-sim.mjs` reported about 47 points for its simple player (before the river rule) over about 300 moves and 77 locks. That player locks whichever tile banks the most copies, river tiles included, so the river spreads over most of the island and scores nothing. A player who locks only habitats stops by itself after 2 to 3 locks and about 20 moves, with 47 to 57 points (best 64), against 29 to 35 with one lock.
+
+### The river rule, as built (Nov 20)
+
+- **The rule:** a river tile can't be lower than the river tile behind it, the one it flows from (the one it is drawn joined to). So a new river tile must be at least as high as the tile it joins, and a tile can only be widened once every tile that joins it is already that high. Equal is allowed, and each branch is checked against its own tile. River copies from locks follow the same rule.
+- **What it means in play:** a river is widened from its end back towards the source, never the other way round. If the source is widened first, every later level 1 river tile has no move at all (nothing can follow a level 2 tile at level 1, and no level 1 tile is left to widen), so they are only good for the discard button.
+- **Where it is:** `riverMonotone` in `flowgrow.config.js` (`false` is the first build's rule). In the rules part of `flowgrow.js`: `options()` decides what can go where and `why()` gives the reason when a tile can't. The simulator's rule checks stay on the first build's values (`riverMonotone: false`), and 8 new checks cover the rule.
 
 ### What is built (LOU-298)
 
@@ -138,6 +145,8 @@ Also from Dan: "take the existing hexagon and aesthetics", and "this will be a w
 - **The move** (chosen Nov 20 so the move could be done, not set by Dan): the page's title is just "Flowgrow"; the Home links to Flow Tile's home page are gone (Flowgrow has no home page of its own yet); the app icons are Flow Tile's drop, as stand-ins; `play.css` is copied whole and not trimmed; Flow Tile keeps pointer pages for `/flowgrow/` and `/city-test/`; the old history was not carried across.
 - **The simple look** (chosen Nov 20, not set by Dan): it is the default look; the island is flat from above instead of tilted; river tiles carry their level (1 or 2) as well as habitats; empty land is pale green where the river reaches and off-white where it doesn't; mountains are grey with a triangle; the source has a white ring; the colours, and the gold, teal and dashed-blue rings that mark what the tile in hand can do, are placeholders.
 - ~~**The pilot pile** (found while building it, not set by Dan): lock pacing is still one lock per 10 tiles placed, so a 10-tile pile earns exactly one lock, with the 10th placement, and a discarded tile means no lock at all. In 1,000 simulated runs a simple player averages 29 points with 4 copies banked (16 points with locking off), so the loop runs once. A lock every 5 tiles runs it about 3 times and averages 43. The 7 dealt tiles are each a river tile one time in ten, so runs differ a little; with `riverShare: 0` every run is the same 10 tiles.~~ *Resolved Nov 20: Dan said there is no lock limit, so the loop is no longer held to one lock.*
+- **The river rule** (my reading of it, not set by Dan): "behind it" is the tile it flows from, which is the one it is drawn joined to (the river's end if it touches one, otherwise the newest river tile it touches). Equal is allowed. The source has nothing behind it. If a new tile touches two river tiles, only the one it joins counts.
+- **How high scores go** (found by search on seed 495454692, before the river rule; not a rule): a tuned search reached 918 points (top level 6, 38 locks, 183 moves) and 914 with a level 7, against 47 by hand. With free copies, no lock limit and no move limit, a score is limited by how many neighbouring tile pairs the island has, not by how well you play. The best runs open with four level 2 meadows, then use the copies to grow a block of level 4 tiles and plant level 4 copies on empty land.
 
 ### Not built yet
 

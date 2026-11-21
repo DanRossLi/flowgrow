@@ -82,6 +82,7 @@ const KEYS = [
   ["levelOdds", real(0, 4), "Level odds", "each level is this many times as likely as the one below. 0: only level 1 is ever dealt", "num"],
   ["scoreByLevel", listOf(real(0, 100000), 1, 24), "Points by level", "level 1 first", "list"],
   ["riverReach", listOf(whole(0, 12), 1, 4), "River reach", "tiles out, by river level", "list"],
+  ["riverMonotone", bool, "Rivers rise downstream", "on: a river tile can't be lower than the one it flows from", "bool"],
   ["tilesAcross", real(2, 16), "Tiles across", "opening zoom on a phone", "num"],
   ["levelNames", listOf(s => { const t = String(s).trim().slice(0, 24); return t ? t : undefined }, 1, 24), "Level names", "level 1 first", "list"],
   ["lockEnabled", bool, "Locking", "off: Flowgrow without locking", "bool"],
@@ -122,7 +123,7 @@ const seedOf = v => { const n = Number(v); if (v !== "" && v != null && Number.i
   let h = 2166136261; for (const ch of String(v)) h = Math.imul(h ^ ch.charCodeAt(0), 16777619); return h >>> 0 };
 // A short name for the rules a run is played under: every config value that changes how a run plays (not names or zoom).
 // The best score is kept per ruleset, so scores from different rules never meet.
-const RULE_KEYS = ["map", "stackSize", "queueShown", "pickFrom", "riverShare", "opening", "maxLevel", "levelOdds", "scoreByLevel", "riverReach", "lockEnabled", "lockLevelCap", "lockCopiesGo", "lockRivers", "lockEvery", "lockHold"];
+const RULE_KEYS = ["map", "stackSize", "queueShown", "pickFrom", "riverShare", "opening", "maxLevel", "levelOdds", "scoreByLevel", "riverReach", "riverMonotone", "lockEnabled", "lockLevelCap", "lockCopiesGo", "lockRivers", "lockEvery", "lockHold"];
 const rulesKey = c => seedOf(JSON.stringify(RULE_KEYS.map(k => c[k]))).toString(36);
 function rand(S) { let t = (S.rs = (S.rs + 0x6D2B79F5) >>> 0); t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296 }
 // One new tile. The first tiles of a run are fixed (cfg.opening). After that a tile is a river tile riverShare of the time;
@@ -178,8 +179,12 @@ function options(S, i = 0) { const c = S.cfg, g = grid(c), t = S.q[i], out = [],
     if (t.l < c.maxLevel) for (const k in S.h) if (S.h[k] === t.l && !(k in S.lk)) out.push({p:at(k), does:"combine", l:t.l + 1, pts:scoreOf(c, t.l + 1)});
     for (const k of plantable(S)) out.push({p:at(k), does:"plant", l:t.l, pts:scoreOf(c, t.l)});
   } else {
-    if (t.l < riverTop(c)) for (const k in S.r) if (S.r[k].l === t.l && !(k in S.lk)) out.push({p:at(k), does:"widen", l:t.l + 1, pts:0});
-    for (const k of g.land) if (!(k in S.h) && !(k in S.r) && g.nb[k].some(q => q in S.r)) out.push({p:at(k), does:"extend", l:t.l, pts:0});
+    // Rivers rise downstream (riverMonotone): a new river tile can't be lower than the tile it joins, and a tile can only be widened
+    // once every tile that joins it is already that high, so a river is widened from its end back towards the source.
+    const mono = c.riverMonotone, has = mono ? new Set(Object.values(S.r).map(v => v.from)) : null, kidMin = {};
+    if (mono) for (const k in S.r) { const f = S.r[k].from; if (f != null) kidMin[f] = Math.min(kidMin[f] === undefined ? 99 : kidMin[f], S.r[k].l) }
+    if (t.l < riverTop(c)) for (const k in S.r) if (S.r[k].l === t.l && !(k in S.lk) && (!mono || (kidMin[k] === undefined ? 99 : kidMin[k]) > t.l)) out.push({p:at(k), does:"widen", l:t.l + 1, pts:0});
+    for (const k of g.land) if (!(k in S.h) && !(k in S.r) && g.nb[k].some(q => q in S.r) && (!mono || S.r[joinTo(S, at(k), has)].l <= t.l)) out.push({p:at(k), does:"extend", l:t.l, pts:0});
   }
   return out }
 // How much land a river move would open: the empty land it newly brings within reach.
@@ -196,10 +201,12 @@ function why(S, i, p) { const c = S.cfg, t = S.q[i]; if (!t) return "No tiles le
     if (hl) return hl >= c.maxLevel ? `${levelName(c, hl)} is the top level.` : `That's level ${hl}. Only a level ${hl} tile can go on it.`;
     return "Too far from the river." }
   if (hl) return "A river tile needs empty land.";
-  if (rv) return rv.l >= riverTop(c) ? "The river is at its widest here." : `Only a level ${rv.l} river tile widens this.`;
-  return "A river tile has to touch the river." }
+  if (rv) { if (rv.l >= riverTop(c)) return "The river is at its widest here."; if (rv.l !== t.l) return `Only a level ${rv.l} river tile widens this.`;
+    return c.riverMonotone ? "The river after this tile is lower. Widen downstream first." : "" }
+  if (!grid(c).nb[k].some(q => q in S.r)) return "A river tile has to touch the river.";
+  const up = S.r[joinTo(S, p)]; return c.riverMonotone && up && up.l > t.l ? `A river tile can't be lower than the one it flows from (level ${up.l}).` : "" }
 // Which river tile a new one joins, for drawing: the river's end if it touches one, otherwise the newest river tile it touches.
-function joinTo(S, p) { const has = new Set(Object.values(S.r).map(v => v.from)); let best = null;
+function joinTo(S, p, has = new Set(Object.values(S.r).map(v => v.from))) { let best = null;
   for (const q of nbrs(S.cfg, p)) { const k = key(q), v = S.r[k]; if (!v) continue; const end = !has.has(k);
     if (!best || (end && !best.end) || (end === best.end && v.n > best.n)) best = {k, end, n:v.n} }
   return best ? best.k : null }
