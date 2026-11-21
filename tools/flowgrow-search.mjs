@@ -82,7 +82,7 @@ function policySearch(until) {
         if (w) return R.place(S, 0, w.p); return e ? R.place(S, 0, e.p) : R.discard(S, 0) }
       if (R.plantable(S).length < P.plMin) { const e = bestExtend(S, opts, P); if (e) return R.place(S, 0, e.p) }
       const w2 = opts.find(o => o.does === "widen"); if (w2 && rnd() < P.widenCopy) return R.place(S, 0, w2.p); return R.discard(S, 0) }
-    const nHab = Object.keys(S.h).length, comb = opts.filter(o => o.does === "combine"), plant = opts.filter(o => o.does === "plant");
+    const nHab = Object.keys(S.h).length, comb = opts.filter(o => o.does === "combine" || o.does === "overgrow"), plant = opts.filter(o => o.does === "plant");   // a tree growing over a habitat (LOU-302) is a level-up like a combine
     const wantPlant = comb.length === 0 || (nHab < P.grow && !(!t.c && S.dealt > P.dealtPlant)) || (t.l >= P.hiPlant && nHab < P.growHi);
     const combineIt = () => { let b = null, bs = -1e9; for (const o of comb) { const adj = last && R.hexDist(o.p, last) === 1 ? P.adj : 0, u = nbrs(o.p).filter(q => unl(S, q)).length, s = adj + P.cu * u + rnd() * P.noise; if (s > bs) { bs = s; b = o } } return b ? R.place(S, 0, b.p) : null };
     const plantIt = () => { let b = null, bs = -1e9; for (const o of plant) { const hn = nbrs(o.p).filter(q => K(q) in S.h).length, rn = nbrs(o.p).filter(q => K(q) in S.r).length; if (hn + rn === 0) continue;
@@ -114,7 +114,7 @@ function nrpaSearch(until, level, N) {
   function legal(S) { const mv = []; if (S.over) return mv;
     if (S.q.length) { const t = S.q[0], tag = t.k + (t.b || "") + t.l, copy = !!t.c, nHab = Object.keys(S.h).length;
       for (const o of R.options(S, 0)) { let bias = 0;
-        if (t.k === "h") { if (o.does === "combine") bias = 2 * Math.log(1 + o.pts); else { if (!nbrs(o.p).some(q => has(S, q))) continue; bias = 2 * Math.log(1 + o.pts) - 1 + (nHab < 12 ? 1 : 0) } }
+        if (t.k === "h") { if (o.does === "combine" || o.does === "overgrow") bias = 2 * Math.log(1 + o.pts); else { if (!nbrs(o.p).some(q => has(S, q))) continue; bias = 2 * Math.log(1 + o.pts) - 1 + (nHab < 12 ? 1 : 0) } }
         else bias = (o.does === "widen" ? 1.5 : copy ? -1 : .5) + 2 * Math.log(1 + o.pts);   // a river move that scores (river levels) is liked like a habitat move
         mv.push({code: tag + ":" + o.does + ":" + K(o.p), bias, o}) }
       mv.push({code: tag + ":d", bias: t.k === "r" ? (copy ? 1.5 : -1) : -3, d: true})

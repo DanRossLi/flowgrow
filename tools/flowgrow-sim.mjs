@@ -23,7 +23,7 @@ const BASE = R.tidy(base).cfg;
 // The rule checks are written for these values, the first build's, so tuning flowgrow.config.js never breaks them (the pilot pile, for one,
 // changes the pile; bare ground takes any level, and the bare ground rule is checked on its own below). The report and the command line use the config file as it is.
 const REF = (() => { const t = R.tidy({...base, map:["_____________", "_BB__________", "__B_______B__", "__________BB_", "______T______", "_____________", "___BB________", "_____________", "_____________"],
-  stackSize:80, queueShown:3, pickFrom:1, riverShare:.1, opening:["habitat 1", "habitat 1", "river"], maxLevel:7, levelOdds:.5, scoreByLevel:[1, 3, 6, 10, 15, 21, 28], riverReach:[1, 2], riverMonotone:false, bareGroundMaxLevel:24, bareGroundMode:"refuse", prairieShare:0, marshShare:0, biomeMatch:true, marshNeedsRiver:false, prairieSpreads:false, riverMaxLevel:2, riverScore:"none",
+  stackSize:80, queueShown:3, pickFrom:1, riverShare:.1, opening:["habitat 1", "habitat 1", "river"], maxLevel:7, levelOdds:.5, scoreByLevel:[1, 3, 6, 10, 15, 21, 28], riverReach:[1, 2], riverMonotone:false, bareGroundMaxLevel:24, bareGroundMode:"refuse", prairieShare:0, marshShare:0, biomeMatch:true, marshNeedsRiver:false, prairieSpreads:false, treeShare:0, overgrow:true, riverMaxLevel:2, riverScore:"none",
   levelNames:["Sprouts", "Meadow", "Thicket", "Saplings", "Grove", "Forest", "Old forest"], lockEnabled:true, lockLevelCap:true, lockCopiesGo:"back", lockRivers:true, lockEvery:10, lockHold:1}, base);
   if (t.bad.length) throw new Error("bad reference config: " + t.bad); return t.cfg })();
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -43,12 +43,16 @@ function turn(S) { const c = S.cfg;
   else { let best = -1; for (const x of opts) { const n = R.opens(S, 0, x) + (x.does === "widen" ? .5 : 0); if (n > best) { best = n; o = x } } } // a tie goes to widening, which uses no land
   return R.place(S, 0, o.p) }
 // What the plant rules do to the tile in hand (LOU-301): how often a marsh tile has no tile next to the river free to plant on, and how often prairie plants beyond the river's reach.
-function watch(S) { const t = S.q[0]; if (t.k !== "h" || !t.b) return null; const o = R.options(S, 0).filter(x => x.does === "plant");
+// And (LOU-302) how often a tree in hand has no legal target at all (a tree never plants on bare ground, so it has only a habitat of its own level to grow over).
+function watch(S) { const t = S.q[0]; if (t.k !== "h" || !t.b) return null;
+  if (t.b === "t") return {b:"t", none:!R.options(S, 0).length, copy:!!t.c};
+  const o = R.options(S, 0).filter(x => x.does === "plant");
   if (t.b === "m") return {b:"m", none:!o.length};
   const reach = R.reachOf(S); return {b:"p", beyond:new Set(o.filter(x => !reach.has(R.key(x.p))).map(x => R.key(x.p)))} }
-function tally(m, pre, res) { if (pre.b === "m") { m.marshTurns++; if (pre.none) m.marshNoBank++ } else { m.prairieTurns++; m.spreadOffered += pre.beyond.size; if (res.does === "plant" && pre.beyond.has(R.key(res.p))) m.spreadPlanted++ } }
+function tally(m, pre, res) { if (pre.b === "t") { m.treeTurns++; if (pre.copy) m.treeCopyTurns++; if (pre.none) m.treeNoTarget++ }
+  else if (pre.b === "m") { m.marshTurns++; if (pre.none) m.marshNoBank++ } else { m.prairieTurns++; m.spreadOffered += pre.beyond.size; if (res.does === "plant" && pre.beyond.has(R.key(res.p))) m.spreadPlanted++ } }
 // One whole run. Returns the run, how many turns were tight, and what went wrong (if anything).
-function play(cfg, seed) { const out = {S:null, tight:0, error:"", m:{marshTurns:0, marshNoBank:0, prairieTurns:0, spreadOffered:0, spreadPlanted:0}};
+function play(cfg, seed) { const out = {S:null, tight:0, error:"", m:{marshTurns:0, marshNoBank:0, prairieTurns:0, spreadOffered:0, spreadPlanted:0, treeTurns:0, treeCopyTurns:0, treeNoTarget:0}};
   try { const S = out.S = R.fresh(cfg, seed), cap = 6000; let n = 0;
     while (!S.over) { if (++n > cap) { out.error = "stalled"; break } if (S.q.length && R.plantable(S).length <= 2) out.tight++; const pre = S.q.length ? watch(S) : null, res = turn(S); if (!res) { out.error = "a move was refused"; break } if (pre) tally(out.m, pre, res) }
     if (!out.error && !same(S, R.replay(cfg, seed, S.moves))) out.error = "did not rebuild from its seed and moves";
@@ -69,8 +73,9 @@ function report(cfg, runs) { const res = []; for (let seed = 1; seed <= runs; se
   if (bare) console.log(`  bare ground          takes level ${cfg.bareGroundMaxLevel}${cfg.bareGroundMaxLevel > 1 ? " and below" : " only"}; above that: ${cfg.bareGroundMode === "refuse" ? "refused (combine or discard)" : "planted as level 1"}`);
   console.log(`  score                average ${Math.round(avg(sc))} · 10th percentile ${pct(sc, .1)} · 90th percentile ${pct(sc, .9)}`);
   console.log(`  top level            average ${f1(avg(top))}${lv.map(l => ` · level ${l}+ in ${share(top, t => t >= l)}`).join("")}`);
-  console.log(`  habitats on the map  ${f1(avg(ok.map(r => r.hab)))} (planted ${f1(avg(S.map(s => s.planted)))}, combined ${f1(avg(S.map(s => s.combined)))})`);
-  if (cfg.prairieShare + cfg.marshShare > 0) console.log(`  kinds on the map     ${f1(avg(S.map(s => Object.keys(s.h).filter(k => !s.hb[k]).length)))} green · ${f1(avg(S.map(s => Object.values(s.hb).filter(b => b === "p").length)))} prairie · ${f1(avg(S.map(s => Object.values(s.hb).filter(b => b === "m").length)))} marsh habitats at the end`);
+  const trees = cfg.treeShare > 0, overs = s => s.log.filter(e => e.did === "overgrow");   // trees (LOU-302) are dealt: the report says what they did (with treeShare 0 it is as it was)
+  console.log(`  habitats on the map  ${f1(avg(ok.map(r => r.hab)))} (planted ${f1(avg(S.map(s => s.planted)))}, combined ${f1(avg(S.map(s => s.combined)))}${trees ? `, of them ${f1(avg(S.map(s => s.overgrown)))} overgrows` : ""})`);
+  if (cfg.prairieShare + cfg.marshShare > 0 || trees) console.log(`  kinds on the map     ${f1(avg(S.map(s => Object.keys(s.h).filter(k => !s.hb[k]).length)))} green · ${f1(avg(S.map(s => Object.values(s.hb).filter(b => b === "p").length)))} prairie · ${f1(avg(S.map(s => Object.values(s.hb).filter(b => b === "m").length)))} marsh${trees ? ` · ${f1(avg(S.map(s => Object.values(s.hb).filter(b => b === "t").length)))} trees` : ""} habitats at the end`);
   console.log(`  river tiles          ${f1(avg(ok.map(r => r.riv)))} with the source (extended ${f1(avg(S.map(s => s.extended)))}, widened ${f1(avg(S.map(s => s.widened)))})`);
   if (cfg.riverMaxLevel > cfg.riverReach.length) console.log(`  river levels         the river rises to level ${f1(avg(ok.map(r => Math.max(...Object.values(r.S.r).map(v => v.l)))))} on average (${f1(avg(S.map(s => s.log.filter(e => e.did === "widen" && e.l > cfg.riverReach.length).length)))} level-ups past the widest)${cfg.riverScore === "none" ? "" : `, ${f1(avg(S.map(s => s.log.reduce((n, e) => n + (e.did === "widen" || e.did === "extend" ? e.pts : 0), 0))))} points from river moves`}`);
   console.log(`  discards             ${f2(avg(S.map(s => s.discarded)))} a run · at least one in ${share(S, s => s.discarded > 0)} of runs`);
@@ -79,11 +84,14 @@ function report(cfg, runs) { const res = []; for (let seed = 1; seed <= runs; se
     console.log(`  marsh                ${f1(avg(M.map(m => m.marshTurns)))} marsh tiles in hand a run · nothing to plant it on in ${f1(100 * sum(M.map(m => m.marshNoBank)) / Math.max(1, sum(M.map(m => m.marshTurns))))}% of those turns · ${f2(avg(S.map(s => s.log.filter(e => e.did === "discard" && e.t && e.t.b === "m").length)))} marsh tiles discarded a run`);
     console.log(`  prairie spread       ${f1(avg(M.map(m => m.prairieTurns)))} prairie tiles in hand a run · planted beyond the river's reach ${f2(avg(M.map(m => m.spreadPlanted)))} times a run · ${f1(sum(M.map(m => m.spreadOffered)) / Math.max(1, sum(M.map(m => m.prairieTurns))))} extra tiles offered per prairie tile in hand`);
     console.log(`  island               ${f1(avg(empty))} of ${land} land cells empty at the end (${f1(avg(ok.map(r => r.room)))} of them within the river's reach)`) }
+  if (trees) { const M = ok.map(r => r.m), O = S.map(overs), kind = b => f2(avg(O.map(l => l.filter(e => e.from === b).length)));   // what trees did (LOU-302): how often one had no legal target, and what the overgrows took
+    console.log(`  trees                ${f1(avg(M.map(m => m.treeTurns)))} tree tiles in hand a run (${f1(avg(M.map(m => m.treeCopyTurns)))} of them copies) · no legal target in ${f1(100 * sum(M.map(m => m.treeNoTarget)) / Math.max(1, sum(M.map(m => m.treeTurns))))}% of those turns · ${f2(avg(S.map(s => s.log.filter(e => e.did === "discard" && e.t && e.t.b === "t").length)))} tree tiles discarded a run`);
+    console.log(`  overgrow             ${f2(avg(O.map(l => l.length)))} a run: ${kind("")} on green · ${kind("p")} on prairie · ${kind("m")} on marsh · ${f1(avg(O.map(l => l.reduce((n, e) => n + e.pts, 0))))} points from overgrows · ${f2(avg(S.map(s => s.combined - s.overgrown)))} plain combines a run`) }
   if (cfg.lockEnabled) {
     console.log(`  moves                ${f1(avg(S.map(s => s.moves.length)))} a run`);
     console.log(`  locks                ${f1(avg(S.map(s => s.lockUsed)))} used · ${f1(avg(S.map(s => s.lockLost)))} lost · ${f1(avg(S.map(s => Object.keys(s.lk).length)))} tiles locked at the end`);
     console.log(`  copies               ${f1(avg(S.map(s => s.copyBanked)))} banked · ${f1(avg(S.map(s => s.copyPlaced)))} placed · ${f2(avg(S.map(s => s.copyDiscarded)))} discarded · ${f1(avg(S.map(s => s.copyPoints)))} points from copies`);
-    if (bare) console.log(`  copies placed        ${f1(avg(S.map(s => copiesBy(s, "plant"))))} planted on bare ground${cfg.bareGroundMode === "downgrade" ? ` (${f1(avg(S.map(copiesDown)))} of them as level 1)` : ""} · ${f1(avg(S.map(s => copiesBy(s, "combine"))))} combined · ${f1(avg(S.map(s => copiesBy(s, "extend") + copiesBy(s, "widen"))))} river tiles · ${f2(avg(S.map(s => s.copyDiscarded)))} discarded`) }
+    if (bare) console.log(`  copies placed        ${f1(avg(S.map(s => copiesBy(s, "plant"))))} planted on bare ground${cfg.bareGroundMode === "downgrade" ? ` (${f1(avg(S.map(copiesDown)))} of them as level 1)` : ""} · ${f1(avg(S.map(s => copiesBy(s, "combine"))))} combined${trees ? ` · ${f1(avg(S.map(s => copiesBy(s, "overgrow"))))} overgrown` : ""} · ${f1(avg(S.map(s => copiesBy(s, "extend") + copiesBy(s, "widen"))))} river tiles · ${f2(avg(S.map(s => s.copyDiscarded)))} discarded`) }
   if (bad.length) { console.log(`  ${bad.length} of ${runs} runs went wrong:`); for (const r of bad.slice(0, 10)) console.log(`    seed ${r.S ? r.S.seed : "?"}: ${r.error}`); process.exitCode = 1 }
   else console.log("  no run crashed or stalled, and every run rebuilt exactly from its seed and moves") }
 
@@ -428,6 +436,78 @@ function checks() { let n = 0; const fails = [];
       m.a === "p" ? R.place(T, m.i, [m.x, m.y]) : m.a === "d" ? R.discard(T, m.i) : m.a === "l" ? R.lock(T, [m.x, m.y]) : R.end(T) }
     ok(`a whole run of random legal moves with both rules (${name}): it ends, every planting obeyed the rule of its kind, marsh and prairie spread were both used, and it replays from its seed`,
       S.over && guard < 4000 && wrong === 0 && marshPlanted > 0 && spread > 0 && same(S, R.replay(cfg, 8, S.moves))) }
+
+  // ----- trees, deep green (LOU-302; Dan, Nov 20: "should we have a 'deep green' tile which is trees? And what special should this have?", then "I like overgrow"). A tree is a habitat of
+  // a kind of its own (b "t"). With overgrow on it is never planted on bare ground: it grows over an unlocked habitat of its own level, of any other kind, which becomes a tree habitat one
+  // level up and loses its old kind. REF deals no trees (treeShare 0) and these set-ups write them into the opening, so every check above is about the game as it was.
+  const TG = "Trees grow over a habitat of the same level.";
+  for (const [name, mode] of [["refuse", RF], ["downgrade", DG]]) {
+    { const S = setup({"8,6":2, "9,6":2, "7,6":2, "8,5":3, "7,5":2}, {"7,7":2}, {...mode, opening:["trees 2", "trees 2", "trees 2"]}); S.hb["9,6"] = "p"; S.hb["7,6"] = "m"; S.lk["7,5"] = 1;   // green, prairie and marsh at level 2, a level 3 green, a locked level 2 green, a level 2 river tile
+      ok(`trees (${name}): a level 2 tree can overgrow a level 2 green, prairie and marsh habitat, and nothing else: not a level 3 habitat, a locked one, a river tile or bare ground`,
+        same(R.options(S, 0).map(o => o.does + ":" + o.p).sort(), ["overgrow:7,6", "overgrow:8,6", "overgrow:9,6"]) && R.plantable(S).includes("7,4") && does(S, E) === undefined && R.place(S, 0, E) === null && R.why(S, 0, E) === TG
+        && R.place(S, 0, [8, 5]) === null && R.why(S, 0, [8, 5]) === TG && R.why(S, 0, [7, 5]) === "That tile is locked." && R.why(S, 0, [7, 7]) === TG);
+      const a = R.place(S, 0, [8, 6]);
+      ok(`trees (${name}): overgrowing a green habitat makes a level 3 tree and scores 6, like a combine; the tile stays a habitat`, a && a.does === "overgrow" && a.l === 3 && a.pts === 6 && a.from === "" && S.h["8,6"] === 3 && S.hb["8,6"] === "t" && S.score === 6 && S.combined === 1 && S.overgrown === 1 && S.planted === 0 && S.top === 3 && Object.keys(S.h).length === 5);
+      const b = R.place(S, 0, [9, 6]), c = R.place(S, 0, [7, 6]);
+      ok(`trees (${name}): overgrowing a prairie tile or a marsh tile does the same, and the tile loses its old kind`, b && b.from === "p" && c && c.from === "m" && S.h["9,6"] === 3 && S.hb["9,6"] === "t" && S.h["7,6"] === 3 && S.hb["7,6"] === "t" && S.score === 18 && S.overgrown === 3 && S.combined === 3);
+      ok(`trees (${name}): the run log says what was overgrown`, /^1\. Trees \(level 2\), dealt · overgrew the green tile at 8,6, now level 3 Trees · \+6 · /m.test(R.logText(S)) && /overgrew the prairie tile at 9,6, now level 3 Trees/.test(R.logText(S)) && /overgrew the marsh tile at 7,6, now level 3 Trees/.test(R.logText(S))) }
+    { const S = setup({"8,4":2, "9,4":1}, {}, {...mode, ...PS, opening:["prairie 1", "trees 2", "prairie 1"]}); S.hb["8,4"] = "p"; S.hb["9,4"] = "p";   // two prairie tiles outside the river's reach: (7,3) touches only the first, (8,3) touches both
+      const before = does(S, [7, 3]) === "plant" && does(S, [8, 3]) === "plant"; R.discard(S, 0); R.place(S, 0, [8, 4]);
+      ok(`trees (${name}): an overgrown prairie tile no longer lets prairie spread from it; prairie planted next to it stays, and prairie still spreads from the rest`, before && S.hb["8,4"] === "t" && S.hb["9,4"] === "p" && S.h["9,4"] === 1 && does(S, [7, 3]) === undefined && R.why(S, 0, [7, 3]) === "Prairie needs a tile within reach of the river or next to prairie." && does(S, [8, 3]) === "plant") }
+    { const S = setup({"7,6":2}, {}, {...mode, opening:["trees 2", "marsh 3"]}); S.hb["7,6"] = "m"; R.place(S, 0, [7, 6]);
+      ok(`trees (${name}): an overgrown marsh tile is no longer marsh: a level 3 marsh tile can't go on it, and the text says it is Trees`, S.hb["7,6"] === "t" && does(S, [7, 6]) === undefined && R.why(S, 0, [7, 6]) === "That's Trees (level 3). Only a tile of the same kind and level goes on it.") }
+    { const S = setup({"8,6":2}, {}, {...mode, opening:["trees 2", "trees 2"]}); S.hb["8,6"] = "t";
+      ok(`trees (${name}): a tree onto a tree of its own level combines, as before: level 3 for 6 points, still Trees, and not counted as an overgrow`, does(S, [8, 6]) === "combine" && (a => a && a.does === "combine" && a.l === 3 && a.pts === 6 && S.h["8,6"] === 3 && S.hb["8,6"] === "t" && S.combined === 1 && S.overgrown === 0)(R.place(S, 0, [8, 6]))) }
+    { const S = setup({"8,6":3, "7,5":2}, {"7,7":1}, {...mode, opening:["trees 1", "trees 2", "trees 3"]}); S.lk["7,5"] = 1;   // a level 3 green, a locked level 2 green, a level 1 river tile
+      ok(`trees (${name}): a level 1 tree is refused on bare ground, with the toast, and has nothing to grow over`, R.plantable(S).includes("7,4") && R.options(S, 0).length === 0 && does(S, E) === undefined && R.place(S, 0, E) === null && R.why(S, 0, E) === TG && R.why(S, 0, FAR) === TG && R.why(S, 0, [8, 6]) === TG && R.why(S, 0, [7, 7]) === TG && S.planted === 0);
+      R.discard(S, 0);
+      ok(`trees (${name}): a level 2 tree is refused on bare ground too, and a locked level 2 habitat is no target`, R.options(S, 0).length === 0 && R.place(S, 0, E) === null && R.why(S, 0, E) === TG && R.why(S, 0, [7, 5]) === "That tile is locked.");
+      R.discard(S, 0);
+      ok(`trees (${name}): a level 3 tree grows over the level 3 habitat, and only that: level 4 for 10 points`, R.options(S, 0).length === 1 && does(S, [8, 6]) === "overgrow" && (a => a && a.l === 4 && a.pts === 10 && S.h["8,6"] === 4 && S.hb["8,6"] === "t")(R.place(S, 0, [8, 6]))) }
+    { const S = setup({"8,6":3, [N[0]]:2, [N[1]]:1}, {}, {...mode, lockEvery:0, stackSize:1, queueShown:0}); S.hb["8,6"] = "t"; S.hb[N[0]] = "t"; S.hb[N[1]] = "p"; R.discard(S, 0);   // a level 3 tree beside a level 2 tree and a level 1 prairie
+      const copies = R.copiesOf(S, C).copies; R.lock(S, C);
+      ok(`trees (${name}): lock copies of a tree keep their kind, lowest level first`, same(copies, [{k:"h", l:1, c:1, b:"p"}, {k:"h", l:2, c:1, b:"t"}]) && same(S.q[0], copies[0]) && same(S.bank, copies.slice(1)));
+      const a = R.place(S, 0, E);
+      ok(`trees (${name}): the tree copy follows the tree rule: it can only combine onto its own tree and never plants`, a && a.does === "plant" && S.hb["7,4"] === "p" && S.q[0].b === "t" && S.q[0].l === 2 && S.q[0].c === 1 && R.options(S, 0).length === 1 && does(S, R.unkey(N[0])) === "combine" && R.why(S, 0, W) === TG) }
+    { const S = run(["trees 2"], {...mode, stackSize:1, queueShown:0});
+      ok(`trees (${name}): a tree with nothing to grow over can only be discarded, and the run still ends`, R.options(S, 0).length === 0 && R.place(S, 0, E) === null && !!R.discard(S, 0) && S.over && S.discarded === 1 && S.planted === 0) }
+    { const S = setup({"8,6":3, "9,6":5}, {}, {...mode, lockEvery:0, stackSize:1, queueShown:0}); S.hb["8,6"] = "t"; R.discard(S, 0); R.lock(S, [9, 6]);   // the level 5 habitat copies the level 3 tree beside it
+      ok(`trees (${name}): a tree copy is a tile like any other: it can combine onto its own tree`, S.q.length === 1 && S.q[0].c === 1 && S.q[0].b === "t" && S.q[0].l === 3 && R.options(S, 0).length === 1 && does(S, [8, 6]) === "combine");
+      R.lock(S, [8, 6]);   // freeze that tree: nothing is left to grow over
+      ok(`trees (${name}): a tree copy with no target can be discarded, and the run still ends`, !S.over && R.options(S, 0).length === 0 && !!R.discard(S, 0) && S.over && S.copyDiscarded === 1 && S.copyPlaced === 0) }
+    { const S = run(["trees 1", "habitat 1", "trees 1", "trees 3"], {...mode, overgrow:false}), a = R.place(S, 0, E);
+      ok(`trees (${name}): with overgrow off a tree plants like green, as a tree habitat, and a green tile can't go on it`, a && a.does === "plant" && a.l === 1 && a.pts === 1 && S.h["7,4"] === 1 && S.hb["7,4"] === "t" && S.planted === 1 && does(S, E) === undefined && R.why(S, 0, E) === "That's Trees (level 1). Only a tile of the same kind and level goes on it.");
+      R.discard(S, 0); const b = R.place(S, 0, E);
+      ok(`trees (${name}): with overgrow off a tree combines onto a tree, and nothing counts as an overgrow`, b && b.does === "combine" && b.l === 2 && S.hb["7,4"] === "t" && S.overgrown === 0 && S.combined === 1);
+      ok(`trees (${name}): with overgrow off a level 3 tree is ${name === "refuse" ? "refused on bare ground" : "planted as a level 1 tree"}, as green would be`, name === "refuse" ? R.options(S, 0).length === 0 : does(S, W) === "plant" && (r => r && r.l === 1 && S.hb["5,4"] === "t")(R.place(S, 0, W))) }
+    { const S = setup({"8,6":2}, {}, {...mode, biomeMatch:false, opening:["trees 2", "prairie 3"]}); S.hb["8,6"] = "p"; const a = R.place(S, 0, [8, 6]), up = does(S, [8, 6]) === "combine", b = R.place(S, 0, [8, 6]);
+      ok(`trees (${name}): with kinds not having to match, a tree still overgrows another kind, and a prairie tile then combines onto the trees and the habitat stays trees`, a && a.does === "overgrow" && up && b && b.does === "combine" && b.l === 4 && S.h["8,6"] === 4 && S.hb["8,6"] === "t" && S.overgrown === 1) }
+  }
+  { const t = R.tidy({...REF, treeShare:1.5, overgrow:"sometimes"}, REF), u = R.tidy({...REF, treeShare:"x"}, REF);
+    ok("a bad tree share or a bad overgrow switch is refused and the old value stands", same(t.bad, ["treeShare", "overgrow"]) && t.cfg.treeShare === 0 && t.cfg.overgrow === true && same(u.bad, ["treeShare"]) && u.cfg.treeShare === 0) }
+  ok("the ruleset key changes with the tree share and with the overgrow switch", R.rulesKey(cfgWith({treeShare:.2})) !== R.rulesKey(REF) && R.rulesKey(cfgWith({overgrow:false})) !== R.rulesKey(REF));
+  ok("the config file deals trees (20% of the habitats after the opening) with overgrow on, and its opening has none (Dan, Nov 20: \"I like overgrow\")", BASE.treeShare === .2 && BASE.overgrow === true && !BASE.opening.some(w => R.parseTile(w).b === "t"));
+  ok("trees can be written in words, and have a name: trees 2, Trees (level 2)", same(R.parseTile("trees 2"), {k:"h", l:2, b:"t"}) && R.parseTile("trees") === null && R.parseTile("tree 2") === null && R.tileWord({k:"h", l:2, b:"t"}) === "trees 2" && R.tileText(REF, {k:"h", l:2, b:"t"}) === "Trees (level 2)");
+  { const S = run([], {stackSize:0, prairieShare:.3, marshShare:.3, treeShare:.2, riverShare:0}), c = {t:0, p:0, m:0, h:0}, n = 40000, lv = new Set(); for (let i = 0; i < n; i++) { const t = R.roll(S); c[t.b || "h"]++; lv.add(t.l) }
+    ok("dealt habitats are trees 20% of the time and the rest keep the 40 : 30 : 30 split: green 32%, prairie 24%, marsh 24%", Math.abs(c.t / n - .2) < .012 && Math.abs(c.h / n - .32) < .012 && Math.abs(c.p / n - .24) < .012 && Math.abs(c.m / n - .24) < .012 && lv.size === 1) }
+  { const S = R.fresh(cfgWith({opening:BASE.opening, treeShare:1, riverShare:0, stackSize:20}), 3); for (let i = 0; i < 5; i++) R.discard(S, 0);
+    ok("trees are dealt only after the opening: the first five tiles are the opening's, and with every habitat after it a tree, the sixth is one", S.log.slice(0, 5).map(e => e.t.k + (e.t.b || "")).join(" ") === "h h r hp hm" && S.q[0].k === "h" && S.q[0].b === "t") }
+  { const S = run([], {stackSize:0, treeShare:.5}); let more = 0, N2 = 2000; for (let i = 0; i < N2; i++) if (R.roll(S).b === "t") more++; const T = run([], {stackSize:0, treeShare:0}); let none = 0; for (let i = 0; i < N2; i++) if (R.roll(T).b) none++;
+    ok("with the tree share 0 no tile is ever a tree", more > 0 && none === 0) }
+  for (const [name, mode] of [["refuse", RF], ["downgrade", DG]]) { const cfg = cfgWith({...mode, ...MR, ...PS, treeShare:.4, prairieShare:.3, marshShare:.3, opening:["habitat 1", "prairie 1", "marsh 1", "river", "habitat 1"], lockEvery:0, stackSize:30, riverShare:.1}), S = R.fresh(cfg, 12);
+    let z = 53, guard = 0; const rn = () => (z = (z * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+    while (!S.over && guard++ < 4000) { if (!S.q.length) { const lk = [...Object.keys(S.h), ...Object.keys(S.r)].map(R.unkey).find(p => R.lockable(S, p) && R.copiesOf(S, p).copies.length); if (!lk) { R.end(S); break } R.lock(S, lk); continue }
+      const o = R.options(S, 0); if (!o.length || rn() < .08) { R.discard(S, 0); continue } R.place(S, 0, o[Math.floor(rn() * o.length)].p) }
+    const T = R.fresh(cfg, 12); let wrong = 0, grew = 0;   // every tree goes on a habitat of its own level that isn't locked, never on bare ground
+    for (const m of S.moves) { if (m.a === "p") { const t = T.q[m.i], k = m.x + "," + m.y; if (t.k === "h" && t.b === "t") { if (!(k in T.h) || T.h[k] !== t.l || k in T.lk) wrong++; else if (T.hb[k] !== "t") grew++ } }
+      m.a === "p" ? R.place(T, m.i, [m.x, m.y]) : m.a === "d" ? R.discard(T, m.i) : m.a === "l" ? R.lock(T, [m.x, m.y]) : R.end(T) }
+    ok(`a whole run of random legal moves with trees (${name}): it ends, trees overgrew other kinds, none was put on bare ground, a locked tile or another level, the score is the sum of the moves, and it replays from its seed`,
+      S.over && guard < 4000 && grew > 0 && grew === S.overgrown && wrong === 0 && !S.log.some(e => e.did === "plant" && e.t.b === "t") && S.planted + S.combined + S.extended + S.widened + S.discarded === S.used && S.log.reduce((s, e) => s + e.pts, 0) === S.score && same(S, R.replay(cfg, 12, S.moves)));
+    const first = S.log.find(e => e.did === "overgrow");
+    ok(`trees (${name}): undo steps back over an overgrow (the tile has its old kind and level again), and a reload brings the tree back`, !!first && (() => { const k = R.key(first.at), withIt = R.replay(cfg, 12, S.moves.slice(0, first.n)), without = R.replay(cfg, 12, S.moves.slice(0, first.n - 1));
+        return without.h[k] === first.l - 1 && (without.hb[k] || "") === first.from && withIt.h[k] === first.l && withIt.hb[k] === "t" && same(withIt, R.replay(cfg, 12, S.moves.slice(0, first.n))) })() && /overgrew the (green|prairie|marsh) tile at \d+,\d+, now level \d+ Trees/.test(R.logText(S))) }
+  for (const [name, mode] of [["refuse", RF], ["downgrade", DG]]) { const bad = []; let dropped = 0; for (let s = 1; s <= 8; s++) { const a = play(cfgWith({...mode, treeShare:.6, lockEvery:0, stackSize:20}), s); if (a.error || !a.S.over) bad.push(s); else dropped += a.S.log.filter(e => e.did === "discard" && e.t && e.t.b === "t").length }
+    ok(`the simple player ends every run with trees in the pile (${name}): it discards a tree that has nothing to grow over instead of getting stuck`, bad.length === 0 && dropped > 0) }
 
   for (const f of fails) console.log("FAILED: " + f);
   console.log(fails.length ? `${fails.length} of ${n} rule checks failed` : `all ${n} rule checks passed`);
