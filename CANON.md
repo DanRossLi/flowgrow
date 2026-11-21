@@ -15,7 +15,7 @@ Flowgrow began on Nov 19, 2026 as a test page inside the Flow Tile repo and move
    - Read the issue, its Agent notes and any attached documents.
    - Do the work, commit with the issue ID in the message, and push.
    - Check every "Done when" item.
-   - Add the GitHub Pages URL as a link, comment a short summary of what changed, and move the issue to Done.
+   - Add the GitHub Pages URL as a link, comment a short summary of what changed, and move the issue to ~~Done~~ **In Review** *(Dan, Nov 21: "Push, then put the Pages link on the ticket with a short comment, and move it to In Review."; an issue is never moved to Done on its own, see "Instructions from Dan (Nov 21)")*.
 4. **Pausing between issues:** at first Dan asked to stop and check in before each next issue. Later Dan said "execute overnight" (Nov 10) and then "check linear and do all tickets related to flowtile" (Nov 10). When Dan asks for a batch like that, work through the whole batch without stopping.
 5. **Plain HTML/JS, no build step.** No bundlers, no package.json, no SST.
 6. **Ask, don't guess.** If anything needs Dan's decision, ask Dan. Examples are making the repo public, gh auth, hosting, or a rule the issue leaves open.
@@ -77,6 +77,21 @@ Also from Dan: "take the existing hexagon and aesthetics", and "this will be a w
 - **Trees overgrow** (Dan, Nov 20, built as LOU-302): "should we have a 'deep green' tile which is trees? And what special should this have?" The ticket says that after a few rounds, in which he rejected a mountains-only placement and a double-score idea, he picked one: "I like overgrow". Trees are a fourth kind of habitat, deep green, that is never planted on bare ground and instead grows over a habitat of its own level (`treeShare`, `overgrow`). See "Trees that overgrow, as built".
 - **Four river tiles to start** (Dan, Nov 21: "have it start with 4 water tiles, that way I can build my stream"): the pile opens with four river tiles, then green, green, prairie, marsh (`opening` in `flowgrow.config.js`). See "Four river tiles to start, as built".
 - **Upgrades at level 4** (Dan, Nov 20 to 21; spec LOU-303, which stays the spec of record, built in three parts: LOU-304, LOU-305, LOU-306): "Or should we give tiles specials or specialization when they hit a certain level?" Then "Make it level 4". Then "Let's make it an upgrade...and then also should it be an aesthetic difference as well? Here's an idea for prairie. At level 4 one of the upgrades can be "spreader", where every time that tile levels up, it plants a free level 1 prairie adjacent to it until no more slots available". Then "There's no need for protection...it's not a combat game" and "Also instead of spreader call the ability steppe". Then "instead of Bloom, make it "meadow" and it adds the score of neighboring marsh and trees as a multiplier", and "yes add meadow to 303". Then, for trees: "I like roots...put no cap on it, allow chain reaction for combos, I like pioneer....call it pine-oneer....like for pine trees". When a marsh, prairie or tree habitat reaches level 4 it gains an upgrade, a power of its own that shows in its look as well as its rules. Part 1 (LOU-304) builds the upgrade level, the look system and the marsh's **reed bed**; the prairie's steppe and meadow and the pick are LOU-305, and the trees' roots and pine-oneer are LOU-306. See "Upgrades part 1: the reed bed and the look system, as built".
+
+### Instructions from Dan (Nov 21)
+
+- **The batch** (Dan's pasted instruction, Nov 21): work LOU-301, LOU-302, LOU-304, LOU-305 and LOU-306 in that order, one ticket at a time. Skip LOU-303 ("it is the parent spec, read it for context only") and LOU-307 ("a concept, do not build"); LOU-298, 299 and 300 were already built and in review. For each ticket, in his words:
+  - "Build only what the ticket says. Where it names a choice already made (a default, a config value, a fixed order), use it. Don't add rules, tune numbers or change defaults."
+  - "Every new rule goes behind its config switch. With the switch off, the simulator must print exactly what it printed before the ticket, byte for byte. Check this."
+  - "Bump the save version and add the new config values to the ruleset key."
+  - "Run the rule checks, the 1,000-run simulator and the hard search the ticket asks for, and put the numbers it asks for in a comment on the ticket. Say plainly where a number looks wrong or a rule seems too strong (especially Roots chains and Meadow)."
+  - "Update CANON.md with Dan's quoted lines and the rule as built, add a line to README.md, and bump VERSION in sw.js."
+  - "Push, then put the Pages link on the ticket with a short comment, and move it to In Review." So an issue is never moved to Done on its own: that is Dan's call, after he has played it.
+  - "Then start the next ticket. Don't start one until the one before it is pushed."
+  - "If a ticket contradicts the code, an earlier ticket, or itself, stop and ask Dan in the ticket instead of guessing. If the old search tools are gone, add them to tools/ and say so."
+- **Quick test first** (Dan, Nov 21, partway through the batch): "try and quickly do 304, 305, 306 to test, also report out if any the simulations but no need to run simulations for the rest of the tickets". LOU-304, 305 and 306 were built together. When the 305 and 306 simulations had been skipped, Dan said "Run them", and they were run and posted.
+- **The link** (Dan, Nov 21): "provid the link". The game's link and the tickets' links were given.
+- **Away for two hours** (Dan, Nov 21): "ok, i'll be going away for 2 hours, keep working, clean up all the tickets, do some simulations, then when you're done write a linear ticket on suggestions and ideas for improving the mechanics. good luck!" Dan asked for this one ticket, so it is the exception to "don't create new issues": it was made as LOU-308 (Linear allowed it, and the work rule stands for every other piece of work). What was done is under "Simulations and suggestions (Nov 21)".
 
 ### The move to its own repo (Nov 20)
 
@@ -317,6 +332,89 @@ Also from Dan: "take the existing hexagon and aesthetics", and "this will be a w
 - **Upgrades part 2** (LOU-305; the ticket's choices and mine, not Dan's words): the names, powers and looks are placeholders. Meadow is Dan's words read as a multiplier of 1 + the count of neighbouring marsh and trees, capped at ×4; two other readings are not built (a multiplier from the sum of the neighbours' levels, and a bonus that adds the neighbours' own points once). Steppe plants one free tile per level-up (`steppePerLevel: 1`), put by a fixed order; whether the player picks the tile, or every free slot fills (6), is Dan's call. The free level 1 prairie scores 1. The pick is required at once: there is no "decide later". Mine: "clockwise from the top edge" is built as clockwise from the top right (a pointy-top hex has no top edge), several picks are asked in reading order, a copy planted as level 1 loses its upgrade, and the card's wording, the marks, the rims and the toasts are placeholders.
 
 - **Upgrades part 3** (LOU-306; the ticket's choices and mine, not Dan's words): the names, powers and looks are placeholders. Roots reads "no cap" as every lower neighbour rising, with the chain on (the earlier idea of one tile a level-up and no chains is `rootsPerLevel: 1` and `rootsChain: false`). A tile has to be lower than the tree to rise, so a chain always ends. The pick is required at once, with no "decide later". A second marsh upgrade and an upgrade for green are still undecided. Mine: the chain order is neighbours clockwise from the top right, first come first served; a locked pine-oneer still counts; a lifted tile that reaches level 4 has its pick even with the chain off; the toast and the marks are placeholders. **Flagged by the simulations:** `upgradeLevel` 4 is what keeps Roots in check. Lowering it makes Roots chains explode the best score (2,056 at level 3 and 3,443 at level 2, against about 1,000 at level 4, 61 to 69% of the points from Roots lifts), and a steppe snowballs the simple player's score (491 at level 2): see the numbers under "Upgrades part 3" and "Upgrades part 2".
+
+### Simulations and suggestions (Nov 21)
+
+Dan's request is under "Instructions from Dan (Nov 21)". **Nothing in the game changed:** no rule was built, no default or config value moved, and no file the page loads was touched. What was done is the Linear cleanup, the simulations below, and a ticket with the ideas (LOU-308). The experiments that need code ran in scratch copies of the repo that were never committed; they are described below so they can be repeated.
+
+- **Linear cleanup:** LOU-303 (the spec of record) is In Review with a summary comment; the project's description and the initiative's were rewritten to build v16 (the repo, the live link, a table of every ticket with its status, the working rules as they are now); the document "Flowgrow: current game state" was rewritten for build v16 (same document, new title and link); the Nov 20 brainstorm document has an "out of date" banner; the stale `danrossli.github.io/flowtile/flowgrow/` links were removed from LOU-298 and LOU-299 and the current link added to LOU-299; LOU-298 got the comment that was missing for the four-river opening (what was built, my reading of Dan's sentence, and the trap). Dan's own ticket texts were not changed. LOU-307 (needs Dan's decision) and LOU-297 (Canceled) stay as they were.
+- **How the numbers were made.** Rules of build v16 with the default config unless a setting is named, and the seed 495454692 for the hard searches. **Simple player:** 1,000 runs of seeds 1 to 1000, one setting changed at a time (`key=value`); it combines when it can, plants on the first legal tile, locks only when the pile is empty, picks Steppe and Roots, and puts a river tile where it opens the most land (which can be the source, see "The opening's trap"). It is a weak player. **Hard search:** `node tools/flowgrow-search.mjs --workers 10 --seconds 300`, two settings at the same time on 20 cores so that every arm had the same budget, one search per setting. **Noise:** two searches of the same rules differ by about 3% (1,071 and 1,101 for the new and the old opening), so only a difference of 5% or more means anything. The search's best runs are short of a proof: its own policy was tuned on older rules.
+- **The game today** (build v16). Simple player: **179** points on average (10th to 90th percentile 141 to 230), 90 moves, 21 locks, 47 copies banked and placed, **149 of its 179 points from copies (83%)**, 60 points from raising the river, 74 of 108 land cells empty at the end. Hard search: **1,071** (top level 6, 73 locks, 362 moves): 882 points (82%) from combining copies, 93 from planting copies, 59 from raising the river, 15 from overgrows, 72 of them extra from Meadow; it ends with **100 habitats and 6 river tiles** (3 land cells empty). Kinds on its island: **prairie 73, green 19, marsh 5, trees 3**, and 64 prairie tiles were planted beyond the river's reach. Without upgrades the search found 1,044.
+- **Simple player, one setting changed at a time** (1,000 runs each; the score is the average, then the 10th to 90th percentile):
+
+| Setting | Score | Notes |
+| -- | -- | -- |
+| default | 179 (141 to 230) | |
+| `upgradeLevel=0` / 5 | 176 / 176 | upgrades are invisible at level 4 |
+| `upgradeLevel=3` | 211 (158 to 288) | Roots 16.8 points a run, longest chain 4 |
+| `upgradeLevel=3 rootsChain=false` / `rootsPerLevel=1` | 205 / 197 | |
+| `upgradeLevel=2` | 328 (188 to 472) | steppe 8.6 level-ups a run; Roots 37 points, chain 6, one move 105 |
+| `upgradeLevel=2 rootsChain=false` / `rootsPerLevel=1` | 296 / 297 | |
+| `upgradeLevel=2 steppePerLevel=6` | 652 (273 to 958) | 30 free tiles a run |
+| `upgradeLevel=2 picks=meadow,pine` | 186 | the same level is weak with the other picks |
+| old opening (one river tile) | 202 (157 to 250) | the four-river opening costs this player 11%, with 2.6 more discards a run |
+| opening with two river tiles | 202 | |
+| `riverShare=0` / 0.2 | 197 / 163 | river tiles in the pile are a net cost to this player |
+| `stackSize=15` / 25 / 30 / 40 | 112 / 242 / 309 / 400 | about 12 points for every tile in the pile |
+| `lockEvery=3` / 5 / 10 | 96 / 98 / 78 | the one-lock-per-N-tiles pace cuts this player by half or more |
+| `levelOdds=0.25` | 168 | |
+| `prairieSpreads=false` | 199 (168 to 234) | |
+| `marshNeedsRiver=false` | 179 | |
+| `overgrow=false` / `treeShare=0` | 181 / 171 | |
+| `prairieShare=0 marshShare=0` | 190 | |
+| `biomeMatch=false` (any kind combines) | 139 (85 to 184) | |
+| `lockLevelCap=false` | 235 (163 to 333) | |
+| `riverScore=all` / `none` | 259 / 120 | |
+| `riverMonotone=false` | 166 | |
+| `riverMaxLevel=2` | 123 | the river runs away: 99 river tiles and 314 moves a run |
+| `maxLevel=7` | 179 | this player never reaches level 7 |
+| `bareGroundMode=refuse`, `bareGroundMaxLevel=2` or 15 | 179 | identical: this player never plants a high tile on bare ground |
+| `lockCopiesGo=front` | 179 | identical: this player locks only when the pile is empty |
+| `lockRivers=false` | 120 | not meaningful: this player raises the source with its first river tile and has no river copies |
+| `lockMaxCopies=2` / 3 / 4 (scratch) | 102 / 151 / 167 | a lock banks only its N highest-level copies |
+| `lockMinLevel=2` / 3 (scratch) | 179 / 31 | level 3 stalls the run: nothing can be locked early |
+| island 11×7 / 9×7 (scratch) | 160 / 168 | this player leaves 63% and 58% of the island empty, so it barely notices |
+| island 9×7 with `stackSize=15`; 11×7 with 30 (scratch) | 100 / 305 | |
+| `upgradeLevelMarsh=3` / 2 (scratch, one level for each kind) | 179 / 174 | |
+| `upgradeLevelPrairie=3` / 2 (scratch) | 186 / 242 | at 2: steppe 6.7 level-ups and 6.3 free tiles a run |
+| `upgradeLevelTrees=3` / 5 (scratch) | 201 / 177 | at 3: Roots 16 points a run, chain 4; at 5 Roots never fires |
+| marsh 3, prairie 3, trees 5 / all three 3 (scratch) | 183 / 211 | all three at 3 is the same as `upgradeLevel=3` |
+| marsh 3, prairie 2, trees 4 / marsh 2, prairie 2, trees 5 (scratch) | 242 / 238 | steppe 6.9 level-ups and 6.4 free tiles a run |
+| package: island 11×7 / 9×7, `prairieSpreads=false`, marsh 3, prairie 3, trees 4 (scratch) | 182 / 183 | the same with the spread on: 166 / 173; with only the island and no spread: 177 / 178 |
+
+- **Hard search, 5 minutes on 10 workers** (the first rows are the controls; the points come from `tools/flowgrow-analyze.mjs`):
+
+| Setting | Best | Top | Locks | Moves | River tiles | What it shows |
+| -- | -- | -- | -- | -- | -- | -- |
+| default | 1,071 | 6 | 73 | 362 | 6 | combining copies 882 (82%) |
+| old opening | 1,101 | 5 | 65 | 334 | 5 | within noise of the default |
+| `upgradeLevel=0` | 1,044 | 6 | 75 | 351 | 7 | upgrades add 3% at level 4 |
+| `upgradeLevel=3` | 1,813 | 11 | 22 | 100 | 2 | **Roots lifts 987 points (54%)**, longest chain 11, one move 273 |
+| `upgradeLevel=2` | 3,308 | 12 | 27 | 138 | 1 | **Roots lifts 2,005 points (61%)**, longest chain 13, one move 393 |
+| `upgradeLevel=3 rootsChain=false` | 1,211 | 6 | 70 | 375 | 5 | Meadow adds 230; Roots 6 |
+| `upgradeLevel=3 rootsPerLevel=1` | 1,120 | 5 | 75 | 379 | 10 | Meadow adds 140; Roots 9 |
+| `lockEvery=5` | 465 | 5 | 30 | 208 | 4 | |
+| `lockEvery=10` | 186 | 5 | 3 | 42 | 3 | |
+| `stackSize=30` | 1,245 | 9 | 19 | 106 | 1 | a Roots chain shows up even at level 4: 589 points (47%), chain 8, one move 190 |
+| `prairieSpreads=false` | 852 | 5 | 68 | 318 | 24 | **river raises 238 points (28%)**; kinds green 51, prairie 18, marsh 1, trees 1 |
+| `lockMaxCopies=3` (scratch) | 716 | 6 | 70 | 275 | 5 | a lock banks only its 3 highest copies |
+| `lockMinLevel=2` (scratch) | 1,014 | 6 | 77 | 370 | 14 | only level 2 and up can be locked; the island ends mixed (green 22, prairie 53, marsh 19) and full |
+| `biomeMatch=false` | 1,120 | 6 | 70 | 343 | 8 | any kind combines: prairie 71, marsh 0; within noise of the default |
+| island 11×7 (69 land cells, scratch) | 710 | 6 | 50 | 229 | 4 | the island fills (0 cells empty); the simple player scores 160 |
+| island 9×7 (56 land cells, scratch) | 601 | 6 | 40 | 192 | 3 | the island fills; the simple player scores 168 |
+| marsh 3, prairie 3, trees 4 (`upgradeLevelMarsh=3 upgradeLevelPrairie=3 upgradeLevelTrees=4`, scratch) | 1,153 | 6 | 76 | 370 | 4 | Meadow adds 165 points (14%), Roots 41; the simple player scores 186 |
+| marsh 3, prairie 3, trees 5 (scratch) | 1,071 | 5 | 70 | 361 | 5 | Meadow adds 105, Roots never fires; the simple player scores 183 |
+| marsh 3, prairie 2, trees 4 (scratch) | 1,357 | 5 | 73 | 425 | 1 | steppes plant 66 free tiles; 92 of 101 habitats are prairie; the simple player scores 242 |
+| marsh 2, prairie 2, trees 5 (scratch) | 1,425 | 6 | 79 | 447 | 1 | steppes plant 68 free tiles; 94 of 107 habitats are prairie; the simple player scores 238 |
+| **package**: island 11×7, `prairieSpreads=false`, marsh 3, prairie 3, trees 4 (scratch) | 621 | 6 | 19 | 91 | 3 | a short run (91 moves, 46 land cells left empty): Meadow adds 266 (43%); the simple player scores 182 |
+| package on the 9×7 island (scratch) | 595 | 5 | 36 | 173 | 13 | 8 cells left empty, 81 points from raising the river; the simple player scores 183 |
+
+- **What the scratch copies changed** (a few lines each; every switch is off by default, and each copy was checked to print what the repo prints when they are off): `lockMaxCopies` in `copiesOf` (when a lock would bank more than N copies, keep the N of the highest level, then queue them in the usual order); `lockMinLevel` in `lockable` and `lockWouldCopy` (a tile can only be locked at that level or above); `upgradeLevelMarsh`, `upgradeLevelPrairie` and `upgradeLevelTrees` through one helper where `upgradeLevel` was read (`reedBedAt`, `pineBank`, `upgradeOf`, `needPick` and the planting of a copy; 0 means the shared `upgradeLevel`); a smaller `map` in the config (11×7 with 69 land cells and 9×7 with 56, one source in the middle and a few mountains); and an environment switch `RIVERSMART=1` for the simple player. None of it is in this repo. Each is small enough to build behind a real switch if Dan picks the idea.
+- **The upgrades' picks:** at the default level the search picked Meadow every time (30 of 30 prairie picks in two searches) and never Steppe; at levels 3 and 2 it picked Steppe 7 times of 24.
+- **The river-smart player** (scratch copy only: a river tile goes on land that extends the river while more river tiles wait behind it, instead of raising the source): 238 with the new opening and 269 with the old one (10th to 90th percentile 141 to 686 and 168 to 400), 184 with no river tiles in the pile after the opening. Both openings gain 33% over the simple player, so the gap between them stays at about 12%: it comes from four river tiles taking four of the 20 pile tiles, not only from the trap below.
+
+- **What the numbers say, in short** (the full list and the ideas are in LOU-308; none of this changed a rule): a run's score is its lock copies (83% for the simple player, 82% for the best search run). A good player ignores the river and marsh: the best run has 6 river tiles and is 73% prairie, because prairie's spread covers the island; with the spread off the river is used (24 tiles, 28% of the points) and the best score falls 20%. Upgrades at level 4 are almost invisible (176 without, 179 with; 1,044 and 1,071), and below level 4 Roots takes over (1,813 at level 3 and 3,308 at level 2, over half from Roots lifts), though the pile's length is part of why level 4 is safe: with 30 tiles a Roots chain shows up at level 4 too. The ratio of the best search to the simple player is 6.0 today; the pile, the island, the spread and the lock pace all move it (a 30-tile pile 4.0, no spread 4.3, island 11×7 4.4 and 9×7 3.6, `lockEvery=10` 2.4), while taking the kind rule away (8.1) and lowering the upgrade level (8.6 and 10.1) widen it.
+- **The opening's trap** (found while reading these numbers): with the four-river opening the first tile in hand is a level 1 river tile, and the source is a river tile too, so the first option offered is to put it on the source: it raises the source to level 2 for **3 points** ("wider +3"). From then on a level 1 river tile can't be placed anywhere, because a river tile can't be lower than the one it flows from, so **the other three river tiles can only be discarded** (checked: after raising the source the options for the next river tile are none, and the toast says "A river tile can't be lower than the one it flows from (level 2)."). Extending first leaves every option open. The simple player falls into it (discards 4.6 a run against 2.1 with the old opening). Nothing was changed; Dan's options are listed in LOU-308.
 
 ### Not built yet
 
