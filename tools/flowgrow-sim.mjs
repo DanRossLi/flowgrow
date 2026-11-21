@@ -23,7 +23,7 @@ const BASE = R.tidy(base).cfg;
 // The rule checks are written for these values, the first build's, so tuning flowgrow.config.js never breaks them (the pilot pile, for one,
 // changes the pile; bare ground takes any level, and the bare ground rule is checked on its own below). The report and the command line use the config file as it is.
 const REF = (() => { const t = R.tidy({...base, map:["_____________", "_BB__________", "__B_______B__", "__________BB_", "______T______", "_____________", "___BB________", "_____________", "_____________"],
-  stackSize:80, queueShown:3, pickFrom:1, riverShare:.1, opening:["habitat 1", "habitat 1", "river"], maxLevel:7, levelOdds:.5, scoreByLevel:[1, 3, 6, 10, 15, 21, 28], riverReach:[1, 2], riverMonotone:false, bareGroundMaxLevel:24, bareGroundMode:"refuse",
+  stackSize:80, queueShown:3, pickFrom:1, riverShare:.1, opening:["habitat 1", "habitat 1", "river"], maxLevel:7, levelOdds:.5, scoreByLevel:[1, 3, 6, 10, 15, 21, 28], riverReach:[1, 2], riverMonotone:false, bareGroundMaxLevel:24, bareGroundMode:"refuse", grasslandShare:0, marshShare:0, biomeMatch:true,
   levelNames:["Sprouts", "Meadow", "Thicket", "Saplings", "Grove", "Forest", "Old forest"], lockEnabled:true, lockLevelCap:true, lockCopiesGo:"back", lockRivers:true, lockEvery:10, lockHold:1}, base);
   if (t.bad.length) throw new Error("bad reference config: " + t.bad); return t.cfg })();
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -64,6 +64,7 @@ function report(cfg, runs) { const res = []; for (let seed = 1; seed <= runs; se
   console.log(`  score                average ${Math.round(avg(sc))} · 10th percentile ${pct(sc, .1)} · 90th percentile ${pct(sc, .9)}`);
   console.log(`  top level            average ${f1(avg(top))}${lv.map(l => ` · level ${l}+ in ${share(top, t => t >= l)}`).join("")}`);
   console.log(`  habitats on the map  ${f1(avg(ok.map(r => r.hab)))} (planted ${f1(avg(S.map(s => s.planted)))}, combined ${f1(avg(S.map(s => s.combined)))})`);
+  if (cfg.grasslandShare + cfg.marshShare > 0) console.log(`  kinds on the map     ${f1(avg(S.map(s => Object.keys(s.h).filter(k => !s.hb[k]).length)))} green · ${f1(avg(S.map(s => Object.values(s.hb).filter(b => b === "g").length)))} grasslands · ${f1(avg(S.map(s => Object.values(s.hb).filter(b => b === "m").length)))} marsh habitats at the end`);
   console.log(`  river tiles          ${f1(avg(ok.map(r => r.riv)))} with the source (extended ${f1(avg(S.map(s => s.extended)))}, widened ${f1(avg(S.map(s => s.widened)))})`);
   console.log(`  discards             ${f2(avg(S.map(s => s.discarded)))} a run · at least one in ${share(S, s => s.discarded > 0)} of runs`);
   console.log(`  tight turns          ${f1(avg(ok.map(r => r.tight)))} a run with 2 or fewer plantable tiles · ${f1(avg(ok.map(r => r.room)))} plantable tiles left at the end`);
@@ -206,7 +207,7 @@ function checks() { let n = 0; const fails = [];
       !a.error && S.over && S.dealt === 10 && dealt.length === 10 && dealt.every(e => e.t.l === 1) && S.used === 10 + S.copyPlaced + S.copyDiscarded) }
   { const S = run(["habitat 1", "habitat 1", "habitat 1", "habitat 1"], {levelOdds:0, stackSize:4, queueShown:0}); R.place(S, 0, E); R.place(S, 0, E);
     ok("with only level 1 dealt, the pile takes a habitat to level 2 and no further: no tile in hand fits a level 2 habitat", at(S, E) === 2 && R.options(S, 0).length > 0 && R.options(S, 0).every(o => o.does === "plant" && o.p + "" !== E + "")) }
-  ok("the config file asks for the pilot pile: 10 tiles, level odds 0", BASE.stackSize === 10 && BASE.levelOdds === 0);
+  ok("the config file asks for the pilot pile, grown to 20 tiles (Dan, Nov 20: expand starting tiles to 20), with level odds 0", BASE.stackSize === 20 && BASE.levelOdds === 0);
   // ----- no lock limit (Dan, Nov 20: "there is no lock limit, a user can lock as many times as they want")
   ok("the config file has no lock limit: lockEvery 0, so a lock is always at hand", BASE.lockEnabled === true && BASE.lockEvery === 0);
   { const k = R.rulesKey(REF); ok("a ruleset's key changes with any rule, and not with names or zoom",
@@ -303,6 +304,48 @@ function checks() { let n = 0; const fails = [];
   { const t = R.tidy({...REF, bareGroundMaxLevel:0, bareGroundMode:"sideways"}, REF);
     ok("a bad bare ground level or mode is refused and the old value stands", same(t.bad, ["bareGroundMaxLevel", "bareGroundMode"]) && t.cfg.bareGroundMaxLevel === 24 && t.cfg.bareGroundMode === "refuse") }
   ok("the config file has bare ground at level 1, and the mode is downgrade (Dan, Nov 20: level 1 only on bare ground, then put downgrade in the game to play test)", BASE.bareGroundMaxLevel === 1 && BASE.bareGroundMode === "downgrade");
+
+  // ----- grasslands (yellow) and marsh (turquoise) (Dan, Nov 20: "add a yellow tile for grasslands and then add a turquoise tile for marsh", "expand starting tiles to 20").
+  // They are habitats of kinds of their own: a tile has b "g" or "m" (the original green one has no b), a combine needs the same kind (biomeMatch) and the same level, and a
+  // copy keeps its kind. REF deals none of them (both shares are 0), so every check above is about the game as it was.
+  ok("tiles can be written in words: grasslands 2, marsh 3, habitat 1, river 2", same([R.parseTile("grasslands 2"), R.parseTile("marsh 3"), R.parseTile("habitat 1"), R.parseTile("river 2"), R.parseTile("Marsh 1")], [{k:"h", l:2, b:"g"}, {k:"h", l:3, b:"m"}, {k:"h", l:1}, {k:"r", l:2}, {k:"h", l:1, b:"m"}])
+    && R.parseTile("marsh") === null && R.parseTile("swamp 1") === null && R.tileWord({k:"h", l:2, b:"g"}) === "grasslands 2" && R.tileWord({k:"h", l:3, b:"m"}) === "marsh 3" && R.tileWord({k:"h", l:1}) === "habitat 1");
+  { const S = run(["grasslands 2", "marsh 1", "habitat 1"], {});
+    ok("an opening of grasslands, marsh and green deals them in that order, and each tile's text names its kind", same(S.q.slice(0, 3), [{k:"h", l:2, b:"g"}, {k:"h", l:1, b:"m"}, {k:"h", l:1}]) && R.tileText(S.cfg, S.q[0]) === "Grasslands (level 2)" && R.tileText(S.cfg, S.q[1]) === "Marsh (level 1)" && R.tileText(S.cfg, S.q[2]) === "Sprouts (level 1)") }
+  { const S = run(["marsh 1", "grasslands 1", "habitat 1"], {}), a = R.place(S, 0, E), b = R.place(S, 0, W), c = R.place(S, 0, [6, 3]);
+    ok("a marsh tile is planted as a marsh habitat, then a grasslands one, then a green one: level 1, 1 point each", a && a.does === "plant" && a.pts === 1 && S.h["7,4"] === 1 && S.hb["7,4"] === "m" && b && S.hb["5,4"] === "g" && c && S.h["6,3"] === 1 && !("6,3" in S.hb) && S.score === 3 && S.planted === 3) }
+  { const S = run(["marsh 1", "grasslands 1", "habitat 1", "marsh 1"], {}), msg = "That's Marsh (level 1). Only a tile of the same kind and level goes on it."; R.place(S, 0, E);
+    ok("a grasslands tile can't go on a marsh habitat of the same level: no move, and the text says why", does(S, E) === undefined && R.place(S, 0, E) === null && R.why(S, 0, E) === msg && R.options(S, 0).every(o => o.does === "plant"));
+    R.discard(S, 0); ok("neither can a green tile", does(S, E) === undefined && R.place(S, 0, E) === null && R.why(S, 0, E) === msg);
+    R.discard(S, 0); const r = R.place(S, 0, E);
+    ok("a marsh tile can: marsh level 2 for 3 points", r && r.does === "combine" && r.l === 2 && r.pts === 3 && S.h["7,4"] === 2 && S.hb["7,4"] === "m" && S.combined === 1) }
+  { const S = run(["habitat 1", "marsh 1"], {}); R.place(S, 0, E); ok("a marsh tile can't go on a green habitat either", does(S, E) === undefined && R.why(S, 0, E) === "That's Sprouts (level 1). Only a tile of the same kind and level goes on it.") }
+  { const S = run(["marsh 1", "grasslands 1"], {biomeMatch:false}); R.place(S, 0, E); const r = R.place(S, 0, E);
+    ok("with kinds not having to match, a grasslands tile does combine onto a marsh habitat of its level, and the habitat stays marsh", r && r.does === "combine" && S.h["7,4"] === 2 && S.hb["7,4"] === "m") }
+  { const S = setup({"8,6":3, [N[0]]:2, [N[1]]:1, [N[2]]:1}, {}, {lockEvery:0, stackSize:1, queueShown:0}); S.hb["8,6"] = "m"; S.hb[N[0]] = "g"; S.hb[N[1]] = "m"; R.discard(S, 0);   // a level 3 marsh beside a level 2 grasslands, a level 1 marsh and a level 1 green
+    const copies = R.copiesOf(S, C).copies; R.lock(S, C);
+    ok("lock: copies keep the kind they are copied from, lowest level first", same(copies, [{k:"h", l:1, c:1, b:"m"}, {k:"h", l:1, c:1}, {k:"h", l:2, c:1, b:"g"}]) && same(S.q[0], copies[0]) && same(S.bank, copies.slice(1)));
+    const a = R.place(S, 0, [6, 3]); ok("lock: a marsh copy is planted as a marsh habitat", a && a.does === "plant" && S.hb["6,3"] === "m" && S.copyPlaced === 1) }
+  { const S = setup({"8,6":3, "9,6":5}, {}, {...DG, lockEvery:0, stackSize:1, queueShown:0}); S.hb["8,6"] = "g"; R.discard(S, 0); R.lock(S, [9, 6]);   // the level 5 habitat copies the level 3 grasslands beside it
+    const a = R.place(S, 0, E);
+    ok("downgrade: a level 3 grasslands copy is planted as grasslands at level 1 for 1 point: it keeps its kind", a && a.l === 1 && a.pts === 1 && S.h["7,4"] === 1 && S.hb["7,4"] === "g" && S.copyPlaced === 1 && /planted at 7,4, as level 1 Grasslands · \+1 · /.test(R.logText(S))) }
+  { const S = run([], {stackSize:0, grasslandShare:.3, marshShare:.2, riverShare:0}), c = {g:0, m:0, h:0}, n = 30000, lv = new Set(); for (let i = 0; i < n; i++) { const t = R.roll(S); c[t.b || "h"]++; lv.add(t.l) }
+    ok("dealt habitats are grasslands 30% of the time and marsh 20%, and the rest are green", Math.abs(c.g / n - .3) < .012 && Math.abs(c.m / n - .2) < .012 && Math.abs(c.h / n - .5) < .012 && lv.size === 1 && lv.has(1)) }
+  { const S = run([], {stackSize:0, riverShare:.1}); let any = false; for (let i = 0; i < 5000; i++) if (R.roll(S).b) any = true; ok("with both shares 0 no tile is ever grasslands or marsh", !any) }
+  { const t = R.tidy({...REF, grasslandShare:.7, marshShare:.6}, REF), u = R.tidy({...REF, grasslandShare:"x", biomeMatch:"maybe"}, REF);
+    ok("grasslands and marsh together can't pass 1: both are refused and the old values stand", same(t.bad, ["grasslandShare", "marshShare"]) && t.cfg.grasslandShare === 0 && t.cfg.marshShare === 0);
+    ok("a bad share or a bad kinds switch is refused", same(u.bad, ["grasslandShare", "biomeMatch"]) && u.cfg.grasslandShare === 0 && u.cfg.biomeMatch === true) }
+  ok("the ruleset key changes with the shares and with the kinds switch", R.rulesKey(cfgWith({grasslandShare:.3})) !== R.rulesKey(REF) && R.rulesKey(cfgWith({marshShare:.3})) !== R.rulesKey(REF) && R.rulesKey(cfgWith({biomeMatch:false})) !== R.rulesKey(REF));
+  ok("the config file deals grasslands and marsh and shows every kind in its first tiles (Dan, Nov 20)", BASE.grasslandShare > 0 && BASE.marshShare > 0 && BASE.grasslandShare + BASE.marshShare < 1 && BASE.biomeMatch === true && BASE.opening.includes("grasslands 1") && BASE.opening.includes("marsh 1"));
+  for (const mode of ["refuse", "downgrade"]) { const cfg = cfgWith({bareGroundMaxLevel:1, bareGroundMode:mode, grasslandShare:.3, marshShare:.3, opening:["habitat 1", "grasslands 1", "marsh 1", "river"], lockEvery:0, stackSize:20}), S = R.fresh(cfg, 9);
+    let z = 777, guard = 0; const rn = () => (z = (z * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+    while (!S.over && guard++ < 4000) { if (!S.q.length) { const lk = Object.keys(S.h).map(R.unkey).find(p => R.lockable(S, p) && R.copiesOf(S, p).copies.length); if (!lk) { R.end(S); break } R.lock(S, lk); continue }
+      const o = R.options(S, 0); if (!o.length || rn() < .1) { R.discard(S, 0); continue } R.place(S, 0, o[Math.floor(rn() * o.length)].p) }
+    const T = R.fresh(cfg, 9); let mixed = 0; for (const m of S.moves) { if (m.a === "p") { const t = T.q[m.i], k = m.x + "," + m.y; if (k in T.h && (T.hb[k] || "") !== (t.b || "")) mixed++ }
+      m.a === "p" ? R.place(T, m.i, [m.x, m.y]) : m.a === "d" ? R.discard(T, m.i) : m.a === "l" ? R.lock(T, [m.x, m.y]) : R.end(T) }
+    const kinds = new Set(Object.values(S.hb));
+    ok(`a whole run of random legal moves with grasslands and marsh (${mode}): it ends, both kinds were planted, no tile ever combined onto another kind, and it replays from its seed`,
+      S.over && guard < 4000 && kinds.has("g") && kinds.has("m") && mixed === 0 && same(S, R.replay(cfg, 9, S.moves))) }
 
   for (const f of fails) console.log("FAILED: " + f);
   console.log(fails.length ? `${fails.length} of ${n} rule checks failed` : `all ${n} rule checks passed`);

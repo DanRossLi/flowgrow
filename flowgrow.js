@@ -31,7 +31,7 @@ const G = typeof window !== "undefined" ? window : globalThis;
 // A run is plain data:
 //   cfg      the config the run started with (a Tuning change applies from the next run)
 //   seed     the number the pile is dealt from; rs is the state of the random numbers
-//   h        habitats, {"x,y": level}
+//   h        habitats, {"x,y": level}; hb: the kind of each habitat that isn't the original green one, {"x,y": "g" (grasslands) or "m" (marsh)}
 //   r        river tiles, {"x,y": {l: level, from: the river tile it joins (only for drawing), n: the order it was laid}}
 //   q        the front of the pile: q[0] is the tile in hand, the rest are the next tiles shown
 //   dealt    tiles dealt into q so far; used: tiles placed or discarded
@@ -43,7 +43,8 @@ const G = typeof window !== "undefined" ? window : globalThis;
 //   lk       locked tiles, {"x,y": 1}; bank: the copies waiting at the back of the pile, in order
 //   locks    locks held; toLock: tiles placed since the last lock was earned
 //   lockUsed, lockLost, copyBanked, copyPlaced, copyDiscarded, copyPoints
-// A tile is {k: "h" (habitat) or "r" (river), l: level}. A copy banked by a lock also has c: 1.
+// A tile is {k: "h" (habitat) or "r" (river), l: level}. A copy banked by a lock also has c: 1. A habitat of the yellow or turquoise kind also has
+// b: "g" (grasslands) or "m" (marsh); the original green one has no b.
 // A run is its config, its seed and its moves: replay() rebuilds it from those three, and undo, saving and reload all use it.
 
 // Hex grid, copied from play.js: pointy-top hexes in "odd-r" offset rows (odd rows sit half a tile right). Six faces,
@@ -66,10 +67,13 @@ function mapOf(v) { const rows = (typeof v === "string" ? v.split(/[\s,]+/) : Ar
   if (rows.length < 3 || rows.length > 24) return undefined; const w = rows[0].length; if (w < 3 || w > 24) return undefined;
   let src = 0; for (const r of rows) { if (r.length !== w || /[^T_B]/.test(r)) return undefined; src += r.split("T").length - 1 }
   return src === 1 ? rows : undefined }
-// A tile written in words, as in the config's opening list: "habitat 3", "river" (level 1) or "river 2".
-function parseTile(s) { const m = /^\s*(habitat|river)(?:\s+(\d+))?\s*$/i.exec(String(s)); if (!m) return null;
-  const k = m[1].toLowerCase() === "river" ? "r" : "h", l = m[2] ? +m[2] : 1; return l >= 1 && l <= 24 && (k === "r" || m[2]) ? {k, l} : null }
-const tileWord = t => t.k === "r" ? (t.l > 1 ? "river " + t.l : "river") : "habitat " + t.l;
+// A tile written in words, as in the config's opening list: "habitat 3", "grasslands 2", "marsh 1", "river" (level 1) or "river 2". "habitat" is the
+// original green kind. Grasslands (yellow) and marsh (turquoise) are habitats of kinds of their own, written b "g" and "m" on a tile (green has no b).
+const BIOME_NAME = {g:"Grasslands", m:"Marsh"}, BIOME_OF = {grasslands:"g", marsh:"m"};
+function parseTile(s) { const m = /^\s*(habitat|grasslands|marsh|river)(?:\s+(\d+))?\s*$/i.exec(String(s)); if (!m) return null;
+  const w = m[1].toLowerCase(), k = w === "river" ? "r" : "h", l = m[2] ? +m[2] : 1; if (!(l >= 1 && l <= 24 && (k === "r" || m[2]))) return null;
+  return BIOME_OF[w] ? {k, l, b:BIOME_OF[w]} : {k, l} }
+const tileWord = t => t.k === "r" ? (t.l > 1 ? "river " + t.l : "river") : (t.b ? BIOME_NAME[t.b].toLowerCase() : "habitat") + " " + t.l;
 // [key, check, name in Tuning, note, kind of field]
 const KEYS = [
   ["map", mapOf, "Island", "rows of T (source), _ (land) and B (mountain)", "rows"],
@@ -77,7 +81,10 @@ const KEYS = [
   ["queueShown", whole(0, 6), "Next tiles shown", "after the tile in hand", "int"],
   ["pickFrom", whole(1, 7), "Pick from", "1: only the tile in hand", "int"],
   ["riverShare", real(0, 1), "River tile chance", "0 to 1", "num"],
-  ["opening", listOf(s => { const t = parseTile(s); return t ? tileWord(t) : undefined }, 0, 40), "First tiles", "such as habitat 1, river", "list"],
+  ["opening", listOf(s => { const t = parseTile(s); return t ? tileWord(t) : undefined }, 0, 40), "First tiles", "such as habitat 1, grasslands 1, marsh 1, river", "list"],
+  ["grasslandShare", real(0, 1), "Grasslands tiles", "the share of dealt habitats that are grasslands (yellow); with marsh, at most 1", "num"],
+  ["marshShare", real(0, 1), "Marsh tiles", "the share of dealt habitats that are marsh (turquoise)", "num"],
+  ["biomeMatch", bool, "Same kind to combine", "on: a tile only combines with a habitat of its own kind and level. off: any kind", "bool"],
   ["maxLevel", whole(1, 24), "Top level", "the highest a habitat can reach", "int"],
   ["bareGroundMaxLevel", whole(1, 24), "Bare ground takes up to level", "the highest level a habitat can be planted at on empty land", "int"],
   ["bareGroundMode", oneOf("refuse", "downgrade"), "Above that level", "refuse: it can't be planted, only combined or discarded. downgrade: it plants as level 1", "choice"],
@@ -99,6 +106,7 @@ function tidy(raw, base) { const cfg = {}, bad = [];
   for (const [k, check] of KEYS) { let v = raw && raw[k] !== undefined ? check(raw[k]) : undefined;
     if (v === undefined) { if (raw && raw[k] !== undefined) bad.push(k); v = base ? base[k] : undefined }
     if (v === undefined) throw new Error("Flowgrow: the config has no usable value for " + k); cfg[k] = v }
+  if (cfg.grasslandShare + cfg.marshShare > 1) for (const k of ["grasslandShare", "marshShare"]) { if (!bad.includes(k)) bad.push(k); cfg[k] = base && base.grasslandShare + base.marshShare <= 1 ? base[k] : 0 } // together they can't pass 1
   return {cfg, bad} }
 
 // ---------- the island. What never changes for a config (its tiles, their neighbours, which of them are land) is worked out once.
@@ -130,19 +138,22 @@ const seedOf = v => { const n = Number(v); if (v !== "" && v != null && Number.i
   let h = 2166136261; for (const ch of String(v)) h = Math.imul(h ^ ch.charCodeAt(0), 16777619); return h >>> 0 };
 // A short name for the rules a run is played under: every config value that changes how a run plays (not names or zoom).
 // The best score is kept per ruleset, so scores from different rules never meet.
-const RULE_KEYS = ["map", "stackSize", "queueShown", "pickFrom", "riverShare", "opening", "maxLevel", "bareGroundMaxLevel", "bareGroundMode", "levelOdds", "scoreByLevel", "riverReach", "riverMonotone", "lockEnabled", "lockLevelCap", "lockCopiesGo", "lockRivers", "lockEvery", "lockHold"];
+const RULE_KEYS = ["map", "stackSize", "queueShown", "pickFrom", "riverShare", "opening", "grasslandShare", "marshShare", "biomeMatch", "maxLevel", "bareGroundMaxLevel", "bareGroundMode", "levelOdds", "scoreByLevel", "riverReach", "riverMonotone", "lockEnabled", "lockLevelCap", "lockCopiesGo", "lockRivers", "lockEvery", "lockHold"];
 const rulesKey = c => seedOf(JSON.stringify(RULE_KEYS.map(k => c[k]))).toString(36);
 function rand(S) { let t = (S.rs = (S.rs + 0x6D2B79F5) >>> 0); t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296 }
 // One new tile. The first tiles of a run are fixed (cfg.opening). After that a tile is a river tile riverShare of the time;
 // otherwise a habitat whose level is rolled from 1 up to the highest habitat level on the map right now, each level
 // levelOdds times as likely as the one below. With levelOdds 0 only level 1 is ever dealt (the pilot, Dan, Nov 20: "make
 // starting tiles only level 1"): higher levels then come only from combining and from the copies a lock banks.
+// A dealt habitat is grasslands grasslandShare of the time, marsh marshShare of the time, and otherwise the original green kind. With neither
+// dealt no random number is used for the kind, so a run without them is dealt exactly as it was before they existed.
 function roll(S) { const c = S.cfg;
-  if (S.dealt < c.opening.length) { const t = parseTile(c.opening[S.dealt]); return {k:t.k, l:Math.min(t.l, t.k === "r" ? riverTop(c) : c.maxLevel)} }
+  if (S.dealt < c.opening.length) { const t = parseTile(c.opening[S.dealt]); return {k:t.k, l:Math.min(t.l, t.k === "r" ? riverTop(c) : c.maxLevel), ...(t.b ? {b:t.b} : {})} }
   if (rand(S) < c.riverShare) return {k:"r", l:1};
   const top = Math.max(1, Math.min(c.maxLevel, S.top)); let total = 0; for (let l = 1; l <= top; l++) total += Math.pow(c.levelOdds, l - 1);
-  let x = rand(S) * total; for (let l = 1; l <= top; l++) { x -= Math.pow(c.levelOdds, l - 1); if (x < 0) return {k:"h", l} }
-  return {k:"h", l:top} }
+  let x = rand(S) * total, lv = top; for (let l = 1; l <= top; l++) { x -= Math.pow(c.levelOdds, l - 1); if (x < 0) { lv = l; break } }
+  const g = c.grasslandShare, m = c.marshShare; if (g + m > 0) { const y = rand(S); if (y < g) return {k:"h", l:lv, b:"g"}; if (y < g + m) return {k:"h", l:lv, b:"m"} }
+  return {k:"h", l:lv} }
 // Top the pile's front up. A tile is rolled when it enters q, and q and rs are part of the run, so undo and reload never re-roll.
 // Banked copies come in only once the dealt stack is used up, so banking a copy never changes what the dealt tiles roll.
 // The run ends when the pile is empty and no lock the player holds would bank a copy.
@@ -153,7 +164,7 @@ function fill(S) { const c = S.cfg;
 const left = S => S.cfg.stackSize === 0 ? Infinity : S.q.length + S.cfg.stackSize - S.dealt + S.bank.length;
 
 function fresh(cfg, seed) { seed = seedOf(seed);
-  const S = {cfg, seed, rs:(Math.imul(seed ^ 0x9E3779B9, 0x85EBCA6B) ^ 0x5bd1e995) >>> 0, h:{}, r:{}, rn:1, q:[], dealt:0, used:0, score:0, top:0,
+  const S = {cfg, seed, rs:(Math.imul(seed ^ 0x9E3779B9, 0x85EBCA6B) ^ 0x5bd1e995) >>> 0, h:{}, hb:{}, r:{}, rn:1, q:[], dealt:0, used:0, score:0, top:0,
     planted:0, combined:0, extended:0, widened:0, discarded:0, moves:[], log:[], over:false,
     lk:{}, bank:[], locks:0, toLock:0, lockUsed:0, lockLost:0, copyBanked:0, copyPlaced:0, copyDiscarded:0, copyPoints:0};
   cfg.map.forEach((row, y) => [...row].forEach((ch, x) => { if (ch === "T") S.r[key([x, y])] = {l:1, from:null, n:0} })); // the source counts as a level 1 river tile
@@ -184,7 +195,7 @@ function plantable(S, reach = reachOf(S)) { const out = []; for (const k of grid
 // A habitat above bareGroundMaxLevel is offered no plant ("refuse"), or plants as level 1 ("downgrade": l is 1 and so are the points).
 function options(S, i = 0) { const c = S.cfg, g = grid(c), t = S.q[i], out = [], at = k => [g.at[k][0], g.at[k][1]]; if (!t || S.over) return out;
   if (t.k === "h") {
-    if (t.l < c.maxLevel) for (const k in S.h) if (S.h[k] === t.l && !(k in S.lk)) out.push({p:at(k), does:"combine", l:t.l + 1, pts:scoreOf(c, t.l + 1)});
+    if (t.l < c.maxLevel) for (const k in S.h) if (S.h[k] === t.l && !(k in S.lk) && (!c.biomeMatch || S.hb[k] === t.b)) out.push({p:at(k), does:"combine", l:t.l + 1, pts:scoreOf(c, t.l + 1)});   // biomeMatch: only the same kind combines
     const lp = plantLevel(c, t.l);   // the level it lands as on empty land (0: refused)
     if (lp) for (const k of plantable(S)) out.push({p:at(k), does:"plant", l:lp, pts:scoreOf(c, lp)});
   } else {
@@ -208,7 +219,10 @@ function why(S, i, p) { const c = S.cfg, t = S.q[i]; if (!t) return "No tiles le
   if (t.k === "h") {
     const no = plantLevel(c, t.l) ? "" : `Only level ${c.bareGroundMaxLevel}${c.bareGroundMaxLevel > 1 ? " or lower" : ""} can be planted on bare ground. Combine it or discard it.`;   // "refuse": nothing above the limit is planted
     if (rv) return no || "That's the river. Plant beside it.";
-    if (hl) return hl >= c.maxLevel ? `${levelName(c, hl)} is the top level.` : `That's level ${hl}. Only a level ${hl} tile can go on it.`;
+    if (hl) { const hb = S.hb[k];
+      if (hl >= c.maxLevel) return hb ? `${BIOME_NAME[hb]} level ${hl} is the top level.` : `${levelName(c, hl)} is the top level.`;
+      if (c.biomeMatch && hb !== t.b) return `That's ${tileText(c, {k:"h", l:hl, b:hb})}. Only a tile of the same kind and level goes on it.`;   // another kind
+      return `That's level ${hl}. Only a level ${hl} tile can go on it.` }
     return no || "Too far from the river." }
   if (hl) return "A river tile needs empty land.";
   if (rv) { if (rv.l >= riverTop(c)) return "The river is at its widest here."; if (rv.l !== t.l) return `Only a level ${rv.l} river tile widens this.`;
@@ -224,7 +238,7 @@ function note(S, t, did, p, l, pts, copies) { const e = {n:S.moves.length, t, di
 // Put tile i on p. Returns what happened ({does, l, pts, tile, greened: the land newly within reach}), or null if it can't go there.
 function place(S, i, p) { const o = options(S, i).find(o => o.p[0] === p[0] && o.p[1] === p[1]); if (!o) return null;
   const t = S.q.splice(i, 1)[0], k = key(p), before = t.k === "r" ? reachOf(S) : null;
-  if (o.does === "plant") { S.h[k] = o.l; S.planted++ }   // o.l is the level it lands as: the tile's own, or 1 when "downgrade" lowers it
+  if (o.does === "plant") { S.h[k] = o.l; if (t.b) S.hb[k] = t.b; S.planted++ }   // o.l is the level it lands as: the tile's own, or 1 when "downgrade" lowers it
   else if (o.does === "combine") { S.h[k] = o.l; S.combined++ }
   else if (o.does === "extend") { S.r[k] = {l:t.l, from:joinTo(S, p), n:S.rn++}; S.extended++ }
   else { S.r[k].l = o.l; S.widened++ }
@@ -248,7 +262,7 @@ const lockable = (S, p) => { const k = key(p); return hasLock(S) && !S.over && !
 // What locking the tile at p would do: copies (the tiles banked, river tiles first, then habitats from the lowest level),
 // from (the neighbours they are copied from, in the same order) and high (neighbours above its level, which give nothing).
 function copiesOf(S, p) { const c = S.cfg, k0 = key(p), L = k0 in S.h ? S.h[k0] : k0 in S.r ? S.r[k0].l : 0, from = [], high = [];
-  for (const k of grid(c).nb[k0] || []) { if (k in S.lk) continue; const t = k in S.h ? {k:"h", l:S.h[k], c:1} : k in S.r && c.lockRivers ? {k:"r", l:S.r[k].l, c:1} : null; if (!t) continue;
+  for (const k of grid(c).nb[k0] || []) { if (k in S.lk) continue; const t = k in S.h ? {k:"h", l:S.h[k], c:1, ...(S.hb[k] ? {b:S.hb[k]} : {})} : k in S.r && c.lockRivers ? {k:"r", l:S.r[k].l, c:1} : null; if (!t) continue;
     if (c.lockLevelCap && t.l > L) high.push(k); else from.push([k, t]) }
   from.sort((a, b) => (a[1].k === "r" ? 0 : 1) - (b[1].k === "r" ? 0 : 1) || a[1].l - b[1].l);
   return {copies:from.map(f => f[1]), from:from.map(f => f[0]), high} }
@@ -258,7 +272,7 @@ function lockWouldCopy(S) { if (!hasLock(S)) return false; const c = S.cfg;
   if (c.lockRivers) for (const k in S.r) if (!(k in S.lk) && copiesOf(S, unkey(k)).copies.length) return true; return false }
 // Copies go to the back of the pile (S.bank). With lockCopiesGo "front", or an endless stack (which has no back), they
 // become the next tiles instead.
-function lock(S, p) { if (!lockable(S, p)) return null; const c = S.cfg, k = key(p), got = copiesOf(S, p), t = k in S.h ? {k:"h", l:S.h[k]} : {k:"r", l:S.r[k].l};
+function lock(S, p) { if (!lockable(S, p)) return null; const c = S.cfg, k = key(p), got = copiesOf(S, p), t = k in S.h ? {k:"h", l:S.h[k], ...(S.hb[k] ? {b:S.hb[k]} : {})} : {k:"r", l:S.r[k].l};
   S.lk[k] = 1; if (c.lockEvery !== 0) S.locks--; S.lockUsed++; S.copyBanked += got.copies.length;
   if (c.lockCopiesGo === "front" || c.stackSize === 0) S.q.splice(Math.min(1, S.q.length), 0, ...got.copies); else S.bank.push(...got.copies);
   S.moves.push({a:"l", x:p[0], y:p[1]}); fill(S); note(S, t, "lock", p, t.l, 0, got.copies); return {does:"lock", tile:t, ...got} }
@@ -269,14 +283,14 @@ function replay(cfg, seed, moves) { const S = fresh(cfg, seed);
   for (const m of moves) if (!apply(S, m)) throw new Error("Flowgrow: move " + (S.moves.length + 1) + " can't be replayed"); return S }
 
 // ---------- words
-const tileText = (c, t) => t.k === "r" ? (t.l > 1 ? `River tile (level ${t.l})` : "River tile") : (n => n === "Level " + t.l ? n : `${n} (level ${t.l})`)(levelName(c, t.l));
+const tileText = (c, t) => t.k === "r" ? (t.l > 1 ? `River tile (level ${t.l})` : "River tile") : t.b ? `${BIOME_NAME[t.b]} (level ${t.l})` : (n => n === "Level " + t.l ? n : `${n} (level ${t.l})`)(levelName(c, t.l));
 const DID = {plant:"planted", combine:"combined", extend:"extended the river", widen:"widened the river", discard:"discarded"};
 // The run log: one line per move, with the tile (dealt, or a copy), what was done and where, the points, the score and the
 // plantable tiles left. A lock's line has the tile locked and the copies it banked.
 function logText(S) { const c = S.cfg, lines = [`Flowgrow run log · seed ${S.seed} · ${c.stackSize ? c.stackSize + " tiles" : "endless"} · places are column,row from 0`];
   for (const e of S.log) lines.push(e.did === "end" ? `${e.n}. Ended the run · score ${e.score}` :
     e.did === "lock" ? `${e.n}. Locked ${tileText(c, e.t)} at ${e.at[0]},${e.at[1]} · banked ${e.copies.length ? `${e.copies.length} ${e.copies.length === 1 ? "copy" : "copies"}: ${e.copies.map(t => tileText(c, t)).join(", ")}` : "no copies"} · score ${e.score}` :
-    `${e.n}. ${tileText(c, e.t)}, ${e.t.c ? "copy" : "dealt"} · ${DID[e.did]}${e.at ? ` at ${e.at[0]},${e.at[1]}` : ""}${e.did === "combine" ? `, now level ${e.l} ${levelName(c, e.l)}` : e.did === "widen" ? `, now level ${e.l}` : e.did === "plant" && e.l < e.t.l ? `, as level ${e.l} ${levelName(c, e.l)}` : ""} · +${e.pts} · score ${e.score} · ${e.room} plantable left`);
+    `${e.n}. ${tileText(c, e.t)}, ${e.t.c ? "copy" : "dealt"} · ${DID[e.did]}${e.at ? ` at ${e.at[0]},${e.at[1]}` : ""}${e.did === "combine" ? `, now level ${e.l} ${e.t.b ? BIOME_NAME[e.t.b] : levelName(c, e.l)}` : e.did === "widen" ? `, now level ${e.l}` : e.did === "plant" && e.l < e.t.l ? `, as level ${e.l} ${e.t.b ? BIOME_NAME[e.t.b] : levelName(c, e.l)}` : ""} · +${e.pts} · score ${e.score} · ${e.room} plantable left`);
   const locks = c.lockEnabled ? ` · locks used ${S.lockUsed}, lost ${S.lockLost} · copies banked ${S.copyBanked}, placed ${S.copyPlaced}, discarded ${S.copyDiscarded} · ${S.copyPoints} points from copies` : "";
   lines.push(S.over ? `Run over · score ${S.score} · top level ${S.top} · planted ${S.planted} · combined ${S.combined} · river extended ${S.extended}, widened ${S.widened} · discarded ${S.discarded}${locks}` : `Still playing · score ${S.score} · ${left(S)} tiles left${locks}`);
   return lines.join("\n") }
@@ -427,7 +441,9 @@ function hsprite(l) { l = Math.max(1, Math.min(l, 7)); if (sprites[l]) return sp
 const ICON = [0, [62, .6], [66, .62], [70, .72], [74, .82], [88, .85], [106, .87], [124, .88]]; // per level: the world units the picture spans, and how far down the tile's centre sits
 function tileIcon(t, px) { if (flat()) return simpleIcon(t, px); const c = document.createElement("canvas"), d = Math.min(devicePixelRatio || 1, 3); c.width = c.height = Math.round(px * d); c.style.width = c.style.height = px + "px";
   const keep = ctx; ctx = c.getContext("2d");
-  if (t.k === "h") { const [span, cy] = ICON[Math.min(t.l, 7)], u = px / span * d; ctx.drawImage(hsprite(t.l), px * d / 2 - HB.ox * u, px * d * cy - HB.oy * u, HB.w * u, HB.h * u) }
+  if (t.k === "h") { const [span, cy] = ICON[Math.min(t.l, 7)], u = px / span * d;
+    if (t.b) { ctx.fillStyle = t.b === "g" ? "rgba(247,206,60,.85)" : "rgba(56,200,190,.8)"; ctx.beginPath(); ctx.arc(px * d / 2, px * d * .56, px * d * .38, 0, TAU); ctx.fill() }   // a yellow or turquoise disc behind it shows its kind
+    ctx.drawImage(hsprite(t.l), px * d / 2 - HB.ox * u, px * d * cy - HB.oy * u, HB.w * u, HB.h * u) }
   else { const u = px / 64 * d, w = t.l > 1 ? 15 : 9; ctx.setTransform(u, 0, 0, u, px * d / 2, px * d / 2);
     for (const [add, col] of [[5, "rgba(95,143,92,.5)"], [2.5, "#d9cfa3"], [0, "#8cc2d2"], [-w * .55, "#6fa9c4"]]) { ctx.beginPath(); ctx.moveTo(-26, 9); ctx.bezierCurveTo(-8, 14, 4, -14, 26, -8); ink(col, w + add * 2) }
     ctx.beginPath(); ctx.moveTo(-12, 5); ctx.quadraticCurveTo(-4, 4, 2, -1); ink("rgba(255,255,255,.7)", 1.6) }
@@ -483,6 +499,7 @@ function draw() { if (!S || !lay.w) return; const T = now(), t = T / 1000;
   for (const p of ORDER) { const k = key(p), o = iso(...p), code = CFG.map[p[1]][p[0]], l = S.h[k];
     if (code === "T") source(o, t); else if (code === "B") mountain(o.x, o.y);
     if (l) { const a = pops[k] ? (T - pops[k]) / 320 : 1, s = a < 1 && !reduce ? easeBack(Math.max(.05, a)) : 1; if (a >= 1) delete pops[k]; // a quick pop when a tile lands
+      if (S.hb[k]) { rpath(hexPts(p, R - 5), 8); ctx.fillStyle = S.hb[k] === "g" ? "rgba(247,206,60,.8)" : "rgba(56,200,190,.75)"; ctx.fill() }   // a yellow or turquoise patch under the picture shows its kind
       ctx.save(); ctx.translate(o.x, o.y); ctx.scale(s, s); if (k in S.lk) ctx.globalAlpha = .7; ctx.drawImage(hsprite(l), -HB.ox, -HB.oy, HB.w, HB.h); ctx.restore() } } // a locked habitat is a little muted
   // what the tile in hand can do: a faint outline on land it can be planted on, a ring on tiles it can combine with or widen
   if (!S.over && !lockMode) { const pu = reduce ? .5 : .5 + .5 * Math.sin(t * 3);
@@ -490,7 +507,7 @@ function draw() { if (!S || !lay.w) return; const T = now(), t = T / 1000;
       if (o.does === "plant") { rpath(hexPts(o.p, R - 6), 8); ctx.fillStyle = `rgba(255,255,255,${.07 + .06 * pu})`; ctx.fill(); ink(`rgba(255,255,255,${.5 + .25 * pu})`, 1.8) }
       else { const rx = o.does === "extend" ? 22 + 2 * pu : 31 + 2 * pu; ctx.beginPath(); ctx.ellipse(c.x, c.y + 1, rx, rx / 2, 0, 0, 7); ink("rgba(232,255,248,.95)", 4.5); ctx.beginPath(); ctx.ellipse(c.x, c.y + 1, rx, rx / 2, 0, 0, 7); ink("rgba(63,191,164,.9)", 1.6);
         if (o.does === "extend") ell(c.x, c.y + 1, 12, 6, "rgba(98,224,200,.55)") } } }
-  for (const k in S.h) { const o = iso(...GRID.at[k]); tag(o.x + 25, o.y + 13, String(S.h[k]), "#24434a", 14, k in S.lk) } // every habitat carries its level, and a padlock once it is locked
+  for (const k in S.h) { const o = iso(...GRID.at[k]); tag(o.x + 25, o.y + 13, String(S.h[k]), S.hb[k] === "g" ? "#7a5a10" : S.hb[k] === "m" ? "#0d6a66" : "#24434a", 14, k in S.lk) } // every habitat carries its level, and a padlock once it is locked
   for (const k in S.lk) if (k in S.r) { const o = iso(...GRID.at[k]); tag(o.x, o.y + 1, S.r[k].l > 1 ? String(S.r[k].l) : "", "#24434a", 14, true) } // a locked river tile gets a padlock of its own
   if (lockMode) lockHints();
   if (!S.over && !lockMode) for (const o of opts) { const c = iso(...o.p); if (o.does === "combine") tag(c.x, c.y - TALL[Math.min(o.l - 1, 7)] - 14, "+" + o.pts, "#7a5a10", 15); else if (o.does === "widen") tag(c.x, c.y - 20, "wider", "#0f7a66", 14); else if (o.does === "plant" && o.l < S.q[0].l) tag(c.x, c.y - 6, "as " + o.l, "#7a5a10", 13) }
@@ -503,9 +520,12 @@ function draw() { if (!S || !lay.w) return; const T = now(), t = T / 1000;
 // pale green is empty land the river reaches, off-white is land it doesn't, grey is a mountain. Every river tile and habitat carries
 // its level as a number, and a locked tile carries a padlock. The rules, the pile and the buttons are the same as in the painted look.
 const SK = {sea:"#e9f0f3", bare:"#f4f3ee", reach:"#dff1d6", mtn:"#aeb7bf", mtnInk:"#77828d", edge:"rgba(25,55,65,.28)",
-  river:[null, "#5aaeea", "#2f86d6"], hab:[null, "#a8dc84", "#86cf74", "#5fba61", "#3fa258", "#2a894c", "#1f7040", "#165830", "#134e2a", "#124626", "#103f23", "#0f381f", "#0e321c", "#0d2c19", "#0c2616", "#0b2013"]};
-const tileFill = t => t.k === "r" ? SK.river[Math.min(t.l, 2)] : SK.hab[Math.min(t.l, 15)];
-const numInk = t => t.k === "r" || t.l >= 4 ? "#ffffff" : "#173c2a";
+  river:[null, "#5aaeea", "#2f86d6"], hab:[null, "#a8dc84", "#86cf74", "#5fba61", "#3fa258", "#2a894c", "#1f7040", "#165830", "#134e2a", "#124626", "#103f23", "#0f381f", "#0e321c", "#0d2c19", "#0c2616", "#0b2013"],
+  // the other two kinds (Dan, Nov 20): grasslands are yellow and marsh is turquoise, each darker with every level like the green ones
+  grass:[null, "#ffe866", "#fbd83d", "#f3c51f", "#e2ac14", "#c9920f", "#a97a0e", "#8b640d", "#74530c", "#64470b", "#563d0a", "#4a3409", "#402d08", "#372607", "#2f2106", "#271b05"],
+  marsh:[null, "#5fe3d3", "#34cfc0", "#1db8ab", "#12a095", "#0c887f", "#0a716a", "#095c57", "#084c48", "#074241", "#063a39", "#053332", "#042d2c", "#042726", "#032121", "#031c1c"]};
+const tileFill = t => t.k === "r" ? SK.river[Math.min(t.l, 2)] : (t.b === "g" ? SK.grass : t.b === "m" ? SK.marsh : SK.hab)[Math.min(t.l, 15)];
+const numInk = t => t.k === "r" ? "#ffffff" : t.b === "g" ? (t.l >= 6 ? "#ffffff" : "#4a3a05") : t.b === "m" ? (t.l >= 5 ? "#ffffff" : "#0c3b38") : t.l >= 4 ? "#ffffff" : "#173c2a";
 const flatHex = r => [0, 1, 2, 3, 4, 5].map(i => { const a = (60 * i - 90) * Math.PI / 180; return [r * Math.cos(a), r * Math.sin(a)] });
 function padlock(x, y, s, col) { ctx.save(); ctx.translate(x, y); ctx.scale(s, s); ctx.fillStyle = col; ctx.strokeStyle = col; ctx.lineWidth = 2.6; ctx.lineCap = "round";
   ctx.beginPath(); ctx.arc(0, -3, 5, Math.PI, 0); ctx.stroke(); ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(-7.5, -3, 15, 11.5, 2.5); else ctx.rect(-7.5, -3, 15, 11.5); ctx.fill(); ctx.restore() }
@@ -519,7 +539,7 @@ function simpleIcon(t, px) { const c = document.createElement("canvas"), d = Mat
 function drawSimple(T, t) { ctx = ctx0; ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = SK.sea; ctx.fillRect(0, 0, cv.width, cv.height);
   ctx.setTransform(scale, 0, 0, scale, off.x, off.y);
   const reach = reachOf(S), pu = reduce ? .5 : .5 + .5 * Math.sin(t * 3), hex = flatHex(R - 2.2);
-  for (const p of ORDER) { const k = key(p), o = iso(...p), rv = S.r[k], hl = S.h[k], code = CFG.map[p[1]][p[0]], tile = rv ? {k:"r", l:rv.l} : hl ? {k:"h", l:hl} : null;
+  for (const p of ORDER) { const k = key(p), o = iso(...p), rv = S.r[k], hl = S.h[k], code = CFG.map[p[1]][p[0]], tile = rv ? {k:"r", l:rv.l} : hl ? {k:"h", l:hl, b:S.hb[k]} : null;
     const fill = code === "B" ? SK.mtn : tile ? tileFill(tile) : reach.has(k) ? SK.reach : SK.bare;
     const a = pops[k] ? (T - pops[k]) / 280 : 1, s = a < 1 && !reduce ? .78 + .22 * easeBack(Math.max(0, a)) : 1; if (a >= 1) delete pops[k]; // a quick pop when a tile lands
     ctx.save(); ctx.translate(o.x, o.y); ctx.scale(s, s); rpath(hex, 7); ctx.fillStyle = fill; ctx.fill(); ink(SK.edge, 1.6);
@@ -551,8 +571,8 @@ function lockHints() { const up = k => TALL[Math.min(S.h[k] || 0, 7)] || 8;
   const got = copiesOf(S, lockSel); ring(lockSel, "rgba(255,244,214,.95)", "#d9a520"); for (const k of got.from) ring(GRID.at[k], "rgba(232,255,248,.95)", "rgba(63,191,164,.9)");
   for (const k of got.from) over(k, "copy " + (k in S.h ? S.h[k] : "river"), "#0f7a66"); for (const k of got.high) over(k, "too high", "#6b7b7e"); over(key(lockSel), "lock", "#7a5a10", true) }
 function lockCard() { const k = key(lockSel), got = copiesOf(S, lockSel), n = got.copies.length;
-  tx("lockT", `Lock this ${k in S.h ? levelName(CFG, S.h[k]).toLowerCase() : "river tile"}?`);
-  tx("lockS", (n ? `Banks ${n} ${n === 1 ? "copy" : "copies"}: ${got.copies.map(t => t.k === "r" ? "river" + (t.l > 1 ? " " + t.l : "") : levelName(CFG, t.l).toLowerCase() + " " + t.l).join(", ")}.` : "Banks nothing.") + (got.high.length ? ` ${got.high.length} too high to copy.` : "") + " It can't grow after.") }
+  tx("lockT", `Lock this ${k in S.h ? (S.hb[k] ? BIOME_NAME[S.hb[k]].toLowerCase() + " " + S.h[k] : levelName(CFG, S.h[k]).toLowerCase()) : "river tile"}?`);
+  tx("lockS", (n ? `Banks ${n} ${n === 1 ? "copy" : "copies"}: ${got.copies.map(t => t.k === "r" ? "river" + (t.l > 1 ? " " + t.l : "") : (t.b ? BIOME_NAME[t.b].toLowerCase() : levelName(CFG, t.l).toLowerCase()) + " " + t.l).join(", ")}.` : "Banks nothing.") + (got.high.length ? ` ${got.high.length} too high to copy.` : "") + " It can't grow after.") }
 
 // ---------- the pile, the top bar and the messages
 function say(t, warn) { const m = $("msg"); m.textContent = t || ""; m.classList.toggle("warn", !!warn); m.classList.toggle("fade", !t); clearTimeout(msgT); if (t) msgT = setTimeout(() => m.classList.add("fade"), warn ? 3200 : 4500) }
@@ -634,7 +654,9 @@ fillLadder();
 // The menu's how-to lines follow the rules in force: the bare ground rule (LOU-300), and whether locks are limited.
 { const n = CFG.bareGroundMaxLevel, hb = $("howBare"); hb.hidden = n >= CFG.maxLevel;
   hb.textContent = CFG.bareGroundMode === "downgrade" ? `Planted on bare ground, a tile above level ${n} lands as level 1.` : `Only level ${n}${n > 1 ? " or lower" : ""} can be planted on bare ground. A higher tile has to combine onto a habitat of its own level, or be discarded.`;
-  tx("howLock", (CFG.lockEvery > 0 ? `Every ${CFG.lockEvery} tiles you place earns a lock. ` : "There is no limit on locks. ") + "Lock a tile to copy its neighbours, at its level or below, to the back of your pile. A locked tile can't grow any more.") }
+  tx("howLock", (CFG.lockEvery > 0 ? `Every ${CFG.lockEvery} tiles you place earns a lock. ` : "There is no limit on locks. ") + "Lock a tile to copy its neighbours, at its level or below, to the back of your pile. A locked tile can't grow any more.");
+  const hv = $("howBiome"); hv.hidden = !(CFG.grasslandShare > 0 || CFG.marshShare > 0);
+  hv.textContent = "Yellow tiles are Grasslands and turquoise tiles are Marsh. " + (CFG.biomeMatch ? "They grow the same way as the green ones, but a tile only combines with a habitat of its own kind and level." : "Any kind combines with any kind of the same level.") }
 // Switch the look and remember it. The camera starts again on the source, since the two looks have different bounds.
 function setSkin(v) { if (!LOOKS.includes(v) || v === skin) return; skin = v; mem.set("look", v); $("app").classList.toggle("simple", flat());
   B = bounds(); resort(); landKey = ""; lastSize = ""; view.z = null; fillLadder(); resize(); sync() }

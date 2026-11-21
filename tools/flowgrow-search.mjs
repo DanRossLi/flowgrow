@@ -112,7 +112,7 @@ function policySearch(until) {
 function nrpaSearch(until, level, N) {
   const ALPHA = 1.0;
   function legal(S) { const mv = []; if (S.over) return mv;
-    if (S.q.length) { const t = S.q[0], tag = t.k + t.l, copy = !!t.c, nHab = Object.keys(S.h).length;
+    if (S.q.length) { const t = S.q[0], tag = t.k + (t.b || "") + t.l, copy = !!t.c, nHab = Object.keys(S.h).length;
       for (const o of R.options(S, 0)) { let bias = 0;
         if (t.k === "h") { if (o.does === "combine") bias = 2 * Math.log(1 + o.pts); else { if (!nbrs(o.p).some(q => has(S, q))) continue; bias = 2 * Math.log(1 + o.pts) - 1 + (nHab < 12 ? 1 : 0) } }
         else bias = o.does === "widen" ? 1.5 : copy ? -1 : .5;
@@ -138,8 +138,8 @@ function nrpaSearch(until, level, N) {
     return b }
   // a saved run, as the codes the search uses (a move the search wouldn't offer ends the seeding there)
   function toCodes(moves) { const S = R.fresh(CFG, opt.seed), codes = [];
-    try { for (const m of moves) { if (m.a === "p") { const t = S.q[m.i], o = R.options(S, m.i).find(o => o.p[0] === m.x && o.p[1] === m.y); codes.push(t.k + t.l + ":" + o.does + ":" + m.x + "," + m.y); R.place(S, m.i, [m.x, m.y]) }
-      else if (m.a === "d") { codes.push(S.q[m.i].k + S.q[m.i].l + ":d"); R.discard(S, m.i) } else if (m.a === "l") { codes.push("L:" + m.x + "," + m.y); R.lock(S, [m.x, m.y]) } else { codes.push("E"); R.end(S) } } } catch (e) {}
+    try { for (const m of moves) { if (m.a === "p") { const t = S.q[m.i], o = R.options(S, m.i).find(o => o.p[0] === m.x && o.p[1] === m.y); codes.push(t.k + (t.b || "") + t.l + ":" + o.does + ":" + m.x + "," + m.y); R.place(S, m.i, [m.x, m.y]) }
+      else if (m.a === "d") { codes.push(S.q[m.i].k + (S.q[m.i].b || "") + S.q[m.i].l + ":d"); R.discard(S, m.i) } else if (m.a === "l") { codes.push("L:" + m.x + "," + m.y); R.lock(S, [m.x, m.y]) } else { codes.push("E"); R.end(S) } } } catch (e) {}
     return codes }
   let pol0 = new Map(); for (const b of saved) { const codes = toCodes(b.moves); for (let i = 0; i < 15; i++) pol0 = adapt(pol0, codes) }
   while (Date.now() < until) nrpa(level, new Map(pol0)) }

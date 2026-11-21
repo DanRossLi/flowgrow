@@ -36,5 +36,5 @@ const top = Math.max(S.top, 1);
 console.log(`final island: ${Object.keys(S.h).length} habitats, ${Object.keys(S.r).length} river tiles, ${Object.keys(S.lk).length} locked. Habitats by level:`, Array.from({length: top}, (_, i) => `L${i + 1}:${Object.values(S.h).filter(v => v === i + 1).length}`).join(" "));
 const W = CFG.map[0].length, H = CFG.map.length, rows = [];
 for (let y = 0; y < H; y++) { let r = y & 1 ? " " : ""; for (let x = 0; x < W; x++) { const k = x + "," + y, code = CFG.map[y][x], lk = k in S.lk;
-  r += (code === "B" ? "^^" : k in S.r ? (lk ? "~" : "w") + S.r[k].l : k in S.h ? (lk ? "#" : "h") + S.h[k] : "..") + " " } rows.push(r) }
-console.log("island (hN habitat of level N, #N locked habitat, wN river, ~N locked river, ^^ mountain):\n" + rows.join("\n"));
+  r += (code === "B" ? "^^" : k in S.r ? (lk ? "~" : "w") + S.r[k].l : k in S.h ? (lk ? "#" : S.hb[k] || "h") + S.h[k] : "..") + " " } rows.push(r) }
+console.log("island (hN green habitat of level N, gN grasslands, mN marsh, #N locked habitat, wN river, ~N locked river, ^^ mountain):\n" + rows.join("\n"));
