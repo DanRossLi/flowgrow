@@ -23,7 +23,7 @@ const BASE = R.tidy(base).cfg;
 // The rule checks are written for these values, the first build's, so tuning flowgrow.config.js never breaks them (the pilot pile, for one,
 // changes the pile; bare ground takes any level, and the bare ground rule is checked on its own below). The report and the command line use the config file as it is.
 const REF = (() => { const t = R.tidy({...base, map:["_____________", "_BB__________", "__B_______B__", "__________BB_", "______T______", "_____________", "___BB________", "_____________", "_____________"],
-  stackSize:80, queueShown:3, pickFrom:1, riverShare:.1, opening:["habitat 1", "habitat 1", "river"], maxLevel:7, levelOdds:.5, scoreByLevel:[1, 3, 6, 10, 15, 21, 28], riverReach:[1, 2], riverMonotone:false, bareGroundMaxLevel:24, bareGroundMode:"refuse", prairieShare:0, marshShare:0, biomeMatch:true, marshNeedsRiver:false, prairieSpreads:false, treeShare:0, overgrow:true, riverMaxLevel:2, riverScore:"none",
+  stackSize:80, queueShown:3, pickFrom:1, riverShare:.1, opening:["habitat 1", "habitat 1", "river"], maxLevel:7, levelOdds:.5, scoreByLevel:[1, 3, 6, 10, 15, 21, 28], riverReach:[1, 2], riverMonotone:false, bareGroundMaxLevel:24, bareGroundMode:"refuse", prairieShare:0, marshShare:0, biomeMatch:true, marshNeedsRiver:false, prairieSpreads:false, treeShare:0, overgrow:true, upgradeLevel:0, riverMaxLevel:2, riverScore:"none",
   levelNames:["Sprouts", "Meadow", "Thicket", "Saplings", "Grove", "Forest", "Old forest"], lockEnabled:true, lockLevelCap:true, lockCopiesGo:"back", lockRivers:true, lockEvery:10, lockHold:1}, base);
   if (t.bad.length) throw new Error("bad reference config: " + t.bad); return t.cfg })();
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -47,12 +47,13 @@ function turn(S) { const c = S.cfg;
 function watch(S) { const t = S.q[0]; if (t.k !== "h" || !t.b) return null;
   if (t.b === "t") return {b:"t", none:!R.options(S, 0).length, copy:!!t.c};
   const o = R.options(S, 0).filter(x => x.does === "plant");
-  if (t.b === "m") return {b:"m", none:!o.length};
+  if (t.b === "m") { const c = S.cfg, via = c.marshNeedsRiver && c.upgradeLevel > 0 ? o.filter(x => !R.nbrs(c, x.p).some(q => R.key(q) in S.r)) : [];   // (LOU-304) the places that are legal only because of a reed bed: they touch no river tile
+    return {b:"m", none:!o.length, via:new Set(via.map(x => R.key(x.p))), rescued:via.length > 0 && via.length === o.length} }
   const reach = R.reachOf(S); return {b:"p", beyond:new Set(o.filter(x => !reach.has(R.key(x.p))).map(x => R.key(x.p)))} }
 function tally(m, pre, res) { if (pre.b === "t") { m.treeTurns++; if (pre.copy) m.treeCopyTurns++; if (pre.none) m.treeNoTarget++ }
-  else if (pre.b === "m") { m.marshTurns++; if (pre.none) m.marshNoBank++ } else { m.prairieTurns++; m.spreadOffered += pre.beyond.size; if (res.does === "plant" && pre.beyond.has(R.key(res.p))) m.spreadPlanted++ } }
+  else if (pre.b === "m") { m.marshTurns++; if (pre.none) m.marshNoBank++; if (res.does === "plant") { m.marshPlanted++; if (pre.via.has(R.key(res.p))) m.reedPlanted++ } if (pre.rescued) m.reedRescued++ } else { m.prairieTurns++; m.spreadOffered += pre.beyond.size; if (res.does === "plant" && pre.beyond.has(R.key(res.p))) m.spreadPlanted++ } }
 // One whole run. Returns the run, how many turns were tight, and what went wrong (if anything).
-function play(cfg, seed) { const out = {S:null, tight:0, error:"", m:{marshTurns:0, marshNoBank:0, prairieTurns:0, spreadOffered:0, spreadPlanted:0, treeTurns:0, treeCopyTurns:0, treeNoTarget:0}};
+function play(cfg, seed) { const out = {S:null, tight:0, error:"", m:{marshTurns:0, marshNoBank:0, prairieTurns:0, spreadOffered:0, spreadPlanted:0, treeTurns:0, treeCopyTurns:0, treeNoTarget:0, marshPlanted:0, reedPlanted:0, reedRescued:0}};
   try { const S = out.S = R.fresh(cfg, seed), cap = 6000; let n = 0;
     while (!S.over) { if (++n > cap) { out.error = "stalled"; break } if (S.q.length && R.plantable(S).length <= 2) out.tight++; const pre = S.q.length ? watch(S) : null, res = turn(S); if (!res) { out.error = "a move was refused"; break } if (pre) tally(out.m, pre, res) }
     if (!out.error && !same(S, R.replay(cfg, seed, S.moves))) out.error = "did not rebuild from its seed and moves";
@@ -87,6 +88,8 @@ function report(cfg, runs) { const res = []; for (let seed = 1; seed <= runs; se
   if (trees) { const M = ok.map(r => r.m), O = S.map(overs), kind = b => f2(avg(O.map(l => l.filter(e => e.from === b).length)));   // what trees did (LOU-302): how often one had no legal target, and what the overgrows took
     console.log(`  trees                ${f1(avg(M.map(m => m.treeTurns)))} tree tiles in hand a run (${f1(avg(M.map(m => m.treeCopyTurns)))} of them copies) · no legal target in ${f1(100 * sum(M.map(m => m.treeNoTarget)) / Math.max(1, sum(M.map(m => m.treeTurns))))}% of those turns · ${f2(avg(S.map(s => s.log.filter(e => e.did === "discard" && e.t && e.t.b === "t").length)))} tree tiles discarded a run`);
     console.log(`  overgrow             ${f2(avg(O.map(l => l.length)))} a run: ${kind("")} on green · ${kind("p")} on prairie · ${kind("m")} on marsh · ${f1(avg(O.map(l => l.reduce((n, e) => n + e.pts, 0))))} points from overgrows · ${f2(avg(S.map(s => s.combined - s.overgrown)))} plain combines a run`) }
+  if (cfg.upgradeLevel > 0 && cfg.marshShare > 0) { const M = ok.map(r => r.m), up = cfg.upgradeLevel, reach = s => s.log.filter(e => e.t && e.t.b === "m" && ((e.did === "combine" && e.l === up) || (e.did === "plant" && e.l >= up))).length;   // upgrades (LOU-304): how often a marsh tile reaches the upgrade level, and how often the reed bed is used
+    console.log(`  reed beds            ${f2(avg(S.map(reach)))} marsh tiles reach level ${up} a run (in ${share(S, s => reach(s) > 0)} of runs) · ${f1(avg(S.map(s => Object.keys(s.h).filter(k => s.hb[k] === "m" && s.h[k] >= up).length)))} reed beds on the map at the end · ${f1(avg(M.map(m => m.marshPlanted)))} marsh planted a run, ${f2(avg(M.map(m => m.reedPlanted)))} of them only because of a reed bed (${f2(avg(M.map(m => m.reedRescued)))} marsh tiles a run had no other place to plant)`) }
   if (cfg.lockEnabled) {
     console.log(`  moves                ${f1(avg(S.map(s => s.moves.length)))} a run`);
     console.log(`  locks                ${f1(avg(S.map(s => s.lockUsed)))} used · ${f1(avg(S.map(s => s.lockLost)))} lost · ${f1(avg(S.map(s => Object.keys(s.lk).length)))} tiles locked at the end`);
@@ -508,6 +511,62 @@ function checks() { let n = 0; const fails = [];
         return without.h[k] === first.l - 1 && (without.hb[k] || "") === first.from && withIt.h[k] === first.l && withIt.hb[k] === "t" && same(withIt, R.replay(cfg, 12, S.moves.slice(0, first.n))) })() && /overgrew the (green|prairie|marsh) tile at \d+,\d+, now level \d+ Trees/.test(R.logText(S))) }
   for (const [name, mode] of [["refuse", RF], ["downgrade", DG]]) { const bad = []; let dropped = 0; for (let s = 1; s <= 8; s++) { const a = play(cfgWith({...mode, treeShare:.6, lockEvery:0, stackSize:20}), s); if (a.error || !a.S.over) bad.push(s); else dropped += a.S.log.filter(e => e.did === "discard" && e.t && e.t.b === "t").length }
     ok(`the simple player ends every run with trees in the pile (${name}): it discards a tree that has nothing to grow over instead of getting stuck`, bad.length === 0 && dropped > 0) }
+
+  // ----- upgrades: the marsh's reed bed (LOU-303, LOU-304; Dan, Nov 20: "Make it level 4", "Let's make it an upgrade...and then also should it be an aesthetic difference as well?", "There's no need for
+  // protection...it's not a combat game"). A marsh habitat of upgradeLevel or higher is a reed bed: marsh can be planted on empty land that touches it, as if it were river bank. It is derived from
+  // the tile's kind and level, so nothing is stored and no move is added. REF has upgradeLevel 0 (no upgrades), so every check above is about the game as it was.
+  const UP = {upgradeLevel:4}, MN = "Marsh needs a tile next to the river or a reed bed.";
+  const legalMarsh = S => { const out = []; S.cfg.map.forEach((row, y) => [...row].forEach((ch, x) => { const k = x + "," + y; if (ch !== "_" || k in S.h || k in S.r) return;   // what the rule says, worked out from the board alone
+      if (R.nbrs(S.cfg, [x, y]).some(q => { const j = R.key(q); return j in S.r || (S.cfg.upgradeLevel > 0 && S.hb[j] === "m" && S.h[j] >= S.cfg.upgradeLevel) })) out.push(k) })); return out.sort().join(" ") };
+  const plants = S => R.options(S, 0).filter(o => o.does === "plant").map(o => o.p + "").sort().join(" ");
+  for (const [name, mode] of [["refuse", RF], ["downgrade", DG]]) {
+    { const S = setup({"8,4":4}, {}, {...mode, ...MR, ...UP, opening:["marsh 1", "marsh 1", "marsh 1"]}); S.hb["8,4"] = "m";
+      ok(`reed bed (${name}): a marsh tile of level 4 lets marsh be planted on empty land touching it, as if it were river bank, and the preview shows every legal tile`,
+        ["9,4", "8,3", "7,3", "7,5", "8,5"].every(k => does(S, R.unkey(k)) === "plant") && does(S, E) === "plant" && plants(S) === legalMarsh(S) && R.reedBedAt(S, "8,4") && R.upgradeOf(S.cfg, {k:"h", b:"m", l:4}) === "reed");
+      ok(`reed bed (${name}): it opens ground one tile further inland and no more: land two tiles from it is refused, with the toast in plain words`, does(S, [10, 4]) === undefined && does(S, [9, 3]) === undefined && R.place(S, 0, [10, 4]) === null && R.why(S, 0, [10, 4]) === MN) }
+    { const S = setup({"8,4":3}, {}, {...mode, ...MR, ...UP, opening:["marsh 1"]}); S.hb["8,4"] = "m";
+      ok(`reed bed (${name}): a marsh tile of level 3 is no reed bed: marsh still plants only next to a river tile, and nowhere else`, !R.reedBedAt(S, "8,4") && R.upgradeOf(S.cfg, {k:"h", b:"m", l:3}) === "" && plants(S) === legalMarsh(S) && plants(S).split(" ").length === 6 && does(S, [9, 4]) === undefined && R.why(S, 0, [9, 4]) === MN) }
+    { const S = setup({"8,4":4}, {}, {...mode, ...MR, ...UP, opening:["marsh 1", "marsh 3"]}); S.hb["8,4"] = "m"; const a = R.place(S, 0, [9, 4]);
+      ok(`reed bed (${name}): a marsh tile planted next to a reed bed lands as level 1 and scores 1`, a && a.does === "plant" && a.l === 1 && a.pts === 1 && S.h["9,4"] === 1 && S.hb["9,4"] === "m" && S.planted === 1 && !R.reedBedAt(S, "9,4"));
+      if (name === "refuse") ok("reed bed (refuse): a level 3 marsh tile can't be planted next to it, and the toast says what to do", R.options(S, 0).filter(o => o.does === "plant").length === 0 && R.place(S, 0, [8, 3]) === null && R.why(S, 0, [8, 3]) === NO);
+      else ok("reed bed (downgrade): a level 3 marsh tile is planted next to it as a level 1 marsh habitat", does(S, [8, 3]) === "plant" && (b => b && b.l === 1 && b.pts === 1 && S.h["8,3"] === 1 && S.hb["8,3"] === "m")(R.place(S, 0, [8, 3]))) }
+    { const S = setup({"8,4":4}, {}, {...mode, ...MR, ...UP, opening:["marsh 1", "trees 4", "marsh 1"]}); S.hb["8,4"] = "m"; const near = does(S, [8, 3]) === "plant"; R.place(S, 0, [9, 4]); R.place(S, 0, [8, 4]);   // marsh beside the reed bed, then a level 4 tree grows over the reed bed
+      ok(`reed bed (${name}): a reed bed is lost when a tree overgrows it: marsh no longer plants next to it, the marsh planted there before stays, and the river bank still works`,
+        near && S.hb["8,4"] === "t" && S.h["8,4"] === 5 && !R.reedBedAt(S, "8,4") && R.upgradeOf(S.cfg, {k:"h", b:"t", l:5}) === "" && S.hb["9,4"] === "m" && does(S, [8, 3]) === undefined && does(S, E) === "plant" && plants(S) === legalMarsh(S)) }
+    { const S = setup({"8,4":4, "9,4":5}, {}, {...mode, ...MR, ...UP, lockCopiesGo:"front", lockEvery:0, opening:["marsh 1", "marsh 1"]}); S.hb["8,4"] = "m"; R.lock(S, [9, 4]);   // the level 5 green habitat copies the level 4 marsh beside it
+      const copy = S.q[1]; R.place(S, 0, E);
+      ok(`reed bed (${name}): a lock copy of a reed bed is still level 4 marsh, so it is still one, and it combines onto the original: level 5 is a reed bed too`,
+        same(copy, {k:"h", l:4, c:1, b:"m"}) && R.upgradeOf(S.cfg, copy) === "reed" && S.q[0].c === 1 && does(S, [8, 4]) === "combine" && (b => b && S.h["8,4"] === 5 && R.reedBedAt(S, "8,4") && does(S, [8, 3]) === "plant")(R.place(S, 0, [8, 4]))) }
+    { const S = setup({"8,4":4}, {}, {...mode, ...MR, ...UP, opening:["marsh 1"]}); S.hb["8,4"] = "m"; S.lk["8,4"] = 1;
+      ok(`reed bed (${name}): a locked reed bed still counts, as a locked river tile does`, R.reedBedAt(S, "8,4") && does(S, [9, 4]) === "plant" && plants(S) === legalMarsh(S)) }
+    { const S = setup({"8,4":4, "8,6":4, "6,2":4}, {}, {...mode, ...MR, ...UP, opening:["marsh 1"]}); S.hb["8,6"] = "p"; S.hb["6,2"] = "t";   // a green, a prairie and a trees habitat of level 4
+      ok(`reed bed (${name}): green, prairie and trees gain nothing at level 4: marsh still plants only next to the river`, plants(S) === legalMarsh(S) && plants(S).split(" ").length === 6 && [null, "p", "t"].every(b => R.upgradeOf(S.cfg, {k:"h", l:4, ...(b ? {b} : {})}) === "") && R.upgradeOf(S.cfg, {k:"r", l:9}) === "") }
+  }
+  { const S = setup({"8,4":4}, {}, {...MR, upgradeLevel:0, opening:["marsh 1"]}); S.hb["8,4"] = "m";
+    ok("with the upgrade level 0 there is no reed bed: marsh next to a level 4 marsh habitat is refused, with the old toast", !R.reedBedAt(S, "8,4") && R.upgradeOf(S.cfg, {k:"h", b:"m", l:4}) === "" && does(S, [9, 4]) === undefined && R.why(S, 0, [9, 4]) === "Marsh needs a tile next to the river.") }
+  { const S = setup({"8,4":3}, {}, {...MR, upgradeLevel:3, opening:["marsh 1"]}), T3 = setup({"8,4":2}, {}, {...MR, upgradeLevel:3, opening:["marsh 1"]}); S.hb["8,4"] = "m"; T3.hb["8,4"] = "m";
+    ok("the upgrade level is the config's: with 3, a level 3 marsh habitat is a reed bed and a level 2 one is not", R.reedBedAt(S, "8,4") && does(S, [9, 4]) === "plant" && !R.reedBedAt(T3, "8,4") && does(T3, [9, 4]) === undefined) }
+  { const S = setup({"8,4":4}, {}, {marshNeedsRiver:false, ...UP, opening:["marsh 1"]}); S.hb["8,4"] = "m";
+    ok("with marsh not needing the river, the reed bed changes nothing: marsh plants wherever green does", does(S, [9, 4]) === undefined && does(S, E) === "plant" && R.why(S, 0, [9, 4]) === "Too far from the river.") }
+  { const t = R.tidy({...REF, upgradeLevel:25}, REF), u = R.tidy({...REF, upgradeLevel:"x"}, REF), v = R.tidy({...REF, upgradeLevel:-1}, REF);
+    ok("a bad upgrade level is refused and the old value stands", same(t.bad, ["upgradeLevel"]) && t.cfg.upgradeLevel === 0 && same(u.bad, ["upgradeLevel"]) && same(v.bad, ["upgradeLevel"])) }
+  ok("the ruleset key changes with the upgrade level", R.rulesKey(cfgWith({upgradeLevel:4})) !== R.rulesKey(REF) && R.rulesKey(cfgWith({upgradeLevel:3})) !== R.rulesKey(cfgWith({upgradeLevel:4})));
+  ok("the config file has upgrades at level 4 (Dan, Nov 20: \"Make it level 4\")", BASE.upgradeLevel === 4 && R.UPGRADE.reed.line === "Reed bed: marsh can grow one tile further inland");
+  for (const [name, mode] of [["refuse", RF], ["downgrade", DG]]) { let wrong = 0, via = 0, marshPlanted = 0, ends = 0, replays = 0, sums = 0, made = null, madeCfg = null;   // six seeded runs of random legal moves, upgrade level 2 so that a random run makes reed beds: two marsh tiles of level 1 combine into one
+    for (const sd of [21, 22, 23, 24, 25, 26]) { const cfg = cfgWith({...mode, ...MR, upgradeLevel:2, marshShare:.6, prairieShare:.2, treeShare:.1, opening:["marsh 1", "marsh 1", "habitat 1", "river", "marsh 1"], lockEvery:0, stackSize:40, riverShare:.1}), S = R.fresh(cfg, sd);
+      let z = 17 + sd, guard = 0; const rn = () => (z = (z * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+      while (!S.over && guard++ < 4000) { if (!S.q.length) { const lk = [...Object.keys(S.h), ...Object.keys(S.r)].map(R.unkey).find(p => R.lockable(S, p) && R.copiesOf(S, p).copies.length); if (!lk) { R.end(S); break } R.lock(S, lk); continue }
+        const o = R.options(S, 0); if (!o.length || rn() < .08) { R.discard(S, 0); continue } R.place(S, 0, o[Math.floor(rn() * o.length)].p) }
+      const T = R.fresh(cfg, sd);   // every marsh planting touches a river tile or a reed bed at the moment it is made
+      for (const m of S.moves) { if (m.a === "p") { const t = T.q[m.i], k = m.x + "," + m.y; if (t.k === "h" && t.b === "m" && !(k in T.h)) { marshPlanted++; const nb = R.nbrs(cfg, [m.x, m.y]).map(R.key), river = nb.some(q => q in T.r), reed = nb.some(q => T.hb[q] === "m" && T.h[q] >= 2); if (!river && !reed) wrong++; if (!river && reed) via++ } }
+        m.a === "p" ? R.place(T, m.i, [m.x, m.y]) : m.a === "d" ? R.discard(T, m.i) : m.a === "l" ? R.lock(T, [m.x, m.y]) : R.end(T) }
+      if (S.over && guard < 4000) ends++; if (same(S, R.replay(cfg, sd, S.moves))) replays++; if (S.planted + S.combined + S.extended + S.widened + S.discarded === S.used) sums++;
+      const e = !made && S.log.find(e => e.did === "combine" && e.t.b === "m" && e.l === 2); if (e) made = {e, sd, moves:S.moves}, madeCfg = cfg }
+    ok(`a whole run of random legal moves with reed beds (${name}): six runs end and replay from their seeds, every marsh planting touched a river tile or a reed bed, and some touched only a reed bed`, ends === 6 && replays === 6 && sums === 6 && wrong === 0 && marshPlanted > 0 && via > 0);
+    const k = made && R.key(made.e.at);
+    ok(`reed bed (${name}): undo steps back over the move that made one (nothing was stored: it was only the tile's level), and a reload brings it back`, !!made && R.reedBedAt(R.replay(madeCfg, made.sd, made.moves.slice(0, made.e.n)), k) && !R.reedBedAt(R.replay(madeCfg, made.sd, made.moves.slice(0, made.e.n - 1)), k) && same(R.replay(madeCfg, made.sd, made.moves.slice(0, made.e.n)), R.replay(madeCfg, made.sd, made.moves.slice(0, made.e.n)))) }
+  for (const [name, mode] of [["refuse", RF], ["downgrade", DG]]) { const bad = []; let via = 0; for (let s = 1; s <= 8; s++) { const a = play(cfgWith({...mode, ...MR, upgradeLevel:2, marshShare:.6, lockEvery:0, stackSize:20}), s); if (a.error || !a.S.over) bad.push(s); else via += a.m.reedPlanted }
+    ok(`the simple player ends every run with reed beds (${name}), and uses them`, bad.length === 0 && via > 0) }
 
   for (const f of fails) console.log("FAILED: " + f);
   console.log(fails.length ? `${fails.length} of ${n} rule checks failed` : `all ${n} rule checks passed`);

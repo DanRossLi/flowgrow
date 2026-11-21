@@ -51,6 +51,14 @@ if (CFG.treeShare > 0 || S.log.some(e => e.t && e.t.b === "t")) { const T = R.fr
     if (tree && mv.a === "p") { if (r.does === "overgrow") { m.grew[r.from]++; m.pts += r.pts } else m.plain++ } }
   const grew = m.grew[""] + m.grew.p + m.grew.m;
   console.log(`trees: ${m.turns} tree tiles in hand (${m.copies} copies), ${m.none} with no legal target, ${m.discarded} discarded · ${grew} overgrows (${m.grew[""]} green, ${m.grew.p} prairie, ${m.grew.m} marsh) for ${m.pts} points · ${m.plain} tree-on-tree combines · ${Object.values(S.hb).filter(b => b === "t").length} tree habitats at the end`) }
+// What the reed bed did in this run (LOU-304; replayed move by move): marsh tiles that reached the upgrade level, marsh planted only because of a reed bed, and the reed beds left at the end.
+if (CFG.upgradeLevel > 0) { const T = R.fresh(CFG, run.seed), up = CFG.upgradeLevel, m = {inHand:0, planted:0, viaReed:0, rescued:0, reached:0};
+  for (const mv of run.moves) { const t = (mv.a === "p" || mv.a === "d") && T.q[mv.i], marsh = t && t.k === "h" && t.b === "m";
+    if (marsh) { m.inHand++; const pl = R.options(T, mv.i).filter(x => x.does === "plant"), via = CFG.marshNeedsRiver ? pl.filter(x => !R.nbrs(CFG, x.p).some(q => R.key(q) in T.r)) : [];
+      if (via.length && via.length === pl.length) m.rescued++; if (mv.a === "p" && !((mv.x + "," + mv.y) in T.h)) { m.planted++; if (via.some(x => R.key(x.p) === mv.x + "," + mv.y)) m.viaReed++ } }
+    const r = mv.a === "p" ? R.place(T, mv.i, [mv.x, mv.y]) : mv.a === "d" ? R.discard(T, mv.i) : mv.a === "l" ? R.lock(T, [mv.x, mv.y]) : R.end(T);
+    if (marsh && mv.a === "p" && r && ((r.does === "combine" && r.l === up) || (r.does === "plant" && r.l >= up))) m.reached++ }
+  console.log(`reed beds: ${m.reached} marsh tiles reached level ${up}, ${Object.keys(S.h).filter(k => S.hb[k] === "m" && S.h[k] >= up).length} reed beds on the island at the end · ${m.planted} marsh planted, ${m.viaReed} of them only because of a reed bed (${m.rescued} marsh tiles had no other place to plant) · ${m.inHand} marsh tiles in hand`) }
 const W = CFG.map[0].length, H = CFG.map.length, rows = [];
 for (let y = 0; y < H; y++) { let r = y & 1 ? " " : ""; for (let x = 0; x < W; x++) { const k = x + "," + y, code = CFG.map[y][x], lk = k in S.lk;
   r += (code === "B" ? "^^" : k in S.r ? (lk ? "~" : "w") + S.r[k].l : k in S.h ? (lk ? "#" : S.hb[k] || "h") + S.h[k] : "..") + " " } rows.push(r) }
