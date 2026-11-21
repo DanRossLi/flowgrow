@@ -84,10 +84,11 @@ function policySearch(until) {
       const w2 = opts.find(o => o.does === "widen"); if (w2 && rnd() < P.widenCopy) return R.place(S, 0, w2.p); return R.discard(S, 0) }
     const nHab = Object.keys(S.h).length, comb = opts.filter(o => o.does === "combine"), plant = opts.filter(o => o.does === "plant");
     const wantPlant = comb.length === 0 || (nHab < P.grow && !(!t.c && S.dealt > P.dealtPlant)) || (t.l >= P.hiPlant && nHab < P.growHi);
-    if (!wantPlant) { let b = null, bs = -1e9; for (const o of comb) { const adj = last && R.hexDist(o.p, last) === 1 ? P.adj : 0, u = nbrs(o.p).filter(q => unl(S, q)).length, s = adj + P.cu * u + rnd() * P.noise; if (s > bs) { bs = s; b = o } } return R.place(S, 0, b.p) }
-    if (plant.length) { let b = null, bs = -1e9; for (const o of plant) { const hn = nbrs(o.p).filter(q => K(q) in S.h).length, rn = nbrs(o.p).filter(q => K(q) in S.r).length; if (hn + rn === 0) continue;
-      const s = 3 * hn + rn - .1 * R.hexDist(o.p, SRC) + rnd() * P.noise; if (s > bs) { bs = s; b = o } } if (b) return R.place(S, 0, b.p) }
-    return R.discard(S, 0) }
+    const combineIt = () => { let b = null, bs = -1e9; for (const o of comb) { const adj = last && R.hexDist(o.p, last) === 1 ? P.adj : 0, u = nbrs(o.p).filter(q => unl(S, q)).length, s = adj + P.cu * u + rnd() * P.noise; if (s > bs) { bs = s; b = o } } return b ? R.place(S, 0, b.p) : null };
+    const plantIt = () => { let b = null, bs = -1e9; for (const o of plant) { const hn = nbrs(o.p).filter(q => K(q) in S.h).length, rn = nbrs(o.p).filter(q => K(q) in S.r).length; if (hn + rn === 0) continue;
+      const s = 3 * hn + rn - .1 * R.hexDist(o.p, SRC) + rnd() * P.noise; if (s > bs) { bs = s; b = o } } return b ? R.place(S, 0, b.p) : null };
+    // grow first or climb first, as the knobs say, and the other one if that can't be done (with bare ground at level 1 a high tile has nothing to plant on); else discard
+    return (wantPlant ? plantIt() || combineIt() : combineIt() || plantIt()) || R.discard(S, 0) }
   function chooseLock(S, P) { let best = null, bs = -1e9;       // the tile whose copies are worth most, minus what freezing it costs
     for (const k of [...Object.keys(S.h), ...(P.lockRiver ? Object.keys(S.r) : [])]) { const p = R.unkey(k); if (!R.lockable(S, p)) continue;
       const L = k in S.h ? S.h[k] : S.r[k].l, g = R.copiesOf(S, p); let gain = 0, n = 0; for (const t of g.copies) if (t.k === "h") { gain += SC(t.l + 1); n++ } if (!n) continue;

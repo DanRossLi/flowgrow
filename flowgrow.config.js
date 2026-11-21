@@ -22,6 +22,8 @@ window.FLOWGROW = {
   riverShare: 0.10,         // chance a dealt tile is a river tile
   opening: ["habitat 1", "habitat 1", "river"], // the first tiles of every run, in order
   maxLevel: 15,             // the highest level a habitat can reach (Dan, Nov 20: "uncap the tiles max to 15"). 7 in the first build
+  bareGroundMaxLevel: 1,    // the highest level a habitat can have when planted on empty land (LOU-300; Dan, Nov 20: "level 1 only on bare ground"). 15 (the top level) is the old rule: any level plants. 2 is the softer version
+  bareGroundMode: "refuse", // what a habitat above that level does on empty land. "refuse": it can't be planted, only combined onto a habitat of its own level or discarded. "downgrade": it plants as a level 1 habitat and scores 1
   levelOdds: 0,             // each level is this many times as likely as the one below. 0: only level 1 is ever dealt (Dan, Nov 20), so higher levels
                             // come only from combining and from the copies a lock banks. 0.5 in the first build
 

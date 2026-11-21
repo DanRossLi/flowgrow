@@ -21,9 +21,9 @@ function load() { const window = {FLOWGROW_SIM:true};
 const {R, base} = load();
 const BASE = R.tidy(base).cfg;
 // The rule checks are written for these values, the first build's, so tuning flowgrow.config.js never breaks them (the pilot pile, for one,
-// changes the pile). The report and the command line use the config file as it is.
+// changes the pile; bare ground takes any level, and the bare ground rule is checked on its own below). The report and the command line use the config file as it is.
 const REF = (() => { const t = R.tidy({...base, map:["_____________", "_BB__________", "__B_______B__", "__________BB_", "______T______", "_____________", "___BB________", "_____________", "_____________"],
-  stackSize:80, queueShown:3, pickFrom:1, riverShare:.1, opening:["habitat 1", "habitat 1", "river"], maxLevel:7, levelOdds:.5, scoreByLevel:[1, 3, 6, 10, 15, 21, 28], riverReach:[1, 2], riverMonotone:false,
+  stackSize:80, queueShown:3, pickFrom:1, riverShare:.1, opening:["habitat 1", "habitat 1", "river"], maxLevel:7, levelOdds:.5, scoreByLevel:[1, 3, 6, 10, 15, 21, 28], riverReach:[1, 2], riverMonotone:false, bareGroundMaxLevel:24, bareGroundMode:"refuse",
   levelNames:["Sprouts", "Meadow", "Thicket", "Saplings", "Grove", "Forest", "Old forest"], lockEnabled:true, lockLevelCap:true, lockCopiesGo:"back", lockRivers:true, lockEvery:10, lockHold:1}, base);
   if (t.bad.length) throw new Error("bad reference config: " + t.bad); return t.cfg })();
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -53,10 +53,14 @@ function play(cfg, seed) { const out = {S:null, tight:0, error:""};
 // ---------- the report
 const avg = a => a.reduce((x, y) => x + y, 0) / (a.length || 1), pct = (a, p) => [...a].sort((x, y) => x - y)[Math.min(a.length - 1, Math.floor(a.length * p))];
 const f1 = v => v.toFixed(1), f2 = v => v.toFixed(2), share = (a, f) => Math.round(100 * a.filter(f).length / (a.length || 1)) + "%";
+const copiesBy = (s, did) => s.log.filter(e => e.did === did && e.t && e.t.c).length;                   // copies placed by this kind of move
+const copiesDown = s => s.log.filter(e => e.did === "plant" && e.t && e.t.c && e.l < e.t.l).length;     // copies planted as level 1 ("downgrade")
 function report(cfg, runs) { const res = []; for (let seed = 1; seed <= runs; seed++) res.push(play(cfg, seed));
   const bad = res.filter(r => r.error), ok = res.filter(r => !r.error).map(r => ({...r, hab:Object.keys(r.S.h).length, riv:Object.keys(r.S.r).length, room:R.plantable(r.S).length}));
   const S = ok.map(r => r.S), sc = S.map(s => s.score), top = S.map(s => s.top), lv = [4, 5, 6, 7].filter(l => l <= cfg.maxLevel);
   console.log(`Flowgrow: ${runs} runs, ${cfg.stackSize} tiles each${cfg.lockEnabled ? `, locking on (${cfg.lockEvery ? `a lock every ${cfg.lockEvery} tiles placed, ${cfg.lockHold} held` : "locks free, used when the pile is empty"})` : ", locking off"}`);
+  const bare = cfg.bareGroundMaxLevel < cfg.maxLevel;   // the bare ground rule is in force: say so, and say what happens to the copies (with it off the report is as it was)
+  if (bare) console.log(`  bare ground          takes level ${cfg.bareGroundMaxLevel}${cfg.bareGroundMaxLevel > 1 ? " and below" : " only"}; above that: ${cfg.bareGroundMode === "refuse" ? "refused (combine or discard)" : "planted as level 1"}`);
   console.log(`  score                average ${Math.round(avg(sc))} · 10th percentile ${pct(sc, .1)} · 90th percentile ${pct(sc, .9)}`);
   console.log(`  top level            average ${f1(avg(top))}${lv.map(l => ` · level ${l}+ in ${share(top, t => t >= l)}`).join("")}`);
   console.log(`  habitats on the map  ${f1(avg(ok.map(r => r.hab)))} (planted ${f1(avg(S.map(s => s.planted)))}, combined ${f1(avg(S.map(s => s.combined)))})`);
@@ -66,7 +70,8 @@ function report(cfg, runs) { const res = []; for (let seed = 1; seed <= runs; se
   if (cfg.lockEnabled) {
     console.log(`  moves                ${f1(avg(S.map(s => s.moves.length)))} a run`);
     console.log(`  locks                ${f1(avg(S.map(s => s.lockUsed)))} used · ${f1(avg(S.map(s => s.lockLost)))} lost · ${f1(avg(S.map(s => Object.keys(s.lk).length)))} tiles locked at the end`);
-    console.log(`  copies               ${f1(avg(S.map(s => s.copyBanked)))} banked · ${f1(avg(S.map(s => s.copyPlaced)))} placed · ${f2(avg(S.map(s => s.copyDiscarded)))} discarded · ${f1(avg(S.map(s => s.copyPoints)))} points from copies`) }
+    console.log(`  copies               ${f1(avg(S.map(s => s.copyBanked)))} banked · ${f1(avg(S.map(s => s.copyPlaced)))} placed · ${f2(avg(S.map(s => s.copyDiscarded)))} discarded · ${f1(avg(S.map(s => s.copyPoints)))} points from copies`);
+    if (bare) console.log(`  copies placed        ${f1(avg(S.map(s => copiesBy(s, "plant"))))} planted on bare ground${cfg.bareGroundMode === "downgrade" ? ` (${f1(avg(S.map(copiesDown)))} of them as level 1)` : ""} · ${f1(avg(S.map(s => copiesBy(s, "combine"))))} combined · ${f1(avg(S.map(s => copiesBy(s, "extend") + copiesBy(s, "widen"))))} river tiles · ${f2(avg(S.map(s => s.copyDiscarded)))} discarded`) }
   if (bad.length) { console.log(`  ${bad.length} of ${runs} runs went wrong:`); for (const r of bad.slice(0, 10)) console.log(`    seed ${r.S ? r.S.seed : "?"}: ${r.error}`); process.exitCode = 1 }
   else console.log("  no run crashed or stalled, and every run rebuilt exactly from its seed and moves") }
 
@@ -233,6 +238,71 @@ function checks() { let n = 0; const fails = [];
       b && b.does === "combine" && b.pts === 120 && at(S, E) === 15 && R.options(S, 0).length > 0 && R.options(S, 0).every(o => o.p + "" !== E + "") && R.why(S, 0, E) === "Level 15 is the top level.") }
   ok("a level past the names is just called Level N, with no repeat in its text; named levels keep their names", R.levelName(REF, 9) === "Level 9" && R.tileText(REF, {k:"h", l:9}) === "Level 9" && R.levelName(REF, 7) === "Old forest" && R.tileText(REF, {k:"h", l:3}) === "Thicket (level 3)");
   ok("the top level can be set up to 24 and not past it", R.tidy({...REF, maxLevel:15}, REF).bad.length === 0 && R.tidy({...REF, maxLevel:24}, REF).bad.length === 0 && R.tidy({...REF, maxLevel:25}, REF).bad.includes("maxLevel"));
+
+  // ----- bare ground takes level 1 only (LOU-300; Dan, Nov 20: "get rid of lock capping. and yes let's implement level 1 only on bare ground").
+  // bareGroundMode "refuse": a habitat above bareGroundMaxLevel can't be planted on empty land, it can only combine or be discarded. "downgrade": it plants
+  // as a level 1 habitat and scores 1. REF lets any level plant (bareGroundMaxLevel 24), so every check above is about the first build's rule.
+  const RF = {bareGroundMaxLevel:1, bareGroundMode:"refuse"}, DG = {bareGroundMaxLevel:1, bareGroundMode:"downgrade"}, NO = "Only level 1 can be planted on bare ground. Combine it or discard it.";
+  { const S = run(["habitat 2", "habitat 3", "habitat 1"], RF);
+    ok("refuse: a level 2 tile can't be planted on bare ground: no plant is offered, nothing is placed, and the toast says what to do",
+      does(S, E) === undefined && R.place(S, 0, E) === null && R.options(S, 0).length === 0 && R.why(S, 0, E) === NO && R.why(S, 0, FAR) === NO && R.why(S, 0, SRC) === NO && S.planted === 0 && Object.keys(S.h).length === 0);
+    R.discard(S, 0); ok("refuse: a level 3 tile can't be planted either", does(S, E) === undefined && R.place(S, 0, E) === null && R.options(S, 0).length === 0 && R.why(S, 0, E) === NO);
+    R.discard(S, 0); const a = R.place(S, 0, E);
+    ok("refuse: a level 1 tile is planted on bare ground as before, for 1 point", a && a.does === "plant" && a.l === 1 && a.pts === 1 && at(S, E) === 1 && S.score === 1 && S.planted === 1 && S.discarded === 2) }
+  { const S = run(["habitat 2"], RF); S.h["7,4"] = 2; S.h["5,4"] = 3; S.top = 3;
+    ok("refuse: level 2 on level 2 combines, level 2 on level 3 doesn't, and the combine is the only move",
+      does(S, E) === "combine" && does(S, W) === undefined && R.place(S, 0, W) === null && R.why(S, 0, W) === "That's level 3. Only a level 3 tile can go on it." && R.options(S, 0).length === 1);
+    const b = R.place(S, 0, E); ok("refuse: the combine is unchanged, level 3 for 6 points", b && b.does === "combine" && b.l === 3 && b.pts === 6 && at(S, E) === 3 && S.score === 6 && S.combined === 1) }
+  { const S = run(["river 2", "habitat 1"], RF), a = R.place(S, 0, E);
+    ok("refuse: a level 2 river tile is unaffected, it extends the river at level 2 and reaches 2 tiles out", a && a.does === "extend" && a.l === 2 && riv(S, E).l === 2 && R.reachOf(S).has("9,4")) }
+  { const S = setup({"8,6":2, "9,6":3, "7,6":3}, {}, {...RF, lockEvery:0, stackSize:1, queueShown:0}); R.discard(S, 0);   // the one dealt tile is gone: the pile is empty
+    ok("refuse: with the pile empty the run goes on while a lock would bank a copy", !S.over && S.q.length === 0 && R.lockWouldCopy(S));
+    R.lock(S, [9, 6]); R.lock(S, [7, 6]);                                           // each level 3 habitat copies the level 2 habitat between them
+    ok("refuse: two locks bank two level 2 copies of the one level 2 habitat", S.q.length === 1 && S.q[0].c === 1 && S.q[0].l === 2 && S.bank.length === 1 && S.copyBanked === 2);
+    const first = R.place(S, 0, [8, 6]);
+    ok("refuse: the first copy combines onto it (level 3, 6 points), and the second has nowhere to go: not on bare ground, and no level 2 habitat is left",
+      first && first.does === "combine" && at(S, [8, 6]) === 3 && S.score === 6 && S.q.length === 1 && S.q[0].l === 2 && R.options(S, 0).length === 0);
+    R.discard(S, 0); ok("refuse: a copy that can't be placed is discarded, and the run still ends", S.over && S.copyDiscarded === 1 && S.copyPlaced === 1 && S.score === 6 && R.discard(S, 0) === null) }
+  { const S = run(["habitat 2", "habitat 3", "habitat 1"], DG), o = R.options(S, 0).find(x => x.p + "" === E + "");
+    ok("downgrade: a level 2 tile can be planted on bare ground, and the move says it lands as level 1 for 1 point", does(S, E) === "plant" && o.l === 1 && o.pts === 1 && R.options(S, 0).length === R.plantable(S).length);
+    const a = R.place(S, 0, E);
+    ok("downgrade: it lands as a level 1 habitat and scores 1, not 3, and keeps its kind: it is still a habitat", a && a.does === "plant" && a.tile.k === "h" && a.tile.l === 2 && a.l === 1 && a.pts === 1 && at(S, E) === 1 && !riv(S, E) && S.score === 1 && S.top === 1 && S.planted === 1);
+    const b = R.place(S, 0, W); ok("downgrade: a level 3 tile lands as level 1 too, for 1 point", b && b.l === 1 && b.pts === 1 && at(S, W) === 1 && S.score === 2 && S.top === 1) }
+  { const S = run(["habitat 2"], DG); S.h["7,4"] = 2; S.h["5,4"] = 3; S.top = 3; const pl = R.options(S, 0).filter(x => x.does === "plant");
+    ok("downgrade: level 2 on level 2 combines and level 2 on level 3 doesn't, and the only plants are level 1",
+      does(S, E) === "combine" && does(S, W) === undefined && R.why(S, 0, W) === "That's level 3. Only a level 3 tile can go on it." && pl.length > 0 && pl.every(x => x.l === 1 && x.pts === 1));
+    const b = R.place(S, 0, E); ok("downgrade: the combine is unchanged, level 3 for 6 points", b && b.does === "combine" && b.l === 3 && b.pts === 6 && at(S, E) === 3 && S.score === 6) }
+  { const S = run(["river 2", "habitat 1"], DG), a = R.place(S, 0, E);
+    ok("downgrade: a level 2 river tile is unaffected, it extends the river at level 2 and reaches 2 tiles out", a && a.does === "extend" && a.l === 2 && riv(S, E).l === 2 && R.reachOf(S).has("9,4")) }
+  { const S = setup({"8,6":3, "9,6":5}, {}, {...DG, lockEvery:0, stackSize:1, queueShown:0}); R.discard(S, 0); R.lock(S, [9, 6]);   // the level 5 habitat copies the level 3 one beside it
+    const o = R.options(S, 0), pl = o.filter(x => x.does === "plant");
+    ok("downgrade: a level 3 copy can combine onto the level 3 habitat or be planted as level 1", S.q.length === 1 && S.q[0].c === 1 && S.q[0].l === 3 && o.some(x => x.does === "combine" && x.p + "" === "8,6") && pl.length > 0 && pl.every(x => x.l === 1 && x.pts === 1));
+    const a = R.place(S, 0, E);
+    ok("downgrade: a copy planted on bare ground lands as level 1 and counts as a copy placed, for 1 point", a && a.l === 1 && at(S, E) === 1 && S.copyPlaced === 1 && S.copyPoints === 1 && S.planted === 1 && S.score === 1) }
+  { const a = run(["habitat 2", "habitat 3"], {bareGroundMaxLevel:2, bareGroundMode:"refuse"}), b = run(["habitat 2", "habitat 3"], {bareGroundMaxLevel:2, bareGroundMode:"downgrade"}), pa = R.place(a, 0, E), pb = R.place(b, 0, E);
+    ok("a limit of 2: a level 2 tile still plants as level 2 for 3 points, in both modes", pa && pa.l === 2 && pa.pts === 3 && at(a, E) === 2 && pb && pb.l === 2 && pb.pts === 3 && at(b, E) === 2);
+    ok("a limit of 2: a level 3 tile is refused in refuse mode, and lands as level 1 in downgrade mode",
+      R.options(a, 0).length === 0 && R.why(a, 0, W) === "Only level 2 or lower can be planted on bare ground. Combine it or discard it." && does(b, W) === "plant" && R.place(b, 0, W).l === 1 && at(b, W) === 1) }
+  for (const mode of ["refuse", "downgrade"]) { const S = run(["habitat 7"], {bareGroundMaxLevel:15, bareGroundMode:mode}), a = R.place(S, 0, E);
+    ok(`a limit of 15 (${mode}): a level 7 tile plants as level 7 for 28 points, as before this rule`, a && a.does === "plant" && a.l === 7 && a.pts === 28 && at(S, E) === 7 && S.top === 7) }
+  { const bad = []; for (let s = 1; s <= 12; s++) { const a = play(cfgWith({bareGroundMaxLevel:15}), s), b = play(cfgWith({bareGroundMaxLevel:15, bareGroundMode:"downgrade"}), s); if (a.error || b.error || a.S.score !== b.S.score || !same(a.S.moves, b.S.moves)) bad.push(s) }
+    ok("with the limit at 15 no tile is above it, so the two modes play exactly alike", bad.length === 0) }
+  for (const mode of ["refuse", "downgrade"]) { const bad = []; for (let s = 1; s <= 8; s++) { const a = play(cfgWith({bareGroundMaxLevel:1, bareGroundMode:mode, lockEvery:0, stackSize:10, levelOdds:0}), s); if (a.error || !a.S.over) bad.push(s) }
+    ok(`the simple player ends every run with bare ground at level 1 (${mode}): it discards what it can't place instead of getting stuck`, bad.length === 0) }
+  for (const mode of ["refuse", "downgrade"]) { const cfg = cfgWith({bareGroundMaxLevel:1, bareGroundMode:mode, opening:["habitat 3", "habitat 2", "habitat 1", "river"], lockEvery:0, stackSize:12}), S = R.fresh(cfg, 5);
+    let z = 4242, guard = 0; const rn = () => (z = (z * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+    while (!S.over && guard++ < 4000) { if (!S.q.length) { const lk = Object.keys(S.h).map(R.unkey).find(p => R.lockable(S, p) && R.copiesOf(S, p).copies.length); if (!lk) { R.end(S); break } R.lock(S, lk); continue }
+      const o = R.options(S, 0); if (!o.length || rn() < .1) { R.discard(S, 0); continue } R.place(S, 0, o[Math.floor(rn() * o.length)].p) }
+    const planted = S.log.filter(e => e.did === "plant"), low = planted.filter(e => e.l < e.t.l), tall = planted.filter(e => e.l > 1);
+    ok(`a whole run of random legal moves (${mode}): it ends, nothing above level 1 is planted on bare ground, and it replays from its seed`,
+      S.over && guard < 4000 && tall.length === 0 && (mode === "refuse" ? low.length === 0 : low.length > 0) && same(S, R.replay(cfg, 5, S.moves)));
+    if (mode === "downgrade" && low.length) { const m = low[0].n, k = R.key(low[0].at), withIt = R.replay(cfg, 5, S.moves.slice(0, m)), without = R.replay(cfg, 5, S.moves.slice(0, m - 1));
+      ok("downgrade: undo steps back over a downgraded tile, a reload brings it back, and the run log says it landed as level 1",
+        withIt.h[k] === 1 && withIt.log[m - 1].t.l > 1 && !(k in without.h) && same(R.replay(cfg, 5, S.moves.slice(0, m)), withIt) && /planted at \d+,\d+, as level 1 Sprouts · \+1 · /.test(R.logText(S))) } }
+  ok("the ruleset key changes with the bare ground level and with its mode", R.rulesKey(cfgWith(RF)) !== R.rulesKey(cfgWith({bareGroundMaxLevel:2, bareGroundMode:"refuse"})) && R.rulesKey(cfgWith(RF)) !== R.rulesKey(cfgWith(DG)));
+  { const t = R.tidy({...REF, bareGroundMaxLevel:0, bareGroundMode:"sideways"}, REF);
+    ok("a bad bare ground level or mode is refused and the old value stands", same(t.bad, ["bareGroundMaxLevel", "bareGroundMode"]) && t.cfg.bareGroundMaxLevel === 24 && t.cfg.bareGroundMode === "refuse") }
+  ok("the config file has bare ground at level 1, and the default mode is refuse (Dan, Nov 20: level 1 only on bare ground; LOU-300 keeps refuse until the numbers are in)", BASE.bareGroundMaxLevel === 1 && BASE.bareGroundMode === "refuse");
 
   for (const f of fails) console.log("FAILED: " + f);
   console.log(fails.length ? `${fails.length} of ${n} rule checks failed` : `all ${n} rule checks passed`);
