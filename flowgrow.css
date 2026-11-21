@@ -49,9 +49,9 @@
 @media (max-width:379px){.fgt{width:32px;height:32px}.fgt.now{width:54px;height:54px}.fgtray{gap:6px}.fgq{gap:5px}.fgstack{width:50px}.fgstack i{left:7px}
   .fgw{display:none}.fg button.fgbw{width:44px;padding:0;justify-content:center}}
 
-/* the menu: how to play, and the seven levels side by side */
+/* the menu: how to play, and the levels side by side */
 .fghow{margin:0 4px 10px;font:500 14px/1.4 var(--hand);color:#24434a}
-.fgladder{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin:0 0 10px;padding:10px 4px 8px;border-radius:16px;background:linear-gradient(180deg,#a9d98e,#86c46f)}
+.fgladder{display:grid;grid-template-columns:repeat(auto-fill,minmax(52px,1fr));gap:8px 4px;margin:0 0 10px;padding:10px 4px 8px;border-radius:16px;background:linear-gradient(180deg,#a9d98e,#86c46f)}
 .fgladder>div{display:grid;justify-items:center;align-content:end;gap:5px;min-width:0}
 .fgladder .fgt{width:40px;height:40px;background:none}
 .fgladder small{display:block;font:700 9.5px/1.15 var(--hand);color:#173c2a;text-align:center}

@@ -10,7 +10,7 @@ Plain HTML/JS, no build step, no framework, and nothing loaded from other sites.
 
 - Tiles arrive in a **pile**. The large tile is the one in hand, and the next 3 are shown beside it. Tap the island to place it.
 - A **habitat** is planted on empty land within reach of your river (the green land), or put on a habitat of the **same level**, which then goes up one level. A different level is never allowed.
-- The seven levels are Sprouts, Meadow, Thicket, Saplings, Grove, Forest and Old forest. A move scores by the level it leaves on the map: 1, 3, 6, 10, 15, 21, 28.
+- There are **15 levels** (Dan, Nov 20: "uncap the tiles max to 15"). The first seven are Sprouts, Meadow, Thicket, Saplings, Grove, Forest and Old forest; the rest are just Level 8 to Level 15 until they are named. A move scores by the level it leaves on the map: 1, 3, 6, 10, 15, 21, 28, then 36, 45, 55, 66, 78, 91, 105 and 120.
 - A **river tile** scores nothing. Put it on empty land that touches the river to make the river longer, or on a level 1 river tile to make it wider. A wider river reaches 2 tiles out instead of 1. **Rivers rise downstream** (Dan, Nov 20): a river tile can't be lower than the river tile it flows from, so a river is widened from its end back towards the source. Widen the source first and no later level 1 river tile can go anywhere.
 - **Discard** throws the tile in hand away. **Undo** steps back as far as you like. A run has 10 tiles, with no timer and no way to lose.
 - **The pilot pile** (Dan, Nov 20): you start with just **10 tiles, all level 1**, and nothing higher is ever dealt. A tile only goes on a habitat of its own level, so the pile alone can take a habitat to level 2 and no further. Level 3 and up come only from the copies a lock banks, so the loop (place, combine, lock, place the copies) is the challenge. The first three tiles are habitat, habitat, river, and each of the other seven is a river tile one time in ten. `stackSize: 80`, `levelOdds: 0.5` and `lockEvery: 10` in `flowgrow.config.js` bring back the first build's game.
@@ -19,7 +19,7 @@ Plain HTML/JS, no build step, no framework, and nothing loaded from other sites.
 
 ## Two looks
 
-- **Simple** (the page opens on it, for piloting): flat hexes seen from above. **Blue** tiles are the river (a darker blue once it is level 2, the widest) and **green** tiles are habitats (darker with each level). Every one carries its level as a **number**. Empty land the river reaches is pale green, land it doesn't reach is off-white, mountains are grey, and the source has a white ring. A locked tile carries a padlock. A gold ring marks a tile you can combine with (and its points), a teal ring a river tile you can widen, and a dashed blue ring land the river can extend onto.
+- **Simple** (the page opens on it, for piloting): flat hexes seen from above. **Blue** tiles are the river (a darker blue once it is level 2, the widest) and **green** tiles are habitats (darker with each level, with a gold rim from level 8 and a second one from level 12). Every one carries its level as a **number**. Empty land the river reaches is pale green, land it doesn't reach is off-white, mountains are grey, and the source has a white ring. A locked tile carries a padlock. A gold ring marks a tile you can combine with (and its points), a teal ring a river tile you can widen, and a dashed blue ring land the river can extend onto.
 - **Painted:** the first look, a hand-painted tilted island with seven kinds of habitat.
 
 The rules, the pile, locking and the saved run are the same in both. Switch with **Look** in the menu (it remembers your choice, and you can switch in the middle of a run), or add `?look=simple` or `?look=painted` to the address for one visit.
@@ -37,7 +37,7 @@ then go to http://localhost:8000/.
 ## Check it
 
 - `node tools/flowgrow-sim.mjs --test` runs the rule checks. All must pass. They use fixed first-build values (80 tiles, level odds 0.5), so tuning `flowgrow.config.js` never breaks them.
-- `node tools/flowgrow-sim.mjs` plays 1,000 runs of the game in `flowgrow.config.js` (the pilot pile with unlimited locks now; add `stackSize=80 levelOdds=0.5 lockEvery=10` for the first build's game), with the game's own rules. No run may crash, stall or fail to rebuild from its seed and moves. Run it with `lockEnabled=false` and `lockEvery=0` as well, for example `node tools/flowgrow-sim.mjs 300 lockEvery=0`. Any config value can be changed as `key=value`.
+- `node tools/flowgrow-sim.mjs` plays 1,000 runs of the game in `flowgrow.config.js` (the pilot pile with unlimited locks now; add `stackSize=80 levelOdds=0.5 lockEvery=10` for the first build's game), with the game's own rules. No run may crash, stall or fail to rebuild from its seed and moves. With unlimited locks a run is about 300 moves, so the 1,000 runs take a few minutes: ask for fewer (node tools/flowgrow-sim.mjs 200) when you only want a quick check. Run it with `lockEnabled=false` and `lockEvery=0` as well, for example `node tools/flowgrow-sim.mjs 300 lockEvery=0`. Any config value can be changed as `key=value`.
 - Play one whole run in a browser at 390×844.
 
 ## Deploy

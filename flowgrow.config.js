@@ -21,12 +21,12 @@ window.FLOWGROW = {
   pickFrom: 1,              // 1: you must place the tile in hand. 3: tap any of the first 3 to take it instead
   riverShare: 0.10,         // chance a dealt tile is a river tile
   opening: ["habitat 1", "habitat 1", "river"], // the first tiles of every run, in order
-  maxLevel: 7,              // the highest level a habitat can reach
+  maxLevel: 15,             // the highest level a habitat can reach (Dan, Nov 20: "uncap the tiles max to 15"). 7 in the first build
   levelOdds: 0,             // each level is this many times as likely as the one below. 0: only level 1 is ever dealt (Dan, Nov 20), so higher levels
                             // come only from combining and from the copies a lock banks. 0.5 in the first build
 
   // Score: a move scores by the level of the habitat it leaves on the map (Dan: "+1, +3, +6, +10....")
-  scoreByLevel: [1, 3, 6, 10, 15, 21, 28],
+  scoreByLevel: [1, 3, 6, 10, 15, 21, 28, 36, 45, 55, 66, 78, 91, 105, 120],
 
   // River: how many tiles out a level 1 and a level 2 river tile reach. Its length is also the widest a river tile can get.
   riverReach: [1, 2],
@@ -34,7 +34,7 @@ window.FLOWGROW = {
 
   tilesAcross: 5,           // opening zoom: about this many tiles fit across a phone
 
-  // The seven levels, lowest first: how land grows back
+  // The names of the first seven levels, lowest first: how land grows back. Levels past the list are just called Level 8, Level 9 and so on until they are named
   levelNames: ["Sprouts", "Meadow", "Thicket", "Saplings", "Grove", "Forest", "Old forest"],
 
   // Locking (LOU-299): lock a tile to copy its neighbours into the back of your pile

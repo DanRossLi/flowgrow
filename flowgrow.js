@@ -78,7 +78,7 @@ const KEYS = [
   ["pickFrom", whole(1, 7), "Pick from", "1: only the tile in hand", "int"],
   ["riverShare", real(0, 1), "River tile chance", "0 to 1", "num"],
   ["opening", listOf(s => { const t = parseTile(s); return t ? tileWord(t) : undefined }, 0, 40), "First tiles", "such as habitat 1, river", "list"],
-  ["maxLevel", whole(1, 12), "Top level", "the highest a habitat can reach", "int"],
+  ["maxLevel", whole(1, 24), "Top level", "the highest a habitat can reach", "int"],
   ["levelOdds", real(0, 4), "Level odds", "each level is this many times as likely as the one below. 0: only level 1 is ever dealt", "num"],
   ["scoreByLevel", listOf(real(0, 100000), 1, 24), "Points by level", "level 1 first", "list"],
   ["riverReach", listOf(whole(0, 12), 1, 4), "River reach", "tiles out, by river level", "list"],
@@ -111,7 +111,7 @@ function grid(c) { let g = GRIDS.get(c); if (g) return g; g = {land:[], bare:new
 const openKey = (S, k) => grid(S.cfg).bare.has(k) && !(k in S.h) && !(k in S.r), isOpen = (S, p) => openKey(S, key(p));
 
 // ---------- levels and points
-const levelName = (c, l) => c.levelNames[Math.min(l, c.levelNames.length) - 1] || "Level " + l;
+const levelName = (c, l) => c.levelNames[l - 1] || "Level " + l;
 // Points for leaving a habitat of this level on the map. Past the end of the table the pattern carries on (36, 45 …).
 function scoreOf(c, l) { const t = c.scoreByLevel; if (l <= t.length) return t[l - 1];
   let v = t[t.length - 1], d = t.length > 1 ? v - t[t.length - 2] : v; for (let i = t.length; i < l; i++) { d += 1; v += d } return v }
@@ -259,7 +259,7 @@ function replay(cfg, seed, moves) { const S = fresh(cfg, seed);
   for (const m of moves) if (!apply(S, m)) throw new Error("Flowgrow: move " + (S.moves.length + 1) + " can't be replayed"); return S }
 
 // ---------- words
-const tileText = (c, t) => t.k === "r" ? (t.l > 1 ? `River tile (level ${t.l})` : "River tile") : `${levelName(c, t.l)} (level ${t.l})`;
+const tileText = (c, t) => t.k === "r" ? (t.l > 1 ? `River tile (level ${t.l})` : "River tile") : (n => n === "Level " + t.l ? n : `${n} (level ${t.l})`)(levelName(c, t.l));
 const DID = {plant:"planted", combine:"combined", extend:"extended the river", widen:"widened the river", discard:"discarded"};
 // The run log: one line per move, with the tile (dealt, or a copy), what was done and where, the points, the score and the
 // plantable tiles left. A lock's line has the tile locked and the copies it banked.
@@ -492,8 +492,8 @@ function draw() { if (!S || !lay.w) return; const T = now(), t = T / 1000;
 // pale green is empty land the river reaches, off-white is land it doesn't, grey is a mountain. Every river tile and habitat carries
 // its level as a number, and a locked tile carries a padlock. The rules, the pile and the buttons are the same as in the painted look.
 const SK = {sea:"#e9f0f3", bare:"#f4f3ee", reach:"#dff1d6", mtn:"#aeb7bf", mtnInk:"#77828d", edge:"rgba(25,55,65,.28)",
-  river:[null, "#5aaeea", "#2f86d6"], hab:[null, "#a8dc84", "#86cf74", "#5fba61", "#3fa258", "#2a894c", "#1f7040", "#165830"]};
-const tileFill = t => t.k === "r" ? SK.river[Math.min(t.l, 2)] : SK.hab[Math.min(t.l, 7)];
+  river:[null, "#5aaeea", "#2f86d6"], hab:[null, "#a8dc84", "#86cf74", "#5fba61", "#3fa258", "#2a894c", "#1f7040", "#165830", "#134e2a", "#124626", "#103f23", "#0f381f", "#0e321c", "#0d2c19", "#0c2616", "#0b2013"]};
+const tileFill = t => t.k === "r" ? SK.river[Math.min(t.l, 2)] : SK.hab[Math.min(t.l, 15)];
 const numInk = t => t.k === "r" || t.l >= 4 ? "#ffffff" : "#173c2a";
 const flatHex = r => [0, 1, 2, 3, 4, 5].map(i => { const a = (60 * i - 90) * Math.PI / 180; return [r * Math.cos(a), r * Math.sin(a)] });
 function padlock(x, y, s, col) { ctx.save(); ctx.translate(x, y); ctx.scale(s, s); ctx.fillStyle = col; ctx.strokeStyle = col; ctx.lineWidth = 2.6; ctx.lineCap = "round";
@@ -502,6 +502,7 @@ function padlock(x, y, s, col) { ctx.save(); ctx.translate(x, y); ctx.scale(s, s
 function simpleIcon(t, px) { const c = document.createElement("canvas"), d = Math.min(devicePixelRatio || 1, 3); c.width = c.height = Math.round(px * d); c.style.width = c.style.height = px + "px";
   const keep = ctx; ctx = c.getContext("2d"); const u = px * d / 100; ctx.setTransform(u, 0, 0, u, px * d / 2, px * d / 2);
   rpath(flatHex(47), 10); ctx.fillStyle = tileFill(t); ctx.fill(); ink(SK.edge, 4);
+  if (t.k === "h" && t.l >= 8) { rpath(flatHex(38), 9); ink("#e0a31c", 6); if (t.l >= 12) { rpath(flatHex(27), 8); ink("#f3d27a", 4) } }
   ctx.fillStyle = numInk(t); ctx.font = `800 ${t.l > 9 ? 44 : 58}px ${HAND}`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(String(t.l), 0, 4);
   ctx = keep; return c }
 function drawSimple(T, t) { ctx = ctx0; ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = SK.sea; ctx.fillRect(0, 0, cv.width, cv.height);
@@ -511,9 +512,10 @@ function drawSimple(T, t) { ctx = ctx0; ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.
     const fill = code === "B" ? SK.mtn : tile ? tileFill(tile) : reach.has(k) ? SK.reach : SK.bare;
     const a = pops[k] ? (T - pops[k]) / 280 : 1, s = a < 1 && !reduce ? .78 + .22 * easeBack(Math.max(0, a)) : 1; if (a >= 1) delete pops[k]; // a quick pop when a tile lands
     ctx.save(); ctx.translate(o.x, o.y); ctx.scale(s, s); rpath(hex, 7); ctx.fillStyle = fill; ctx.fill(); ink(SK.edge, 1.6);
+    if (hl >= 8) { rpath(flatHex(R - 7), 7); ink("#e0a31c", 3.2); if (hl >= 12) { rpath(flatHex(R - 13), 7); ink("#f3d27a", 2.4) } }   // levels 8 and up have a gold rim, 12 and up a second one
     if (code === "B") { ctx.beginPath(); ctx.moveTo(-17, 13); ctx.lineTo(0, -17); ctx.lineTo(17, 13); ctx.closePath(); ctx.fillStyle = SK.mtnInk; ctx.fill() }
     if (code === "T") { ctx.beginPath(); ctx.arc(0, 0, R - 9, 0, TAU); ink("rgba(255,255,255,.85)", 2.4) }   // the source has a white ring inside its tile
-    if (tile) { ctx.fillStyle = numInk(tile); ctx.font = `800 ${R * .98}px ${HAND}`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(String(tile.l), 0, 3);
+    if (tile) { ctx.fillStyle = numInk(tile); ctx.font = `800 ${R * (tile.l > 9 ? .78 : .98)}px ${HAND}`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(String(tile.l), 0, 3);
       if (k in S.lk) padlock(0, -R * .6, 1.05, numInk(tile)) }                                                  // a locked tile carries a padlock
     ctx.restore() }
   // what the tile in hand can do: a green outline on land it can be planted on, a gold ring on a tile it combines with (and its points),
@@ -612,7 +614,7 @@ $("menu").addEventListener("click", async e => { if (e.target === $("menu")) { m
   if (k === "log") { const ok = await copyText(logText(S)); menu(false); say(ok ? "Run log copied." : "Couldn't copy on this device."); return }
   menu(false); if (k === "newYes") newRun(); else if (k === "look") setSkin(flat() ? "painted" : "simple"); else if (k === "zoom") { view.z = view.z > 1.02 ? 1 : lay.zAuto; applyView() } });
 addEventListener("keydown", e => { if (e.key === "Escape") menu(false) });
-function fillLadder() { const L = $("ladder"); L.textContent = ""; for (let l = 1; l <= Math.min(7, CFG.maxLevel); l++) { const d = document.createElement("div"); d.appendChild(tileEl({k:"h", l}, 40, "")); const n = document.createElement("small"); n.innerHTML = `${levelName(CFG, l)}<b>+${scoreOf(CFG, l)}</b>`; d.appendChild(n); L.appendChild(d) } }
+function fillLadder() { const L = $("ladder"); L.textContent = ""; for (let l = 1; l <= CFG.maxLevel; l++) { const d = document.createElement("div"); d.appendChild(tileEl({k:"h", l}, 40, "")); const n = document.createElement("small"); n.innerHTML = `${levelName(CFG, l)}<b>+${scoreOf(CFG, l)}</b>`; d.appendChild(n); L.appendChild(d) } }
 fillLadder();
 // Switch the look and remember it. The camera starts again on the source, since the two looks have different bounds.
 function setSkin(v) { if (!LOOKS.includes(v) || v === skin) return; skin = v; mem.set("look", v); $("app").classList.toggle("simple", flat());

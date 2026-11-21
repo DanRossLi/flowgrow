@@ -66,6 +66,7 @@ Also from Dan: "take the existing hexagon and aesthetics", and "this will be a w
 - **Pilot pile** (Dan: "make starting tiles only level 1 and have 10 tiles only, which makes the loop the challenge"): the pile is 10 tiles and every tile dealt is level 1, so higher levels can only come from combining and from the copies a lock banks. See "The pilot pile, as built".
 - **No lock limit** (Dan: "there is no lock limit, a user can lock as many times as they want"): locks are free and unlimited, so `lockEvery` is 0 in the config. See "No lock limit, as built".
 - **Rivers rise downstream** (Dan: "make a new rule such that all river tiles must be equal or greater than the river tile "behind it" i.e. rivers must always be greater on the way down"): `riverMonotone: true` in the config. See "The river rule, as built".
+- **Top level 15** (Dan: "uncap the tiles max to 15"): `maxLevel` is 15 in the config, up from 7. See "The top level, as built".
 
 ### The move to its own repo (Nov 20)
 
@@ -99,6 +100,12 @@ Also from Dan: "take the existing hexagon and aesthetics", and "this will be a w
 - **The rule:** a river tile can't be lower than the river tile behind it, the one it flows from (the one it is drawn joined to). So a new river tile must be at least as high as the tile it joins, and a tile can only be widened once every tile that joins it is already that high. Equal is allowed, and each branch is checked against its own tile. River copies from locks follow the same rule.
 - **What it means in play:** a river is widened from its end back towards the source, never the other way round. If the source is widened first, every later level 1 river tile has no move at all (nothing can follow a level 2 tile at level 1, and no level 1 tile is left to widen), so they are only good for the discard button.
 - **Where it is:** `riverMonotone` in `flowgrow.config.js` (`false` is the first build's rule). In the rules part of `flowgrow.js`: `options()` decides what can go where and `why()` gives the reason when a tile can't. The simulator's rule checks stay on the first build's values (`riverMonotone: false`), and 8 new checks cover the rule.
+
+### The top level, as built (Nov 20)
+
+- **What changed:** `maxLevel` 7 to 15 in `flowgrow.config.js` (the check on it now allows up to 24). Levels 8 to 15 keep the score pattern, one more each time: 36, 45, 55, 66, 78, 91, 105, 120 (the table in the config now lists all 15). The first build's top level is one value away: `maxLevel: 7`.
+- **Names:** only the first seven levels have names (Sprouts to Old forest). Levels 8 to 15 are just called Level 8 and so on, until Dan names them.
+- **How they look:** the painted look has seven pictures, so levels above 7 reuse the Old forest picture with their own number. The simple look gets darker greens, a gold rim from level 8 and a second rim from level 12. The menu lists all 15 levels.
 
 ### What is built (LOU-298)
 
@@ -134,8 +141,8 @@ Also from Dan: "take the existing hexagon and aesthetics", and "this will be a w
 
 - **Score by level:** a move scores by the level of the habitat it leaves on the map: 1, 3, 6, 10, 15, 21, 28. So a level 1 tile put on a level 1 habitat scores 3. River tiles score nothing.
 - **Where higher levels come from:** ~~the pile deals them. A habitat's level is rolled from 1 up to the highest level on the map at that moment, and each level is half as likely as the one below.~~ *Superseded Nov 20 by Dan's pilot pile: the pile only deals level 1, so higher levels come only from combining and from lock copies.* One tile in ten is a river tile. The first three tiles are always habitat 1, habitat 1, river.
-- **One kind of habitat,** levels 1 to 7: Sprouts, Meadow, Thicket, Saplings, Grove, Forest, Old forest. The names, and the words "habitat" and "plant", are placeholders.
-- **Plant and combine:** a habitat goes on any empty land within reach of the river, or on a habitat of the same level. A level 7 habitat can't be combined.
+- **One kind of habitat,** ~~levels 1 to 7~~ *(levels 1 to 15 since Nov 20; the names stop at 7)*: Sprouts, Meadow, Thicket, Saplings, Grove, Forest, Old forest. The names, and the words "habitat" and "plant", are placeholders.
+- **Plant and combine:** a habitat goes on any empty land within reach of the river, or on a habitat of the same level. ~~A level 7 habitat can't be combined.~~ *A habitat at the top level (15 since Nov 20) can't be combined.*
 - **River:** the source counts as a level 1 river tile, and a river tile always arrives at level 1. Extend: put it on empty land that touches the river. Branches are allowed. Widen: put it on a level 1 river tile to make it level 2, the widest. A level 1 river tile reaches 1 tile out and a level 2 river tile reaches 2. Mountains don't block reach.
 - **Discard** scores nothing and still uses up the tile. **Undo** is unlimited.
 - **A run:** ~~80 tiles~~ *(10 tiles since Nov 20, Dan's pilot pile)*, no timer and no way to lose. The result shows the score, the best score on the device, the top level and what was planted, combined and discarded.
@@ -146,7 +153,7 @@ Also from Dan: "take the existing hexagon and aesthetics", and "this will be a w
 - **The simple look** (chosen Nov 20, not set by Dan): it is the default look; the island is flat from above instead of tilted; river tiles carry their level (1 or 2) as well as habitats; empty land is pale green where the river reaches and off-white where it doesn't; mountains are grey with a triangle; the source has a white ring; the colours, and the gold, teal and dashed-blue rings that mark what the tile in hand can do, are placeholders.
 - ~~**The pilot pile** (found while building it, not set by Dan): lock pacing is still one lock per 10 tiles placed, so a 10-tile pile earns exactly one lock, with the 10th placement, and a discarded tile means no lock at all. In 1,000 simulated runs a simple player averages 29 points with 4 copies banked (16 points with locking off), so the loop runs once. A lock every 5 tiles runs it about 3 times and averages 43. The 7 dealt tiles are each a river tile one time in ten, so runs differ a little; with `riverShare: 0` every run is the same 10 tiles.~~ *Resolved Nov 20: Dan said there is no lock limit, so the loop is no longer held to one lock.*
 - **The river rule** (my reading of it, not set by Dan): "behind it" is the tile it flows from, which is the one it is drawn joined to (the river's end if it touches one, otherwise the newest river tile it touches). Equal is allowed. The source has nothing behind it. If a new tile touches two river tiles, only the one it joins counts.
-- **How high scores go** (found by search on seed 495454692, before the river rule; not a rule): a tuned search reached 918 points (top level 6, 38 locks, 183 moves) and 914 with a level 7, against 47 by hand. With free copies, no lock limit and no move limit, a score is limited by how many neighbouring tile pairs the island has, not by how well you play. The best runs open with four level 2 meadows, then use the copies to grow a block of level 4 tiles and plant level 4 copies on empty land.
+- **How high scores go** (found by search on seed 495454692, before the river rule and with the top level at 7; not a rule): a tuned search reached 918 points (top level 6, 38 locks, 183 moves) and 914 with a level 7, against 47 by hand. With free copies, no lock limit and no move limit, a score is limited by how many neighbouring tile pairs the island has, not by how well you play. The best runs open with four level 2 meadows, then use the copies to grow a block of level 4 tiles and plant level 4 copies on empty land.
 
 ### Not built yet
 

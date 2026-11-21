@@ -226,6 +226,14 @@ function checks() { let n = 0; const fails = [];
     ok("a whole run of random legal moves with rivers rising downstream: no river tile is lower than the one it joins, and it replays from its seed", S.over && low === 0 && Object.keys(S.r).length > 3 && same(S, R.replay(cfg, 5, S.moves))) }
   ok("the config file has the river rule on", BASE.riverMonotone === true && R.rulesKey(cfgWith({riverMonotone:true})) !== R.rulesKey(REF));
 
+  // ----- the top level is 15 (Dan, Nov 20: "uncap the tiles max to 15")
+  ok("the config file's top level is 15, and levels 1 to 15 score 1, 3, 6, 10, 15, 21, 28, 36, 45, 55, 66, 78, 91, 105, 120", BASE.maxLevel === 15 && same([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15].map(l => R.scoreOf(BASE, l)), [1, 3, 6, 10, 15, 21, 28, 36, 45, 55, 66, 78, 91, 105, 120]));
+  { const S = run(["habitat 14", "habitat 14", "habitat 15"], {maxLevel:15}); R.place(S, 0, E); const b = R.place(S, 0, E);
+    ok("with the top level at 15, a level 14 tile on a level 14 habitat makes level 15 and scores 120, and level 15 can't be combined onto",
+      b && b.does === "combine" && b.pts === 120 && at(S, E) === 15 && R.options(S, 0).length > 0 && R.options(S, 0).every(o => o.p + "" !== E + "") && R.why(S, 0, E) === "Level 15 is the top level.") }
+  ok("a level past the names is just called Level N, with no repeat in its text; named levels keep their names", R.levelName(REF, 9) === "Level 9" && R.tileText(REF, {k:"h", l:9}) === "Level 9" && R.levelName(REF, 7) === "Old forest" && R.tileText(REF, {k:"h", l:3}) === "Thicket (level 3)");
+  ok("the top level can be set up to 24 and not past it", R.tidy({...REF, maxLevel:15}, REF).bad.length === 0 && R.tidy({...REF, maxLevel:24}, REF).bad.length === 0 && R.tidy({...REF, maxLevel:25}, REF).bad.includes("maxLevel"));
+
   for (const f of fails) console.log("FAILED: " + f);
   console.log(fails.length ? `${fails.length} of ${n} rule checks failed` : `all ${n} rule checks passed`);
   if (fails.length) process.exitCode = 1 }
