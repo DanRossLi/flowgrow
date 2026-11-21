@@ -20,10 +20,12 @@ window.FLOWGROW = {
   queueShown: 3,            // tiles shown after the tile in hand
   pickFrom: 1,              // 1: you must place the tile in hand. 3: tap any of the first 3 to take it instead
   riverShare: 0.10,         // chance a dealt tile is a river tile
-  opening: ["habitat 1", "habitat 1", "river", "grasslands 1", "marsh 1"], // the first tiles of every run, in order. The first five show every kind
-  grasslandShare: 0.3,      // of the dealt habitats, the share that are grasslands, the yellow tile (Dan, Nov 20: "add a yellow tile for grasslands"). 0: none
+  opening: ["habitat 1", "habitat 1", "river", "prairie 1", "marsh 1"], // the first tiles of every run, in order. The first five show every kind
+  prairieShare: 0.3,        // of the dealt habitats, the share that are prairie, the yellow tile (Dan, Nov 20: "add a yellow tile for grasslands", then "make yellow like 'prairie'"). 0: none
   marshShare: 0.3,          // and the share that are marsh, the turquoise tile ("add a turquoise tile for marsh"). The rest are the original green. Together at most 1
   biomeMatch: true,         // true: a tile only combines with a habitat of its own kind and level. false: any kind combines
+  marshNeedsRiver: true,    // Dan, Nov 20: "turquoise represents marsh and must be adjacent to a river". true: marsh is planted only on empty land that shares an edge with a river tile (the source and locked river tiles count). false: marsh plants wherever green does
+  prairieSpreads: true,     // Dan, Nov 20: "Yes, grass can be placed to adjacent grass tiles event if not in the water zone, good idea". true: prairie can also be planted on empty land that shares an edge with another prairie habitat, even outside the river's reach. false: prairie plants only inside reach
   maxLevel: 15,             // the highest level a habitat can reach (Dan, Nov 20: "uncap the tiles max to 15"). 7 in the first build
   bareGroundMaxLevel: 1,    // the highest level a habitat can have when planted on empty land (LOU-300; Dan, Nov 20: "level 1 only on bare ground"). 15 (the top level) is the old rule: any level plants. 2 is the softer version
   bareGroundMode: "downgrade", // what a habitat above that level does on empty land. "downgrade": it plants as a level 1 habitat and scores 1 (Dan, Nov 20: "put downgrade in the game and let me play test"). "refuse": it can't be planted, only combined onto a habitat of its own level or discarded

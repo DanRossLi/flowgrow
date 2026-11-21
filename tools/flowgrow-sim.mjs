@@ -23,7 +23,7 @@ const BASE = R.tidy(base).cfg;
 // The rule checks are written for these values, the first build's, so tuning flowgrow.config.js never breaks them (the pilot pile, for one,
 // changes the pile; bare ground takes any level, and the bare ground rule is checked on its own below). The report and the command line use the config file as it is.
 const REF = (() => { const t = R.tidy({...base, map:["_____________", "_BB__________", "__B_______B__", "__________BB_", "______T______", "_____________", "___BB________", "_____________", "_____________"],
-  stackSize:80, queueShown:3, pickFrom:1, riverShare:.1, opening:["habitat 1", "habitat 1", "river"], maxLevel:7, levelOdds:.5, scoreByLevel:[1, 3, 6, 10, 15, 21, 28], riverReach:[1, 2], riverMonotone:false, bareGroundMaxLevel:24, bareGroundMode:"refuse", grasslandShare:0, marshShare:0, biomeMatch:true, riverMaxLevel:2, riverScore:"none",
+  stackSize:80, queueShown:3, pickFrom:1, riverShare:.1, opening:["habitat 1", "habitat 1", "river"], maxLevel:7, levelOdds:.5, scoreByLevel:[1, 3, 6, 10, 15, 21, 28], riverReach:[1, 2], riverMonotone:false, bareGroundMaxLevel:24, bareGroundMode:"refuse", prairieShare:0, marshShare:0, biomeMatch:true, marshNeedsRiver:false, prairieSpreads:false, riverMaxLevel:2, riverScore:"none",
   levelNames:["Sprouts", "Meadow", "Thicket", "Saplings", "Grove", "Forest", "Old forest"], lockEnabled:true, lockLevelCap:true, lockCopiesGo:"back", lockRivers:true, lockEvery:10, lockHold:1}, base);
   if (t.bad.length) throw new Error("bad reference config: " + t.bad); return t.cfg })();
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -42,16 +42,22 @@ function turn(S) { const c = S.cfg;
   if (t.k === "h") o = opts.find(x => x.does === "combine") || opts[0];      // combine when it can, otherwise plant
   else { let best = -1; for (const x of opts) { const n = R.opens(S, 0, x) + (x.does === "widen" ? .5 : 0); if (n > best) { best = n; o = x } } } // a tie goes to widening, which uses no land
   return R.place(S, 0, o.p) }
+// What the plant rules do to the tile in hand (LOU-301): how often a marsh tile has no tile next to the river free to plant on, and how often prairie plants beyond the river's reach.
+function watch(S) { const t = S.q[0]; if (t.k !== "h" || !t.b) return null; const o = R.options(S, 0).filter(x => x.does === "plant");
+  if (t.b === "m") return {b:"m", none:!o.length};
+  const reach = R.reachOf(S); return {b:"p", beyond:new Set(o.filter(x => !reach.has(R.key(x.p))).map(x => R.key(x.p)))} }
+function tally(m, pre, res) { if (pre.b === "m") { m.marshTurns++; if (pre.none) m.marshNoBank++ } else { m.prairieTurns++; m.spreadOffered += pre.beyond.size; if (res.does === "plant" && pre.beyond.has(R.key(res.p))) m.spreadPlanted++ } }
 // One whole run. Returns the run, how many turns were tight, and what went wrong (if anything).
-function play(cfg, seed) { const out = {S:null, tight:0, error:""};
+function play(cfg, seed) { const out = {S:null, tight:0, error:"", m:{marshTurns:0, marshNoBank:0, prairieTurns:0, spreadOffered:0, spreadPlanted:0}};
   try { const S = out.S = R.fresh(cfg, seed), cap = 6000; let n = 0;
-    while (!S.over) { if (++n > cap) { out.error = "stalled"; break } if (S.q.length && R.plantable(S).length <= 2) out.tight++; if (!turn(S)) { out.error = "a move was refused"; break } }
+    while (!S.over) { if (++n > cap) { out.error = "stalled"; break } if (S.q.length && R.plantable(S).length <= 2) out.tight++; const pre = S.q.length ? watch(S) : null, res = turn(S); if (!res) { out.error = "a move was refused"; break } if (pre) tally(out.m, pre, res) }
     if (!out.error && !same(S, R.replay(cfg, seed, S.moves))) out.error = "did not rebuild from its seed and moves";
   } catch (e) { out.error = "crashed: " + (e && e.message || e) }
   return out }
 
 // ---------- the report
 const avg = a => a.reduce((x, y) => x + y, 0) / (a.length || 1), pct = (a, p) => [...a].sort((x, y) => x - y)[Math.min(a.length - 1, Math.floor(a.length * p))];
+const sum = a => a.reduce((x, y) => x + y, 0);
 const f1 = v => v.toFixed(1), f2 = v => v.toFixed(2), share = (a, f) => Math.round(100 * a.filter(f).length / (a.length || 1)) + "%";
 const copiesBy = (s, did) => s.log.filter(e => e.did === did && e.t && e.t.c).length;                   // copies placed by this kind of move
 const copiesDown = s => s.log.filter(e => e.did === "plant" && e.t && e.t.c && e.l < e.t.l).length;     // copies planted as level 1 ("downgrade")
@@ -64,11 +70,15 @@ function report(cfg, runs) { const res = []; for (let seed = 1; seed <= runs; se
   console.log(`  score                average ${Math.round(avg(sc))} · 10th percentile ${pct(sc, .1)} · 90th percentile ${pct(sc, .9)}`);
   console.log(`  top level            average ${f1(avg(top))}${lv.map(l => ` · level ${l}+ in ${share(top, t => t >= l)}`).join("")}`);
   console.log(`  habitats on the map  ${f1(avg(ok.map(r => r.hab)))} (planted ${f1(avg(S.map(s => s.planted)))}, combined ${f1(avg(S.map(s => s.combined)))})`);
-  if (cfg.grasslandShare + cfg.marshShare > 0) console.log(`  kinds on the map     ${f1(avg(S.map(s => Object.keys(s.h).filter(k => !s.hb[k]).length)))} green · ${f1(avg(S.map(s => Object.values(s.hb).filter(b => b === "g").length)))} grasslands · ${f1(avg(S.map(s => Object.values(s.hb).filter(b => b === "m").length)))} marsh habitats at the end`);
+  if (cfg.prairieShare + cfg.marshShare > 0) console.log(`  kinds on the map     ${f1(avg(S.map(s => Object.keys(s.h).filter(k => !s.hb[k]).length)))} green · ${f1(avg(S.map(s => Object.values(s.hb).filter(b => b === "p").length)))} prairie · ${f1(avg(S.map(s => Object.values(s.hb).filter(b => b === "m").length)))} marsh habitats at the end`);
   console.log(`  river tiles          ${f1(avg(ok.map(r => r.riv)))} with the source (extended ${f1(avg(S.map(s => s.extended)))}, widened ${f1(avg(S.map(s => s.widened)))})`);
   if (cfg.riverMaxLevel > cfg.riverReach.length) console.log(`  river levels         the river rises to level ${f1(avg(ok.map(r => Math.max(...Object.values(r.S.r).map(v => v.l)))))} on average (${f1(avg(S.map(s => s.log.filter(e => e.did === "widen" && e.l > cfg.riverReach.length).length)))} level-ups past the widest)${cfg.riverScore === "none" ? "" : `, ${f1(avg(S.map(s => s.log.reduce((n, e) => n + (e.did === "widen" || e.did === "extend" ? e.pts : 0), 0))))} points from river moves`}`);
   console.log(`  discards             ${f2(avg(S.map(s => s.discarded)))} a run · at least one in ${share(S, s => s.discarded > 0)} of runs`);
   console.log(`  tight turns          ${f1(avg(ok.map(r => r.tight)))} a run with 2 or fewer plantable tiles · ${f1(avg(ok.map(r => r.room)))} plantable tiles left at the end`);
+  if (cfg.marshNeedsRiver || cfg.prairieSpreads) { const M = ok.map(r => r.m), land = cfg.map.join("").split("_").length - 1, empty = ok.map(r => land - r.hab - (r.riv - 1));   // the plant rules of LOU-301 are on: say what they do
+    console.log(`  marsh                ${f1(avg(M.map(m => m.marshTurns)))} marsh tiles in hand a run · nothing to plant it on in ${f1(100 * sum(M.map(m => m.marshNoBank)) / Math.max(1, sum(M.map(m => m.marshTurns))))}% of those turns · ${f2(avg(S.map(s => s.log.filter(e => e.did === "discard" && e.t && e.t.b === "m").length)))} marsh tiles discarded a run`);
+    console.log(`  prairie spread       ${f1(avg(M.map(m => m.prairieTurns)))} prairie tiles in hand a run · planted beyond the river's reach ${f2(avg(M.map(m => m.spreadPlanted)))} times a run · ${f1(sum(M.map(m => m.spreadOffered)) / Math.max(1, sum(M.map(m => m.prairieTurns))))} extra tiles offered per prairie tile in hand`);
+    console.log(`  island               ${f1(avg(empty))} of ${land} land cells empty at the end (${f1(avg(ok.map(r => r.room)))} of them within the river's reach)`) }
   if (cfg.lockEnabled) {
     console.log(`  moves                ${f1(avg(S.map(s => s.moves.length)))} a run`);
     console.log(`  locks                ${f1(avg(S.map(s => s.lockUsed)))} used · ${f1(avg(S.map(s => s.lockLost)))} lost · ${f1(avg(S.map(s => Object.keys(s.lk).length)))} tiles locked at the end`);
@@ -307,46 +317,46 @@ function checks() { let n = 0; const fails = [];
   ok("the config file has bare ground at level 1, and the mode is downgrade (Dan, Nov 20: level 1 only on bare ground, then put downgrade in the game to play test)", BASE.bareGroundMaxLevel === 1 && BASE.bareGroundMode === "downgrade");
 
   // ----- grasslands (yellow) and marsh (turquoise) (Dan, Nov 20: "add a yellow tile for grasslands and then add a turquoise tile for marsh", "expand starting tiles to 20").
-  // They are habitats of kinds of their own: a tile has b "g" or "m" (the original green one has no b), a combine needs the same kind (biomeMatch) and the same level, and a
+  // They are habitats of kinds of their own: a tile has b "p" or "m" (the original green one has no b), a combine needs the same kind (biomeMatch) and the same level, and a
   // copy keeps its kind. REF deals none of them (both shares are 0), so every check above is about the game as it was.
-  ok("tiles can be written in words: grasslands 2, marsh 3, habitat 1, river 2", same([R.parseTile("grasslands 2"), R.parseTile("marsh 3"), R.parseTile("habitat 1"), R.parseTile("river 2"), R.parseTile("Marsh 1")], [{k:"h", l:2, b:"g"}, {k:"h", l:3, b:"m"}, {k:"h", l:1}, {k:"r", l:2}, {k:"h", l:1, b:"m"}])
-    && R.parseTile("marsh") === null && R.parseTile("swamp 1") === null && R.tileWord({k:"h", l:2, b:"g"}) === "grasslands 2" && R.tileWord({k:"h", l:3, b:"m"}) === "marsh 3" && R.tileWord({k:"h", l:1}) === "habitat 1");
-  { const S = run(["grasslands 2", "marsh 1", "habitat 1"], {});
-    ok("an opening of grasslands, marsh and green deals them in that order, and each tile's text names its kind", same(S.q.slice(0, 3), [{k:"h", l:2, b:"g"}, {k:"h", l:1, b:"m"}, {k:"h", l:1}]) && R.tileText(S.cfg, S.q[0]) === "Grasslands (level 2)" && R.tileText(S.cfg, S.q[1]) === "Marsh (level 1)" && R.tileText(S.cfg, S.q[2]) === "Sprouts (level 1)") }
-  { const S = run(["marsh 1", "grasslands 1", "habitat 1"], {}), a = R.place(S, 0, E), b = R.place(S, 0, W), c = R.place(S, 0, [6, 3]);
-    ok("a marsh tile is planted as a marsh habitat, then a grasslands one, then a green one: level 1, 1 point each", a && a.does === "plant" && a.pts === 1 && S.h["7,4"] === 1 && S.hb["7,4"] === "m" && b && S.hb["5,4"] === "g" && c && S.h["6,3"] === 1 && !("6,3" in S.hb) && S.score === 3 && S.planted === 3) }
-  { const S = run(["marsh 1", "grasslands 1", "habitat 1", "marsh 1"], {}), msg = "That's Marsh (level 1). Only a tile of the same kind and level goes on it."; R.place(S, 0, E);
-    ok("a grasslands tile can't go on a marsh habitat of the same level: no move, and the text says why", does(S, E) === undefined && R.place(S, 0, E) === null && R.why(S, 0, E) === msg && R.options(S, 0).every(o => o.does === "plant"));
+  ok("tiles can be written in words: prairie 2, marsh 3, habitat 1, river 2", same([R.parseTile("prairie 2"), R.parseTile("marsh 3"), R.parseTile("habitat 1"), R.parseTile("river 2"), R.parseTile("Marsh 1")], [{k:"h", l:2, b:"p"}, {k:"h", l:3, b:"m"}, {k:"h", l:1}, {k:"r", l:2}, {k:"h", l:1, b:"m"}])
+    && R.parseTile("marsh") === null && R.parseTile("swamp 1") === null && R.tileWord({k:"h", l:2, b:"p"}) === "prairie 2" && R.tileWord({k:"h", l:3, b:"m"}) === "marsh 3" && R.tileWord({k:"h", l:1}) === "habitat 1");
+  { const S = run(["prairie 2", "marsh 1", "habitat 1"], {});
+    ok("an opening of prairie, marsh and green deals them in that order, and each tile's text names its kind", same(S.q.slice(0, 3), [{k:"h", l:2, b:"p"}, {k:"h", l:1, b:"m"}, {k:"h", l:1}]) && R.tileText(S.cfg, S.q[0]) === "Prairie (level 2)" && R.tileText(S.cfg, S.q[1]) === "Marsh (level 1)" && R.tileText(S.cfg, S.q[2]) === "Sprouts (level 1)") }
+  { const S = run(["marsh 1", "prairie 1", "habitat 1"], {}), a = R.place(S, 0, E), b = R.place(S, 0, W), c = R.place(S, 0, [6, 3]);
+    ok("a marsh tile is planted as a marsh habitat, then a prairie one, then a green one: level 1, 1 point each", a && a.does === "plant" && a.pts === 1 && S.h["7,4"] === 1 && S.hb["7,4"] === "m" && b && S.hb["5,4"] === "p" && c && S.h["6,3"] === 1 && !("6,3" in S.hb) && S.score === 3 && S.planted === 3) }
+  { const S = run(["marsh 1", "prairie 1", "habitat 1", "marsh 1"], {}), msg = "That's Marsh (level 1). Only a tile of the same kind and level goes on it."; R.place(S, 0, E);
+    ok("a prairie tile can't go on a marsh habitat of the same level: no move, and the text says why", does(S, E) === undefined && R.place(S, 0, E) === null && R.why(S, 0, E) === msg && R.options(S, 0).every(o => o.does === "plant"));
     R.discard(S, 0); ok("neither can a green tile", does(S, E) === undefined && R.place(S, 0, E) === null && R.why(S, 0, E) === msg);
     R.discard(S, 0); const r = R.place(S, 0, E);
     ok("a marsh tile can: marsh level 2 for 3 points", r && r.does === "combine" && r.l === 2 && r.pts === 3 && S.h["7,4"] === 2 && S.hb["7,4"] === "m" && S.combined === 1) }
   { const S = run(["habitat 1", "marsh 1"], {}); R.place(S, 0, E); ok("a marsh tile can't go on a green habitat either", does(S, E) === undefined && R.why(S, 0, E) === "That's Sprouts (level 1). Only a tile of the same kind and level goes on it.") }
-  { const S = run(["marsh 1", "grasslands 1"], {biomeMatch:false}); R.place(S, 0, E); const r = R.place(S, 0, E);
-    ok("with kinds not having to match, a grasslands tile does combine onto a marsh habitat of its level, and the habitat stays marsh", r && r.does === "combine" && S.h["7,4"] === 2 && S.hb["7,4"] === "m") }
-  { const S = setup({"8,6":3, [N[0]]:2, [N[1]]:1, [N[2]]:1}, {}, {lockEvery:0, stackSize:1, queueShown:0}); S.hb["8,6"] = "m"; S.hb[N[0]] = "g"; S.hb[N[1]] = "m"; R.discard(S, 0);   // a level 3 marsh beside a level 2 grasslands, a level 1 marsh and a level 1 green
+  { const S = run(["marsh 1", "prairie 1"], {biomeMatch:false}); R.place(S, 0, E); const r = R.place(S, 0, E);
+    ok("with kinds not having to match, a prairie tile does combine onto a marsh habitat of its level, and the habitat stays marsh", r && r.does === "combine" && S.h["7,4"] === 2 && S.hb["7,4"] === "m") }
+  { const S = setup({"8,6":3, [N[0]]:2, [N[1]]:1, [N[2]]:1}, {}, {lockEvery:0, stackSize:1, queueShown:0}); S.hb["8,6"] = "m"; S.hb[N[0]] = "p"; S.hb[N[1]] = "m"; R.discard(S, 0);   // a level 3 marsh beside a level 2 prairie, a level 1 marsh and a level 1 green
     const copies = R.copiesOf(S, C).copies; R.lock(S, C);
-    ok("lock: copies keep the kind they are copied from, lowest level first", same(copies, [{k:"h", l:1, c:1, b:"m"}, {k:"h", l:1, c:1}, {k:"h", l:2, c:1, b:"g"}]) && same(S.q[0], copies[0]) && same(S.bank, copies.slice(1)));
+    ok("lock: copies keep the kind they are copied from, lowest level first", same(copies, [{k:"h", l:1, c:1, b:"m"}, {k:"h", l:1, c:1}, {k:"h", l:2, c:1, b:"p"}]) && same(S.q[0], copies[0]) && same(S.bank, copies.slice(1)));
     const a = R.place(S, 0, [6, 3]); ok("lock: a marsh copy is planted as a marsh habitat", a && a.does === "plant" && S.hb["6,3"] === "m" && S.copyPlaced === 1) }
-  { const S = setup({"8,6":3, "9,6":5}, {}, {...DG, lockEvery:0, stackSize:1, queueShown:0}); S.hb["8,6"] = "g"; R.discard(S, 0); R.lock(S, [9, 6]);   // the level 5 habitat copies the level 3 grasslands beside it
+  { const S = setup({"8,6":3, "9,6":5}, {}, {...DG, lockEvery:0, stackSize:1, queueShown:0}); S.hb["8,6"] = "p"; R.discard(S, 0); R.lock(S, [9, 6]);   // the level 5 habitat copies the level 3 prairie beside it
     const a = R.place(S, 0, E);
-    ok("downgrade: a level 3 grasslands copy is planted as grasslands at level 1 for 1 point: it keeps its kind", a && a.l === 1 && a.pts === 1 && S.h["7,4"] === 1 && S.hb["7,4"] === "g" && S.copyPlaced === 1 && /planted at 7,4, as level 1 Grasslands · \+1 · /.test(R.logText(S))) }
-  { const S = run([], {stackSize:0, grasslandShare:.3, marshShare:.2, riverShare:0}), c = {g:0, m:0, h:0}, n = 30000, lv = new Set(); for (let i = 0; i < n; i++) { const t = R.roll(S); c[t.b || "h"]++; lv.add(t.l) }
-    ok("dealt habitats are grasslands 30% of the time and marsh 20%, and the rest are green", Math.abs(c.g / n - .3) < .012 && Math.abs(c.m / n - .2) < .012 && Math.abs(c.h / n - .5) < .012 && lv.size === 1 && lv.has(1)) }
-  { const S = run([], {stackSize:0, riverShare:.1}); let any = false; for (let i = 0; i < 5000; i++) if (R.roll(S).b) any = true; ok("with both shares 0 no tile is ever grasslands or marsh", !any) }
-  { const t = R.tidy({...REF, grasslandShare:.7, marshShare:.6}, REF), u = R.tidy({...REF, grasslandShare:"x", biomeMatch:"maybe"}, REF);
-    ok("grasslands and marsh together can't pass 1: both are refused and the old values stand", same(t.bad, ["grasslandShare", "marshShare"]) && t.cfg.grasslandShare === 0 && t.cfg.marshShare === 0);
-    ok("a bad share or a bad kinds switch is refused", same(u.bad, ["grasslandShare", "biomeMatch"]) && u.cfg.grasslandShare === 0 && u.cfg.biomeMatch === true) }
-  ok("the ruleset key changes with the shares and with the kinds switch", R.rulesKey(cfgWith({grasslandShare:.3})) !== R.rulesKey(REF) && R.rulesKey(cfgWith({marshShare:.3})) !== R.rulesKey(REF) && R.rulesKey(cfgWith({biomeMatch:false})) !== R.rulesKey(REF));
-  ok("the config file deals grasslands and marsh and shows every kind in its first tiles (Dan, Nov 20)", BASE.grasslandShare > 0 && BASE.marshShare > 0 && BASE.grasslandShare + BASE.marshShare < 1 && BASE.biomeMatch === true && BASE.opening.includes("grasslands 1") && BASE.opening.includes("marsh 1"));
-  for (const mode of ["refuse", "downgrade"]) { const cfg = cfgWith({bareGroundMaxLevel:1, bareGroundMode:mode, grasslandShare:.3, marshShare:.3, opening:["habitat 1", "grasslands 1", "marsh 1", "river"], lockEvery:0, stackSize:20}), S = R.fresh(cfg, 9);
+    ok("downgrade: a level 3 prairie copy is planted as prairie at level 1 for 1 point: it keeps its kind", a && a.l === 1 && a.pts === 1 && S.h["7,4"] === 1 && S.hb["7,4"] === "p" && S.copyPlaced === 1 && /planted at 7,4, as level 1 Prairie · \+1 · /.test(R.logText(S))) }
+  { const S = run([], {stackSize:0, prairieShare:.3, marshShare:.2, riverShare:0}), c = {p:0, m:0, h:0}, n = 30000, lv = new Set(); for (let i = 0; i < n; i++) { const t = R.roll(S); c[t.b || "h"]++; lv.add(t.l) }
+    ok("dealt habitats are prairie 30% of the time and marsh 20%, and the rest are green", Math.abs(c.p / n - .3) < .012 && Math.abs(c.m / n - .2) < .012 && Math.abs(c.h / n - .5) < .012 && lv.size === 1 && lv.has(1)) }
+  { const S = run([], {stackSize:0, riverShare:.1}); let any = false; for (let i = 0; i < 5000; i++) if (R.roll(S).b) any = true; ok("with both shares 0 no tile is ever prairie or marsh", !any) }
+  { const t = R.tidy({...REF, prairieShare:.7, marshShare:.6}, REF), u = R.tidy({...REF, prairieShare:"x", biomeMatch:"maybe"}, REF);
+    ok("prairie and marsh together can't pass 1: both are refused and the old values stand", same(t.bad, ["prairieShare", "marshShare"]) && t.cfg.prairieShare === 0 && t.cfg.marshShare === 0);
+    ok("a bad share or a bad kinds switch is refused", same(u.bad, ["prairieShare", "biomeMatch"]) && u.cfg.prairieShare === 0 && u.cfg.biomeMatch === true) }
+  ok("the ruleset key changes with the shares and with the kinds switch", R.rulesKey(cfgWith({prairieShare:.3})) !== R.rulesKey(REF) && R.rulesKey(cfgWith({marshShare:.3})) !== R.rulesKey(REF) && R.rulesKey(cfgWith({biomeMatch:false})) !== R.rulesKey(REF));
+  ok("the config file deals prairie and marsh and shows every kind in its first tiles (Dan, Nov 20)", BASE.prairieShare > 0 && BASE.marshShare > 0 && BASE.prairieShare + BASE.marshShare < 1 && BASE.biomeMatch === true && BASE.opening.includes("prairie 1") && BASE.opening.includes("marsh 1"));
+  for (const mode of ["refuse", "downgrade"]) { const cfg = cfgWith({bareGroundMaxLevel:1, bareGroundMode:mode, prairieShare:.3, marshShare:.3, opening:["habitat 1", "prairie 1", "marsh 1", "river"], lockEvery:0, stackSize:20}), S = R.fresh(cfg, 9);
     let z = 777, guard = 0; const rn = () => (z = (z * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
     while (!S.over && guard++ < 4000) { if (!S.q.length) { const lk = Object.keys(S.h).map(R.unkey).find(p => R.lockable(S, p) && R.copiesOf(S, p).copies.length); if (!lk) { R.end(S); break } R.lock(S, lk); continue }
       const o = R.options(S, 0); if (!o.length || rn() < .1) { R.discard(S, 0); continue } R.place(S, 0, o[Math.floor(rn() * o.length)].p) }
     const T = R.fresh(cfg, 9); let mixed = 0; for (const m of S.moves) { if (m.a === "p") { const t = T.q[m.i], k = m.x + "," + m.y; if (k in T.h && (T.hb[k] || "") !== (t.b || "")) mixed++ }
       m.a === "p" ? R.place(T, m.i, [m.x, m.y]) : m.a === "d" ? R.discard(T, m.i) : m.a === "l" ? R.lock(T, [m.x, m.y]) : R.end(T) }
     const kinds = new Set(Object.values(S.hb));
-    ok(`a whole run of random legal moves with grasslands and marsh (${mode}): it ends, both kinds were planted, no tile ever combined onto another kind, and it replays from its seed`,
-      S.over && guard < 4000 && kinds.has("g") && kinds.has("m") && mixed === 0 && same(S, R.replay(cfg, 9, S.moves))) }
+    ok(`a whole run of random legal moves with prairie and marsh (${mode}): it ends, both kinds were planted, no tile ever combined onto another kind, and it replays from its seed`,
+      S.over && guard < 4000 && kinds.has("p") && kinds.has("m") && mixed === 0 && same(S, R.replay(cfg, 9, S.moves))) }
 
   // ----- rivers level up (Dan, Nov 20: "make rivers also level up, just as points make the "width" max 2"). A river tile put on a river tile of its own level raises it a level, up
   // to riverMaxLevel, and only the first two levels widen it (riverReach). riverScore says what scores. REF is the first build's: top level 2, and rivers score nothing.
@@ -374,6 +384,50 @@ function checks() { let n = 0; const fails = [];
     let low = 0, top = 0; for (const k in S.r) { const f = S.r[k].from; top = Math.max(top, S.r[k].l); if (f != null && S.r[k].l < S.r[f].l) low++ }
     ok("a whole run of random legal moves with river levels: it ends, a river tile passed level 2, none is lower than the one it joins, the score is the sum of the moves, and it replays from its seed",
       S.over && guard < 4000 && top > 2 && low === 0 && S.log.reduce((s, e) => s + e.pts, 0) === S.score && same(S, R.replay(cfg, 4, S.moves))) }
+
+  // ----- marsh must touch the river, prairie spreads (LOU-301; Dan, Nov 20: "turquoise represents marsh and must be adjacent to a river", "Yellow...is grass, and we need it to have a power",
+  // "Yes, grass can be placed to adjacent grass tiles event if not in the water zone, good idea"). REF has both rules off, so every check above is about marsh and prairie planting like green.
+  const MR = {marshNeedsRiver:true}, PS = {prairieSpreads:true}, BK = o => R.nbrs(REF, o.p).some(q => R.key(q) in S0.r);
+  let S0 = null;
+  for (const [name, mode] of [["refuse", RF], ["downgrade", DG]]) {
+    { const S = S0 = run(["river 2", "marsh 1", "marsh 1", "marsh 1"], {...mode, ...MR}); R.place(S, 0, E);   // E is a level 2 river tile, which reaches 2 tiles out: (9,4) is within reach but touches no river tile
+      ok(`marsh (${name}): a tile next to the river is offered, a tile only within reach is not`, R.reachOf(S).has("9,4") && does(S, [8, 4]) === "plant" && does(S, W) === "plant" && does(S, [9, 4]) === undefined && R.options(S, 0).filter(o => o.does === "plant").every(BK));
+      ok(`marsh (${name}): a refused tile gets the toast in plain words`, R.place(S, 0, [9, 4]) === null && R.why(S, 0, [9, 4]) === "Marsh needs a tile next to the river." && R.why(S, 0, E) === "That's the river. Plant beside it.");
+      R.place(S, 0, W); ok(`marsh (${name}): marsh onto marsh of its own level combines`, does(S, W) === "combine" && (r => r && r.l === 2 && r.pts === 3 && S.hb["5,4"] === "m")(R.place(S, 0, W))) }
+    { const S = S0 = run(["marsh 1"], {...mode, ...MR}); S.lk["6,4"] = 1; ok(`marsh (${name}): a locked river tile still counts as a river tile (so does the source)`, does(S, W) === "plant" && does(S, E) === "plant") }
+    { const S = S0 = setup(name === "refuse" ? {"8,6":1, "9,6":3} : {"8,6":3, "9,6":5}, {}, {...mode, ...MR, lockEvery:0, stackSize:1, queueShown:0}); S.hb["8,6"] = "m"; R.discard(S, 0); R.lock(S, [9, 6]);   // the lock banks a marsh copy (level 1 in refuse, level 3 in downgrade)
+      const pl = R.options(S, 0).filter(o => o.does === "plant");
+      ok(`marsh (${name}): a lock copy of marsh follows the rule, and a downgraded copy lands as level 1 on a bank tile only`, S.q[0].c === 1 && S.q[0].b === "m" && pl.length === 6 && pl.every(BK) && pl.every(o => o.l === 1) && does(S, [9, 4]) === undefined && (a => a && S.h["5,4"] === 1 && S.hb["5,4"] === "m")(R.place(S, 0, W))) }
+    { const S = S0 = setup({"7,4":1, "6,3":1, "5,3":1, "5,4":1, "5,5":1, "6,5":1}, {}, {...mode, ...MR, opening:["marsh 1"], stackSize:1, queueShown:0, lockEvery:10}); S.locks = 0;   // all six bank tiles are taken by green
+      ok(`marsh (${name}): a marsh tile with no free bank tile has nowhere to go, and can be discarded: the run ends`, R.options(S, 0).length === 0 && !S.over && !!R.discard(S, 0) && S.over) }
+    { const S = S0 = run(["prairie 1", "prairie 1", "prairie 1", "habitat 1"], {...mode, ...PS}); R.place(S, 0, E);   // prairie at E (within reach), then land outside reach that touches it
+      ok(`prairie (${name}): plants within reach, and next to prairie outside reach, and nowhere else`, !R.reachOf(S).has("8,4") && does(S, [8, 4]) === "plant" && does(S, W) === "plant" && does(S, [9, 4]) === undefined && R.why(S, 0, [9, 4]) === "Prairie needs a tile within reach of the river or next to prairie.");
+      R.place(S, 0, [8, 4]); ok(`prairie (${name}): prairie that spread can spread again`, does(S, [9, 4]) === "plant" && (a => a && a.l === 1)(R.place(S, 0, [9, 4])));
+      ok(`prairie (${name}): green still plants only within reach`, does(S, [10, 4]) === undefined && does(S, [5, 4]) === "plant" && R.why(S, 0, [10, 4]) === "Too far from the river.") }
+    { const S = S0 = run(["prairie 1", "prairie 1"], {...mode, prairieSpreads:false}); R.place(S, 0, E);
+      ok(`prairie (${name}): with the spread off it plants only inside reach`, does(S, [8, 4]) === undefined && does(S, W) === "plant" && R.why(S, 0, [8, 4]) === "Too far from the river.") }
+  }
+  { const S = setup({"8,4":1, "9,4":1, "9,3":1}, {"7,4":1}, {...PS, opening:["prairie 1"], stackSize:1, queueShown:0}); S.hb["8,4"] = "p"; S.hb["9,3"] = "p";   // prairie beside a mountain (10,3), a river tile (7,4) and an occupied tile (9,4)
+    const pl = R.options(S, 0).filter(o => o.does === "plant").map(o => o.p + "");
+    ok("prairie spread: never onto a mountain, a river tile or an occupied tile, but onto the empty land beside prairie", !pl.includes("10,3") && !pl.includes("7,4") && !pl.includes("9,4") && !pl.includes("8,4") && pl.includes("9,2") && pl.includes("10,4") && R.why(S, 0, [10, 3]) === "Nothing grows on a mountain." && R.why(S, 0, [7, 4]) === "That's the river. Plant beside it.") }
+  { const S = setup({"8,4":1}, {}, {...PS, opening:["habitat 1"], stackSize:1, queueShown:0}); S.locks = 1; S.hb["8,4"] = "p"; S.lk["8,4"] = 1;   // a locked prairie tile still lets prairie spread
+    const T = setup({"8,4":1}, {}, {...PS, opening:["prairie 1"], stackSize:1, queueShown:0}); T.hb["8,4"] = "p"; T.lk["8,4"] = 1;
+    ok("prairie spread: a locked prairie habitat still lets prairie spread from it, and green still can't use it", does(T, [9, 4]) === "plant" && does(S, [9, 4]) === undefined) }
+  { const S = run(["river 2", "marsh 1"], {marshNeedsRiver:false}); R.place(S, 0, E); ok("with marshNeedsRiver off, marsh plants wherever green does", does(S, [9, 4]) === "plant") }
+  { const t = R.tidy({...REF, marshNeedsRiver:"sometimes", prairieSpreads:"maybe"}, REF); ok("a bad value for the marsh or prairie rule is refused and the old value stands", same(t.bad, ["marshNeedsRiver", "prairieSpreads"]) && t.cfg.marshNeedsRiver === false && t.cfg.prairieSpreads === false) }
+  ok("the ruleset key changes with the marsh rule and with the prairie rule", R.rulesKey(cfgWith(MR)) !== R.rulesKey(REF) && R.rulesKey(cfgWith(PS)) !== R.rulesKey(REF) && R.rulesKey(cfgWith({...MR, ...PS})) !== R.rulesKey(cfgWith(MR)));
+  ok("the config file has both rules on, and calls the yellow kind prairie (Dan, Nov 20)", BASE.marshNeedsRiver === true && BASE.prairieSpreads === true && BASE.opening.includes("prairie 1") && R.parseTile("prairie 2").b === "p" && R.parseTile("grasslands 2") === null && R.tileText(REF, {k:"h", l:2, b:"p"}) === "Prairie (level 2)");
+  for (const [name, mode] of [["refuse", RF], ["downgrade", DG]]) { const cfg = cfgWith({...mode, ...MR, ...PS, prairieShare:.4, marshShare:.4, opening:["prairie 1", "marsh 1", "habitat 1", "river", "prairie 1"], lockEvery:0, stackSize:30, riverShare:.15}), S = R.fresh(cfg, 8);
+    let z = 31, guard = 0; const rn = () => (z = (z * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+    while (!S.over && guard++ < 4000) { if (!S.q.length) { const lk = [...Object.keys(S.h), ...Object.keys(S.r)].map(R.unkey).find(p => R.lockable(S, p) && R.copiesOf(S, p).copies.length); if (!lk) { R.end(S); break } R.lock(S, lk); continue }
+      const o = R.options(S, 0); if (!o.length || rn() < .08) { R.discard(S, 0); continue } R.place(S, 0, o[Math.floor(rn() * o.length)].p) }
+    const T = R.fresh(cfg, 8); let wrong = 0, spread = 0, marshPlanted = 0;   // every planting obeys the rule of its kind at the moment it is made
+    for (const m of S.moves) { if (m.a === "p") { const t = T.q[m.i], k = m.x + "," + m.y;
+        if (t.k === "h" && !(k in T.h)) { const reach = R.reachOf(T).has(k), nb = R.nbrs(cfg, [m.x, m.y]).map(R.key), bank = nb.some(q => q in T.r), pn = nb.some(q => T.hb[q] === "p");
+          if (t.b === "m") { marshPlanted++; if (!bank) wrong++ } else if (t.b === "p") { if (!reach && !pn) wrong++; if (!reach) spread++ } else if (!reach) wrong++ } }
+      m.a === "p" ? R.place(T, m.i, [m.x, m.y]) : m.a === "d" ? R.discard(T, m.i) : m.a === "l" ? R.lock(T, [m.x, m.y]) : R.end(T) }
+    ok(`a whole run of random legal moves with both rules (${name}): it ends, every planting obeyed the rule of its kind, marsh and prairie spread were both used, and it replays from its seed`,
+      S.over && guard < 4000 && wrong === 0 && marshPlanted > 0 && spread > 0 && same(S, R.replay(cfg, 8, S.moves))) }
 
   for (const f of fails) console.log("FAILED: " + f);
   console.log(fails.length ? `${fails.length} of ${n} rule checks failed` : `all ${n} rule checks passed`);

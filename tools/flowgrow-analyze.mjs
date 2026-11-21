@@ -34,7 +34,16 @@ console.log("placements:", Object.entries(lv).sort((a, b) => a[0].localeCompare(
 console.log("locks (count, average copies banked):", Object.entries(lockLv).sort().map(([k, v]) => `${k}: ${v} (${(lockCopies[k] / v).toFixed(1)})`).join(" · "));
 const top = Math.max(S.top, 1);
 console.log(`final island: ${Object.keys(S.h).length} habitats, ${Object.keys(S.r).length} river tiles, ${Object.keys(S.lk).length} locked. Habitats by level:`, Array.from({length: top}, (_, i) => `L${i + 1}:${Object.values(S.h).filter(v => v === i + 1).length}`).join(" "));
+// What the plant rules of LOU-301 did in this run (replayed move by move): marsh tiles with nothing to plant them on, and prairie planted beyond the river's reach.
+if (CFG.marshNeedsRiver || CFG.prairieSpreads) { const T = R.fresh(CFG, run.seed), m = {marshTurns:0, marshNoBank:0, marshDiscards:0, prairieTurns:0, spreadOffered:0, spreadPlanted:0};
+  for (const mv of run.moves) { const t = (mv.a === "p" || mv.a === "d") && T.q[mv.i];
+    if (t && t.k === "h" && t.b) { const pl = R.options(T, mv.i).filter(x => x.does === "plant"), reach = R.reachOf(T);
+      if (t.b === "m") { m.marshTurns++; if (!pl.length) m.marshNoBank++; if (mv.a === "d") m.marshDiscards++ }
+      else { m.prairieTurns++; const beyond = pl.filter(x => !reach.has(R.key(x.p))).map(x => R.key(x.p)); m.spreadOffered += beyond.length; if (mv.a === "p" && beyond.includes(mv.x + "," + mv.y)) m.spreadPlanted++ } }
+    mv.a === "p" ? R.place(T, mv.i, [mv.x, mv.y]) : mv.a === "d" ? R.discard(T, mv.i) : mv.a === "l" ? R.lock(T, [mv.x, mv.y]) : R.end(T) }
+  const land = CFG.map.join("").split("_").length - 1, empty = land - Object.keys(S.h).length - (Object.keys(S.r).length - 1);
+  console.log(`marsh: ${m.marshTurns} marsh tiles in hand, nothing to plant on in ${m.marshNoBank} of those turns, ${m.marshDiscards} discarded · prairie: ${m.prairieTurns} in hand, ${m.spreadPlanted} planted beyond the river's reach, ${m.prairieTurns ? (m.spreadOffered / m.prairieTurns).toFixed(1) : 0} extra tiles offered per prairie tile in hand · island: ${empty} of ${land} land cells empty at the end`) }
 const W = CFG.map[0].length, H = CFG.map.length, rows = [];
 for (let y = 0; y < H; y++) { let r = y & 1 ? " " : ""; for (let x = 0; x < W; x++) { const k = x + "," + y, code = CFG.map[y][x], lk = k in S.lk;
   r += (code === "B" ? "^^" : k in S.r ? (lk ? "~" : "w") + S.r[k].l : k in S.h ? (lk ? "#" : S.hb[k] || "h") + S.h[k] : "..") + " " } rows.push(r) }
-console.log("island (hN green habitat of level N, gN grasslands, mN marsh, #N locked habitat, wN river, ~N locked river, ^^ mountain):\n" + rows.join("\n"));
+console.log("island (hN green habitat of level N, pN prairie, mN marsh, #N locked habitat, wN river, ~N locked river, ^^ mountain):\n" + rows.join("\n"));
