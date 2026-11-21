@@ -67,6 +67,7 @@ Also from Dan: "take the existing hexagon and aesthetics", and "this will be a w
 - **No lock limit** (Dan: "there is no lock limit, a user can lock as many times as they want"): locks are free and unlimited, so `lockEvery` is 0 in the config. See "No lock limit, as built".
 - **Rivers rise downstream** (Dan: "make a new rule such that all river tiles must be equal or greater than the river tile "behind it" i.e. rivers must always be greater on the way down"): `riverMonotone: true` in the config. See "The river rule, as built".
 - **Top level 15** (Dan: "uncap the tiles max to 15"): `maxLevel` is 15 in the config, up from 7. See "The top level, as built".
+- **Save the search tools** (Dan: "Save them", answering "Save the search tools in the repo so rule ideas can be tested later?"): the tools used to find how high scores go are in `tools/`. See "The search tools, as built".
 
 ### The move to its own repo (Nov 20)
 
@@ -106,6 +107,12 @@ Also from Dan: "take the existing hexagon and aesthetics", and "this will be a w
 - **What changed:** `maxLevel` 7 to 15 in `flowgrow.config.js` (the check on it now allows up to 24). Levels 8 to 15 keep the score pattern, one more each time: 36, 45, 55, 66, 78, 91, 105, 120 (the table in the config now lists all 15). The first build's top level is one value away: `maxLevel: 7`.
 - **Names:** only the first seven levels have names (Sprouts to Old forest). Levels 8 to 15 are just called Level 8 and so on, until Dan names them.
 - **How they look:** the painted look has seven pictures, so levels above 7 reuse the Old forest picture with their own number. The simple look gets darker greens, a gold rim from level 8 and a second rim from level 12. The menu lists all 15 levels.
+
+### The search tools, as built (Nov 20)
+
+- **What is there:** `tools/flowgrow-search.mjs` looks for the highest score on one seed, with a hand-built "sweep" player tuned by hill climbing and a nested rollout search (`--workers N` runs N processes at once). `tools/flowgrow-analyze.mjs` replays a saved run and says where its points came from. `tools/flowgrow-replay.mjs` plays a saved run in the real page and checks the score. They are developer tools: nothing in the game loads them. Plain Node, no packages. The replay needs Chrome and Node's built-in WebSocket (`--experimental-websocket` on Node 20).
+- **Testing a rule:** any config value can be changed on the command line as `key=value`, so a rule that has a config switch can be searched with it on and off without editing the config. A saved run remembers the changes it was found with.
+- **What they found** (seed 495454692, Nov 20): 47 by hand, 918 before the river rule and 977 after it, with the top level at 7. The default seed is that run. The findings and two balance questions for Dan are in the Linear document "Flowgrow balance brainstorm", attached to LOU-299.
 
 ### What is built (LOU-298)
 
