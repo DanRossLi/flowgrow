@@ -302,7 +302,7 @@ function checks() { let n = 0; const fails = [];
   ok("the ruleset key changes with the bare ground level and with its mode", R.rulesKey(cfgWith(RF)) !== R.rulesKey(cfgWith({bareGroundMaxLevel:2, bareGroundMode:"refuse"})) && R.rulesKey(cfgWith(RF)) !== R.rulesKey(cfgWith(DG)));
   { const t = R.tidy({...REF, bareGroundMaxLevel:0, bareGroundMode:"sideways"}, REF);
     ok("a bad bare ground level or mode is refused and the old value stands", same(t.bad, ["bareGroundMaxLevel", "bareGroundMode"]) && t.cfg.bareGroundMaxLevel === 24 && t.cfg.bareGroundMode === "refuse") }
-  ok("the config file has bare ground at level 1, and the default mode is refuse (Dan, Nov 20: level 1 only on bare ground; LOU-300 keeps refuse until the numbers are in)", BASE.bareGroundMaxLevel === 1 && BASE.bareGroundMode === "refuse");
+  ok("the config file has bare ground at level 1, and the mode is downgrade (Dan, Nov 20: level 1 only on bare ground, then put downgrade in the game to play test)", BASE.bareGroundMaxLevel === 1 && BASE.bareGroundMode === "downgrade");
 
   for (const f of fails) console.log("FAILED: " + f);
   console.log(fails.length ? `${fails.length} of ${n} rule checks failed` : `all ${n} rule checks passed`);
