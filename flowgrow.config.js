@@ -20,7 +20,7 @@ window.FLOWGROW = {
   queueShown: 3,            // tiles shown after the tile in hand
   pickFrom: 1,              // 1: you must place the tile in hand. 3: tap any of the first 3 to take it instead
   riverShare: 0.10,         // chance a dealt tile is a river tile
-  opening: ["habitat 1", "habitat 1", "river", "prairie 1", "marsh 1"], // the first tiles of every run, in order. The first five show every kind
+  opening: ["river", "river", "river", "river", "habitat 1", "habitat 1", "prairie 1", "marsh 1"], // the first tiles of every run, in order. Four river tiles first (Dan, Nov 21: "have it start with 4 water tiles, that way I can build my stream"), then green, green, prairie and marsh, so every kind shows by the eighth tile. After the opening a tile is a river tile riverShare of the time
   prairieShare: 0.3,        // of the dealt habitats, the share that are prairie, the yellow tile (Dan, Nov 20: "add a yellow tile for grasslands", then "make yellow like 'prairie'"). 0: none
   marshShare: 0.3,          // and the share that are marsh, the turquoise tile ("add a turquoise tile for marsh"). The rest are the original green. Together at most 1
   biomeMatch: true,         // true: a tile only combines with a habitat of its own kind and level. false: any kind combines
