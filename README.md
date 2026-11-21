@@ -41,14 +41,14 @@ then go to http://localhost:8000/.
 ## Check it
 
 - `node tools/flowgrow-sim.mjs --test` runs the rule checks. All must pass. They use fixed first-build values (80 tiles, level odds 0.5), so tuning `flowgrow.config.js` never breaks them.
-- `node tools/flowgrow-sim.mjs` plays 1,000 runs of the game in `flowgrow.config.js` (the pilot pile with unlimited locks now; add `stackSize=80 levelOdds=0.5 lockEvery=10` for the first build's game), with the game's own rules. No run may crash, stall or fail to rebuild from its seed and moves. With unlimited locks a run is about 300 moves, so the 1,000 runs take a few minutes: ask for fewer (node tools/flowgrow-sim.mjs 200) when you only want a quick check. Run it with `lockEnabled=false` and `lockEvery=0` as well, for example `node tools/flowgrow-sim.mjs 300 lockEvery=0`. Any config value can be changed as `key=value`.
+- `node tools/flowgrow-sim.mjs` plays 1,000 runs of the game in `flowgrow.config.js` (the pilot pile with unlimited locks now; add `stackSize=80 levelOdds=0.5 lockEvery=10` for the first build's game), with the game's own rules. No run may crash, stall or fail to rebuild from its seed and moves. With unlimited locks a run is about 300 moves, so the 1,000 runs take a few minutes: ask for fewer (node tools/flowgrow-sim.mjs 200) when you only want a quick check. Run it with `lockEnabled=false` and `lockEvery=0` as well, for example `node tools/flowgrow-sim.mjs 300 lockEvery=0`. Any config value can be changed as `key=value`. `picks=meadow,pine` makes the simple player pick those upgrades (the default is steppe and roots).
 - Play one whole run in a browser at 390×844.
 
 ## Search it
 
 Three developer tools (plain Node, no packages) find out how high a set of rules lets scores go, so a rule idea can be tested before it is built into the game:
 
-- `node tools/flowgrow-search.mjs --workers 8 --seconds 300` looks for the highest score on one seed with the game's own rules. Any config value can be changed on the command line as `key=value`, to try a rule without editing the config, for example `node tools/flowgrow-search.mjs maxLevel=7 riverMonotone=false`. It saves the best run to `search-best.json`.
+- `node tools/flowgrow-search.mjs --workers 8 --seconds 300` looks for the highest score on one seed with the game's own rules. Any config value can be changed on the command line as `key=value`, to try a rule without editing the config, for example `node tools/flowgrow-search.mjs maxLevel=7 riverMonotone=false`. It saves the best run to `search-best.json`. `--picks steppe,pine` fixes the upgrades it picks (otherwise the policy search tunes the choice and nrpa chooses as it goes).
 - `node tools/flowgrow-analyze.mjs search-best.json` replays a saved run and says where its points came from (planted or combined, copies or dealt tiles), which tiles were locked and what the island looks like at the end.
 - `node --experimental-websocket tools/flowgrow-replay.mjs search-best.json` plays a saved run in the real page (it needs Chrome) and checks that the page scores the same. The page plays by its own rules, so it only accepts runs found under them.
 

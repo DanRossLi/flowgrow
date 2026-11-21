@@ -59,6 +59,16 @@ if (CFG.upgradeLevel > 0) { const T = R.fresh(CFG, run.seed), up = CFG.upgradeLe
     const r = mv.a === "p" ? R.place(T, mv.i, [mv.x, mv.y]) : mv.a === "d" ? R.discard(T, mv.i) : mv.a === "l" ? R.lock(T, [mv.x, mv.y]) : mv.a === "u" ? R.pick(T, mv.x + "," + mv.y, mv.f) : R.end(T);
     if (marsh && mv.a === "p" && r && ((r.does === "combine" && r.l === up) || (r.does === "plant" && r.l >= up))) m.reached++ }
   console.log(`reed beds: ${m.reached} marsh tiles reached level ${up}, ${Object.keys(S.h).filter(k => S.hb[k] === "m" && S.h[k] >= up).length} reed beds on the island at the end · ${m.planted} marsh planted, ${m.viaReed} of them only because of a reed bed (${m.rescued} marsh tiles had no other place to plant) · ${m.inHand} marsh tiles in hand`) }
+// What the picks and the prairie and tree upgrades did in this run (LOU-305, LOU-306; replayed move by move).
+if (CFG.upgradeLevel > 0) { const T = R.fresh(CFG, run.seed), o = {steppeUps:0, meadowUps:0, meadowExtra:0, meadowCap:0, rootsUps:0, lifted:0, chainMax:0, chainPts:0, maxMove:0, pineTrees:0, free:0}, picks = {};
+  for (const e of S.log) if (e.did === "pick") { const k = e.t.b + ":" + e.f; picks[k] = (picks[k] || 0) + 1 }
+  for (const mv of run.moves) { if (mv.a === "p") { const t = T.q[mv.i], up = T.hf[mv.x + "," + mv.y], r = R.place(T, mv.i, [mv.x, mv.y]);
+      if (r.does === "combine") { if (up === "steppe") o.steppeUps++; if (up === "roots") o.rootsUps++; if (up === "meadow") { o.meadowUps++; if (r.mult > 1) { o.meadowExtra += r.pts - r.pts / r.mult; if (r.mult === CFG.meadowMax) o.meadowCap++ } } }
+      o.free += r.free.length; if (r.lifts.length) { o.lifted += r.lifts.length; o.chainMax = Math.max(o.chainMax, r.lifts.length); o.chainPts += r.liftPts; o.maxMove = Math.max(o.maxMove, r.pts) }
+      if (r.does === "plant" && t.b === "t") o.pineTrees++ }
+    else mv.a === "d" ? R.discard(T, mv.i) : mv.a === "l" ? R.lock(T, [mv.x, mv.y]) : mv.a === "u" ? R.pick(T, mv.x + "," + mv.y, mv.f) : R.end(T) }
+  const label = {"p:steppe":"prairie steppe", "p:meadow":"prairie meadow", "t:roots":"trees roots", "t:pine":"trees pine-oneer"}, got = Object.entries(picks).map(([k, v]) => `${label[k]} ${v}`).join(" · ") || "none";
+  if (CFG.prairieShare > 0 || CFG.treeShare > 0) console.log(`upgrade picks: ${got} · steppe ${o.steppeUps} level-ups, ${o.free} free tiles · meadow ${o.meadowUps} level-ups, ${Math.round(o.meadowExtra)} extra points from the multiplier (at the ×${CFG.meadowMax} cap ${o.meadowCap} times) · roots ${o.rootsUps} level-ups lifting ${o.lifted} tiles for ${o.chainPts} points (longest chain ${o.chainMax} tiles, most points in one move ${o.maxMove}) · ${o.pineTrees} trees planted`) }
 const W = CFG.map[0].length, H = CFG.map.length, rows = [];
 for (let y = 0; y < H; y++) { let r = y & 1 ? " " : ""; for (let x = 0; x < W; x++) { const k = x + "," + y, code = CFG.map[y][x], lk = k in S.lk;
   r += (code === "B" ? "^^" : k in S.r ? (lk ? "~" : "w") + S.r[k].l : k in S.h ? (lk ? "#" : S.hb[k] || "h") + S.h[k] : "..") + " " } rows.push(r) }

@@ -33,8 +33,9 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 function bestLock(S) { let best = null, n = -1;
   for (const k of [...Object.keys(S.h), ...Object.keys(S.r)]) { const p = R.unkey(k); if (!R.lockable(S, p)) continue; const c = R.copiesOf(S, p).copies.length; if (c > n) { n = c; best = p } }
   return best ? {p:best, n} : null }
+const PICKIDX = {p:0, t:0};   // which of a kind's two upgrades the simple player picks: the first (steppe, roots) unless picks=meadow,pine says otherwise on the command line
 function turn(S) { const c = S.cfg;
-  if (S.pend.length) { const k = S.pend[0]; return R.pick(S, k, R.PICKS[S.hb[k] || ""][0]) }   // a pick to make (LOU-305): the fixed first choice
+  if (S.pend.length) { const k = S.pend[0], kind = S.hb[k] || ""; return R.pick(S, k, R.PICKS[kind][PICKIDX[kind]]) }   // a pick to make (LOU-305): the fixed choice
   if (c.lockEnabled) { const b = R.hasLock(S) ? bestLock(S) : null;
     if (!S.q.length) return b && b.n > 0 ? R.lock(S, b.p) : R.end(S);                            // the pile is empty: lock while that banks a copy
     if (b && b.n > 0 && c.lockEvery > 0 && S.toLock === c.lockEvery - 1) return R.lock(S, b.p) } // use each lock just before the next one arrives
@@ -60,6 +61,16 @@ function play(cfg, seed) { const out = {S:null, tight:0, error:"", m:{marshTurns
     if (!out.error && !same(S, R.replay(cfg, seed, S.moves))) out.error = "did not rebuild from its seed and moves";
   } catch (e) { out.error = "crashed: " + (e && e.message || e) }
   return out }
+
+// What the prairie and tree upgrades did in a run (LOU-305, LOU-306), worked out by replaying its moves: the level-ups of steppe, meadow and roots tiles, the free tiles a steppe (or a lifted steppe) planted, what a
+// meadow's multiplier added, the tiles roots lifted, the longest chain and the most points one move scored, and the trees planted (beside a pine-oneer, with overgrow on).
+function upStats(cfg, S) { const T = R.fresh(cfg, S.seed), o = {steppeUps:0, meadowUps:0, meadowExtra:0, meadowCap:0, rootsUps:0, lifted:0, chainMax:0, chainPts:0, maxMove:0, pineTrees:0, free:0};
+  for (const m of S.moves) { if (m.a === "p") { const t = T.q[m.i], up = T.hf[m.x + "," + m.y], r = R.place(T, m.i, [m.x, m.y]);
+      if (r.does === "combine") { if (up === "steppe") o.steppeUps++; if (up === "roots") o.rootsUps++; if (up === "meadow") { o.meadowUps++; if (r.mult > 1) { o.meadowExtra += r.pts - r.pts / r.mult; if (r.mult === cfg.meadowMax) o.meadowCap++ } } }
+      o.free += r.free.length; if (r.lifts.length) { o.lifted += r.lifts.length; o.chainMax = Math.max(o.chainMax, r.lifts.length); o.chainPts += r.liftPts; o.maxMove = Math.max(o.maxMove, r.pts) }
+      if (r.does === "plant" && t.b === "t") o.pineTrees++ }
+    else m.a === "d" ? R.discard(T, m.i) : m.a === "l" ? R.lock(T, [m.x, m.y]) : m.a === "u" ? R.pick(T, m.x + "," + m.y, m.f) : R.end(T) }
+  return o }
 
 // ---------- the report
 const avg = a => a.reduce((x, y) => x + y, 0) / (a.length || 1), pct = (a, p) => [...a].sort((x, y) => x - y)[Math.min(a.length - 1, Math.floor(a.length * p))];
@@ -91,6 +102,10 @@ function report(cfg, runs) { const res = []; for (let seed = 1; seed <= runs; se
     console.log(`  overgrow             ${f2(avg(O.map(l => l.length)))} a run: ${kind("")} on green · ${kind("p")} on prairie · ${kind("m")} on marsh · ${f1(avg(O.map(l => l.reduce((n, e) => n + e.pts, 0))))} points from overgrows · ${f2(avg(S.map(s => s.combined - s.overgrown)))} plain combines a run`) }
   if (cfg.upgradeLevel > 0 && cfg.marshShare > 0) { const M = ok.map(r => r.m), up = cfg.upgradeLevel, reach = s => s.log.filter(e => e.t && e.t.b === "m" && ((e.did === "combine" && e.l === up) || (e.did === "plant" && e.l >= up))).length;   // upgrades (LOU-304): how often a marsh tile reaches the upgrade level, and how often the reed bed is used
     console.log(`  reed beds            ${f2(avg(S.map(reach)))} marsh tiles reach level ${up} a run (in ${share(S, s => reach(s) > 0)} of runs) · ${f1(avg(S.map(s => Object.keys(s.h).filter(k => s.hb[k] === "m" && s.h[k] >= up).length)))} reed beds on the map at the end · ${f1(avg(M.map(m => m.marshPlanted)))} marsh planted a run, ${f2(avg(M.map(m => m.reedPlanted)))} of them only because of a reed bed (${f2(avg(M.map(m => m.reedRescued)))} marsh tiles a run had no other place to plant)`) }
+  if (cfg.upgradeLevel > 0 && (cfg.prairieShare > 0 || cfg.treeShare > 0)) { const U = S.map(s => upStats(cfg, s)), up = cfg.upgradeLevel, n = b => f2(avg(S.map(s => s.log.filter(e => e.did === "pick" && e.t.b === b).length))), any = b => share(S, s => s.log.some(e => e.did === "pick" && e.t.b === b)),
+      pk = (b, f) => f2(avg(S.map(s => s.log.filter(e => e.did === "pick" && e.t.b === b && e.f === f).length)));   // the prairie and tree upgrades (LOU-305, LOU-306): how often level 4 is reached, how the picks go, what each upgrade added
+    if (cfg.prairieShare > 0) console.log(`  prairie upgrades     ${n("p")} prairie tiles reach level ${up} a run (in ${any("p")} of runs) · picks ${pk("p", "steppe")} steppe, ${pk("p", "meadow")} meadow a run · steppe: ${f2(avg(U.map(u => u.steppeUps)))} level-ups a run, ${f2(avg(U.map(u => u.free)))} free tiles planted (as many points) · meadow: ${f2(avg(U.map(u => u.meadowUps)))} level-ups a run, ${f2(avg(U.map(u => u.meadowExtra)))} extra points from the multiplier, at the cap ${f2(avg(U.map(u => u.meadowCap)))} times a run`);
+    if (cfg.treeShare > 0) console.log(`  tree upgrades        ${n("t")} tree tiles reach level ${up} a run (in ${any("t")} of runs) · picks ${pk("t", "roots")} roots, ${pk("t", "pine")} pine-oneer a run · roots: ${f2(avg(U.map(u => u.rootsUps)))} level-ups a run lifting ${f2(avg(U.map(u => u.lifted)))} tiles for ${f1(avg(U.map(u => u.chainPts)))} points (longest chain ${Math.max(0, ...U.map(u => u.chainMax))} tiles, most points in one move ${Math.max(0, ...U.map(u => u.maxMove))}) · ${f2(avg(U.map(u => u.pineTrees)))} trees planted beside a pine-oneer a run`) }
   if (cfg.lockEnabled) {
     console.log(`  moves                ${f1(avg(S.map(s => s.moves.length)))} a run`);
     console.log(`  locks                ${f1(avg(S.map(s => s.lockUsed)))} used · ${f1(avg(S.map(s => s.lockLost)))} lost · ${f1(avg(S.map(s => Object.keys(s.lk).length)))} tiles locked at the end`);
@@ -718,7 +733,9 @@ function checks() { let n = 0; const fails = [];
 const args = process.argv.slice(2);
 if (args.includes("--test")) checks();
 else { let runs = 1000; const over = {};
-  for (const a of args) { if (/^\d+$/.test(a)) runs = +a; else { const m = /^([A-Za-z]+)=(.*)$/.exec(a); if (!m || !R.KEYS.some(k => k[0] === m[1])) { console.error(`Unknown setting: ${a}. Use key=value with one of: ${R.KEYS.map(k => k[0]).join(", ")}`); process.exit(1) } over[m[1]] = m[2] } }
+  for (const a of args) { if (/^\d+$/.test(a)) runs = +a; else { const m = /^([A-Za-z]+)=(.*)$/.exec(a);
+      if (m && m[1] === "picks") { for (const f of m[2].split(",")) { const kind = Object.keys(R.PICKS).find(k => R.PICKS[k].includes(f)); if (!kind) { console.error(`Unknown upgrade: ${f}. picks=... takes steppe or meadow, and roots or pine, separated by commas.`); process.exit(1) } PICKIDX[kind] = R.PICKS[kind].indexOf(f) } continue }   // picks=meadow,pine: which upgrades the simple player picks
+      if (!m || !R.KEYS.some(k => k[0] === m[1])) { console.error(`Unknown setting: ${a}. Use key=value with one of: ${R.KEYS.map(k => k[0]).join(", ")}`); process.exit(1) } over[m[1]] = m[2] } }
   const t = R.tidy({...BASE, ...over}, BASE); if (t.bad.length) { console.error("Refused: " + t.bad.join(", ")); process.exit(1) }
   if (!t.cfg.stackSize) { console.error("The simulator needs a run that ends: stackSize can't be 0 here."); process.exit(1) }
   report(t.cfg, runs) }

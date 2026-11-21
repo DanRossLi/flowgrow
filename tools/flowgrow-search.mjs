@@ -15,6 +15,7 @@
 //   --seed N       the seed the pile is dealt from (default 495454692, the run Dan pasted on Nov 20)
 //   --out FILE     where the best run is saved (default search-best.json)
 //   --from A,B     start from saved runs: the policy search starts from their knobs, the nrpa search from their moves
+//   --picks A,B    fix the upgrades the players pick (LOU-305, LOU-306), for example steppe,pine or meadow,roots. Without it the policy search tunes its choice as a knob and nrpa chooses as it goes
 //
 // The two methods:
 //   policy  a hand-built "sweep" player with a dozen knobs (when to grow, which tile to lock, whether to widen, ...) tuned by random
@@ -35,7 +36,7 @@ for (const f of ["flowgrow.config.js", "flowgrow.js"]) new Function("window", fs
 const R = window.Flowgrow.rules, base = window.FLOWGROW;
 
 // ---------- the command line
-const opt = {seconds: 120, workers: 1, method: "mix", seed: 495454692, out: "search-best.json", from: ""}, over = {}, argv = process.argv.slice(2);
+const opt = {seconds: 120, workers: 1, method: "mix", seed: 495454692, out: "search-best.json", from: "", picks: ""}, over = {}, argv = process.argv.slice(2);
 for (let i = 0; i < argv.length; i++) { const a = argv[i];
   if (a.startsWith("--")) { const k = a.slice(2); if (!(k in opt)) die(`Unknown option ${a}`); const v = argv[++i]; if (v === undefined) die(`${a} needs a value`);
     opt[k] = typeof opt[k] === "number" ? +v : v; if (typeof opt[k] === "number" && !Number.isFinite(opt[k])) die(`${a} needs a number`) }
@@ -45,6 +46,7 @@ const made = R.tidy({...base, ...over}, base); if (made.bad.length) die("Refused
 const CFG = made.cfg, WORKER = +process.env.FLOWGROW_SEARCH_WORKER || 0, T0 = Date.now();
 let rs = ((WORKER + 1) * 2654435761) >>> 0;
 const rnd = () => { rs = (rs + 0x6D2B79F5) >>> 0; let t = Math.imul(rs ^ (rs >>> 15), rs | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296 };
+const FORCED = {}; for (const f of opt.picks.split(",").filter(Boolean)) { const kind = Object.keys(R.PICKS).find(k => R.PICKS[k].includes(f)); if (!kind) die(`--picks takes steppe or meadow, and roots or pine, separated by commas (not "${f}")`); FORCED[kind] = R.PICKS[kind].indexOf(f) }
 const saved = opt.from.split(",").filter(Boolean).map(f => { try { return JSON.parse(fs.readFileSync(f, "utf8")) } catch (e) { return die(`Can't read ${f}: ${e.message}`) } });
 
 // ---------- many workers: this process only starts them and keeps the best run they send back
@@ -95,12 +97,12 @@ function policySearch(until) {
       const s = gain - P.kappa * g.high.length * SC(L + 1) + P.mu * L - P.river * (k in S.r ? 1 : 0) + rnd() * P.noise; if (s > bs) { bs = s; best = p } }
     return best }
   function play(P) { const S = R.fresh(CFG, opt.seed); let last = null, guard = 0;
-    while (!S.over && guard++ < CAP) { if (S.pend.length) { R.pick(S, S.pend[0], R.PICKS[S.hb[S.pend[0]] || ""][0]); continue }   // a pick to make: the first choice
+    while (!S.over && guard++ < CAP) { if (S.pend.length) { const k = S.pend[0], kind = S.hb[k] || ""; R.pick(S, k, R.PICKS[kind][kind in FORCED ? FORCED[kind] : (kind === "t" ? P.pickT : P.pickP) | 0]); continue }   // a pick to make: the knobs say which of the two
       if (S.q.length) { if (!handle(S, P, last)) break } else { const x = chooseLock(S, P); if (!x) { R.end(S); break } R.lock(S, x); last = x } }
     return S }
   const rr = (a, b) => a + rnd() * (b - a), ri = (a, b) => Math.floor(rr(a, b + 1));
   const sample = () => ({spine: ri(0, 6), widenCopy: rnd(), grow: ri(6, 90), hiPlant: ri(2, 9), growHi: ri(10, 100), dealtPlant: ri(2, 10), plMin: ri(3, 40), riverCost: rr(0, 6),
-    noise: rr(0, 3), adj: rr(0, 6), cu: rr(0, 3), kappa: rr(0, 1.2), mu: rr(0, 6), lockRiver: rnd() < .5 ? 1 : 0, river: rr(0, 8)});
+    noise: rr(0, 3), adj: rr(0, 6), cu: rr(0, 3), kappa: rr(0, 1.2), mu: rr(0, 6), lockRiver: rnd() < .5 ? 1 : 0, river: rr(0, 8), pickP: ri(0, 1), pickT: ri(0, 1)});   // pickP and pickT: 0 steppe or roots, 1 meadow or pine-oneer
   const mutate = P => { const Q = {...P}, s = sample(); for (const k of Object.keys(Q)) if (rnd() < .3) Q[k] = s[k]; return Q };
   let bestP = null, bestScore = -1; for (const b of saved) if (b.params) { bestP = b.params; bestScore = b.score }
   while (Date.now() < until) { const P = bestP && rnd() < .6 ? mutate(bestP) : sample(), S = play(P); record(S, "policy", P); if (S.score > bestScore) { bestScore = S.score; bestP = P } } }
@@ -113,7 +115,7 @@ function policySearch(until) {
 function nrpaSearch(until, level, N) {
   const ALPHA = 1.0;
   function legal(S) { const mv = []; if (S.over) return mv;
-    if (S.pend.length) { const k = S.pend[0]; for (const f of R.PICKS[S.hb[k] || ""]) mv.push({code: "U:" + k + ":" + f, bias: 0, pick: {k, f}}); return mv }   // a pick to make (LOU-305): the only moves
+    if (S.pend.length) { const k = S.pend[0]; const kind = S.hb[k] || ""; for (const f of R.PICKS[kind]) if (!(kind in FORCED) || R.PICKS[kind][FORCED[kind]] === f) mv.push({code: "U:" + k + ":" + f, bias: 0, pick: {k, f}}); return mv }   // a pick to make (LOU-305): the only moves
     if (S.q.length) { const t = S.q[0], tag = t.k + (t.b || "") + t.l, copy = !!t.c, nHab = Object.keys(S.h).length;
       for (const o of R.options(S, 0)) { let bias = 0;
         if (t.k === "h") { if (o.does === "combine" || o.does === "overgrow") bias = 2 * Math.log(1 + o.pts); else { if (!nbrs(o.p).some(q => has(S, q))) continue; bias = 2 * Math.log(1 + o.pts) - 1 + (nHab < 12 ? 1 : 0) } }
