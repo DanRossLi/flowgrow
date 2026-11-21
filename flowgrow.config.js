@@ -33,8 +33,10 @@ window.FLOWGROW = {
   // Score: a move scores by the level of the habitat it leaves on the map (Dan: "+1, +3, +6, +10....")
   scoreByLevel: [1, 3, 6, 10, 15, 21, 28, 36, 45, 55, 66, 78, 91, 105, 120],
 
-  // River: how many tiles out a level 1 and a level 2 river tile reach. Its length is also the widest a river tile can get.
+  // River: how many tiles out a level 1 and a level 2 river tile reach. A river tile of a higher level reaches as far as the last: the width stops growing at 2.
   riverReach: [1, 2],
+  riverMaxLevel: 15,        // the highest level a river tile can reach (Dan, Nov 20: "make rivers also level up, just as points make the "width" max 2"). A river tile put on one of its own level raises it, like habitats; only the first two levels widen it. 2: the first build, where level 2 was the top
+  riverScore: "levels",     // what a river tile scores. "levels": raising a river tile a level scores the points for the level it reaches, as for habitats; extending the river scores nothing. "all": every river move scores like a habitat of its level. "none": rivers score nothing (the first build)
   riverMonotone: true,      // rivers rise downstream (Dan, Nov 20): a river tile can't be lower than the one it flows from, so a river is widened from its end back towards the source. false: the first build's rule
 
   tilesAcross: 5,           // opening zoom: about this many tiles fit across a phone

@@ -23,7 +23,7 @@ const BASE = R.tidy(base).cfg;
 // The rule checks are written for these values, the first build's, so tuning flowgrow.config.js never breaks them (the pilot pile, for one,
 // changes the pile; bare ground takes any level, and the bare ground rule is checked on its own below). The report and the command line use the config file as it is.
 const REF = (() => { const t = R.tidy({...base, map:["_____________", "_BB__________", "__B_______B__", "__________BB_", "______T______", "_____________", "___BB________", "_____________", "_____________"],
-  stackSize:80, queueShown:3, pickFrom:1, riverShare:.1, opening:["habitat 1", "habitat 1", "river"], maxLevel:7, levelOdds:.5, scoreByLevel:[1, 3, 6, 10, 15, 21, 28], riverReach:[1, 2], riverMonotone:false, bareGroundMaxLevel:24, bareGroundMode:"refuse", grasslandShare:0, marshShare:0, biomeMatch:true,
+  stackSize:80, queueShown:3, pickFrom:1, riverShare:.1, opening:["habitat 1", "habitat 1", "river"], maxLevel:7, levelOdds:.5, scoreByLevel:[1, 3, 6, 10, 15, 21, 28], riverReach:[1, 2], riverMonotone:false, bareGroundMaxLevel:24, bareGroundMode:"refuse", grasslandShare:0, marshShare:0, biomeMatch:true, riverMaxLevel:2, riverScore:"none",
   levelNames:["Sprouts", "Meadow", "Thicket", "Saplings", "Grove", "Forest", "Old forest"], lockEnabled:true, lockLevelCap:true, lockCopiesGo:"back", lockRivers:true, lockEvery:10, lockHold:1}, base);
   if (t.bad.length) throw new Error("bad reference config: " + t.bad); return t.cfg })();
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -66,6 +66,7 @@ function report(cfg, runs) { const res = []; for (let seed = 1; seed <= runs; se
   console.log(`  habitats on the map  ${f1(avg(ok.map(r => r.hab)))} (planted ${f1(avg(S.map(s => s.planted)))}, combined ${f1(avg(S.map(s => s.combined)))})`);
   if (cfg.grasslandShare + cfg.marshShare > 0) console.log(`  kinds on the map     ${f1(avg(S.map(s => Object.keys(s.h).filter(k => !s.hb[k]).length)))} green · ${f1(avg(S.map(s => Object.values(s.hb).filter(b => b === "g").length)))} grasslands · ${f1(avg(S.map(s => Object.values(s.hb).filter(b => b === "m").length)))} marsh habitats at the end`);
   console.log(`  river tiles          ${f1(avg(ok.map(r => r.riv)))} with the source (extended ${f1(avg(S.map(s => s.extended)))}, widened ${f1(avg(S.map(s => s.widened)))})`);
+  if (cfg.riverMaxLevel > cfg.riverReach.length) console.log(`  river levels         the river rises to level ${f1(avg(ok.map(r => Math.max(...Object.values(r.S.r).map(v => v.l)))))} on average (${f1(avg(S.map(s => s.log.filter(e => e.did === "widen" && e.l > cfg.riverReach.length).length)))} level-ups past the widest)${cfg.riverScore === "none" ? "" : `, ${f1(avg(S.map(s => s.log.reduce((n, e) => n + (e.did === "widen" || e.did === "extend" ? e.pts : 0), 0))))} points from river moves`}`);
   console.log(`  discards             ${f2(avg(S.map(s => s.discarded)))} a run · at least one in ${share(S, s => s.discarded > 0)} of runs`);
   console.log(`  tight turns          ${f1(avg(ok.map(r => r.tight)))} a run with 2 or fewer plantable tiles · ${f1(avg(ok.map(r => r.room)))} plantable tiles left at the end`);
   if (cfg.lockEnabled) {
@@ -346,6 +347,33 @@ function checks() { let n = 0; const fails = [];
     const kinds = new Set(Object.values(S.hb));
     ok(`a whole run of random legal moves with grasslands and marsh (${mode}): it ends, both kinds were planted, no tile ever combined onto another kind, and it replays from its seed`,
       S.over && guard < 4000 && kinds.has("g") && kinds.has("m") && mixed === 0 && same(S, R.replay(cfg, 9, S.moves))) }
+
+  // ----- rivers level up (Dan, Nov 20: "make rivers also level up, just as points make the "width" max 2"). A river tile put on a river tile of its own level raises it a level, up
+  // to riverMaxLevel, and only the first two levels widen it (riverReach). riverScore says what scores. REF is the first build's: top level 2, and rivers score nothing.
+  const RV = {riverMaxLevel:15, riverScore:"levels"};
+  { const S = run(["river 2", "river 2", "river 3", "river 3"], RV), a = R.place(S, 0, E);
+    ok("a level 2 river tile extends the river at level 2, and extending scores nothing", a && a.does === "extend" && a.l === 2 && a.pts === 0 && riv(S, E).l === 2 && S.score === 0);
+    ok("a level 2 river tile put on a level 2 one raises it to level 3 (past the widest) for the points of level 3", does(S, E) === "widen" && (b => b && b.l === 3 && b.pts === 6 && riv(S, E).l === 3 && S.score === 6 && S.widened === 1)(R.place(S, 0, E)));
+    ok("the width stops at 2: a level 3 river tile reaches 2 tiles out and no further", R.reachOf(S).has("9,4") && !R.reachOf(S).has("10,4") && R.reachAt(S.cfg, 3) === 2 && R.reachAt(S.cfg, 15) === 2);
+    const c = R.place(S, 0, E); ok("and so on: a level 3 on a level 3 makes level 4 for 10", c && c.does === "widen" && c.pts === 10 && riv(S, E).l === 4 && S.score === 16);
+    ok("a river tile of another level can't raise it, and the text says so", R.place(S, 0, E) === null && R.why(S, 0, E) === "Only a level 4 river tile levels this up." && does(S, [8, 4]) === "extend") }
+  { const S = run(["river 3", "river 3"], {riverMaxLevel:3, riverScore:"levels"}); R.place(S, 0, E);
+    ok("a river tile at its top level can't be raised, and the text says so", does(S, E) === undefined && R.place(S, 0, E) === null && R.why(S, 0, E) === "River level 3 is the top level.") }
+  for (const [mode, ext, up] of [["all", 1, 3], ["levels", 0, 3], ["none", 0, 0]]) { const S = run(["river", "river"], {riverMaxLevel:15, riverScore:mode}), a = R.place(S, 0, E), b = R.place(S, 0, E);
+    ok(`river points (${mode}): extending the river scores ${ext}, and raising a river tile to level 2 scores ${up}`, a && a.does === "extend" && a.pts === ext && b && b.does === "widen" && b.pts === up && S.score === ext + up) }
+  { const S = run(["river 2", "river 2", "river 2"], {...RV, riverMonotone:true}); R.place(S, 0, E); R.place(S, 0, E);
+    ok("rivers still rise downstream with river levels: after a level 3 river tile a level 2 one can't follow", riv(S, E).l === 3 && does(S, [8, 4]) === undefined && R.why(S, 0, [8, 4]) === "A river tile can't be lower than the one it flows from (level 3).") }
+  { const t = R.tidy({...REF, riverMaxLevel:0, riverScore:"most"}, REF);
+    ok("a bad river top level or river points setting is refused and the old value stands", same(t.bad, ["riverMaxLevel", "riverScore"]) && t.cfg.riverMaxLevel === 2 && t.cfg.riverScore === "none") }
+  ok("the ruleset key changes with the river top level and the river points", R.rulesKey(cfgWith({riverMaxLevel:15})) !== R.rulesKey(REF) && R.rulesKey(cfgWith({riverScore:"levels"})) !== R.rulesKey(REF));
+  ok("the config file lets rivers level up to 15 and scores the level-ups, with the width still stopping at 2 (Dan, Nov 20)", BASE.riverMaxLevel === 15 && BASE.riverScore === "levels" && same(BASE.riverReach, [1, 2]));
+  { const cfg = cfgWith({...RV, riverMonotone:true, opening:["river", "habitat 1", "river 2", "river 2", "river 3", "river 3", "river 4", "river 4"], riverShare:.35, lockEvery:0, stackSize:30}), S = R.fresh(cfg, 4);
+    let z = 99, guard = 0; const rn = () => (z = (z * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+    while (!S.over && guard++ < 4000) { if (!S.q.length) { const lk = [...Object.keys(S.h), ...Object.keys(S.r)].map(R.unkey).find(p => R.lockable(S, p) && R.copiesOf(S, p).copies.length); if (!lk) { R.end(S); break } R.lock(S, lk); continue }
+      const o = R.options(S, 0), w = o.filter(x => x.does === "widen"); if (!o.length || rn() < .08) { R.discard(S, 0); continue } const pick = w.length && rn() < .8 ? w : o; R.place(S, 0, pick[Math.floor(rn() * pick.length)].p) }
+    let low = 0, top = 0; for (const k in S.r) { const f = S.r[k].from; top = Math.max(top, S.r[k].l); if (f != null && S.r[k].l < S.r[f].l) low++ }
+    ok("a whole run of random legal moves with river levels: it ends, a river tile passed level 2, none is lower than the one it joins, the score is the sum of the moves, and it replays from its seed",
+      S.over && guard < 4000 && top > 2 && low === 0 && S.log.reduce((s, e) => s + e.pts, 0) === S.score && same(S, R.replay(cfg, 4, S.moves))) }
 
   for (const f of fails) console.log("FAILED: " + f);
   console.log(fails.length ? `${fails.length} of ${n} rule checks failed` : `all ${n} rule checks passed`);

@@ -90,7 +90,9 @@ const KEYS = [
   ["bareGroundMode", oneOf("refuse", "downgrade"), "Above that level", "refuse: it can't be planted, only combined or discarded. downgrade: it plants as level 1", "choice"],
   ["levelOdds", real(0, 4), "Level odds", "each level is this many times as likely as the one below. 0: only level 1 is ever dealt", "num"],
   ["scoreByLevel", listOf(real(0, 100000), 1, 24), "Points by level", "level 1 first", "list"],
-  ["riverReach", listOf(whole(0, 12), 1, 4), "River reach", "tiles out, by river level", "list"],
+  ["riverReach", listOf(whole(0, 12), 1, 4), "River reach", "tiles out, by river level. A river tile past the last level reaches as far as the last: the width stops growing there", "list"],
+  ["riverMaxLevel", whole(1, 24), "River top level", "the highest a river tile can reach. Only the River reach levels widen it (2 in the first build, which was also its top)", "int"],
+  ["riverScore", oneOf("all", "levels", "none"), "River points", "levels: only raising a river tile a level scores. all: every river move scores like a habitat of its level. none: rivers score nothing", "choice"],
   ["riverMonotone", bool, "Rivers rise downstream", "on: a river tile can't be lower than the one it flows from", "bool"],
   ["tilesAcross", real(2, 16), "Tiles across", "opening zoom on a phone", "num"],
   ["levelNames", listOf(s => { const t = String(s).trim().slice(0, 24); return t ? t : undefined }, 1, 24), "Level names", "level 1 first", "list"],
@@ -125,7 +127,11 @@ const levelName = (c, l) => c.levelNames[l - 1] || "Level " + l;
 // Points for leaving a habitat of this level on the map. Past the end of the table the pattern carries on (36, 45 …).
 function scoreOf(c, l) { const t = c.scoreByLevel; if (l <= t.length) return t[l - 1];
   let v = t[t.length - 1], d = t.length > 1 ? v - t[t.length - 2] : v; for (let i = t.length; i < l; i++) { d += 1; v += d } return v }
-const riverTop = c => c.riverReach.length;                                  // the widest a river tile can get
+const riverTop = c => c.riverMaxLevel;                                      // the highest level a river tile can reach
+const widthTop = c => c.riverReach.length;                                  // the level past which a river tile reaches no further: the width stops growing there
+// What a river move scores (riverScore). "all": the level it leaves on the map, like a habitat. "levels": only raising a river tile a level scores, the points for the
+// level it reaches. "none": rivers score nothing (the first build).
+const riverPts = (c, l, levelUp) => c.riverScore === "all" || (c.riverScore === "levels" && levelUp) ? scoreOf(c, l) : 0;
 const reachAt = (c, l) => c.riverReach[Math.min(l, c.riverReach.length) - 1] || 0;
 // The level a habitat of level l lands as when it is planted on empty land, or 0 if it can't be planted there (LOU-300; Dan, Nov 20:
 // "level 1 only on bare ground"). Bare ground takes a habitat up to bareGroundMaxLevel as it is. Above that, "refuse" doesn't offer the
@@ -138,7 +144,7 @@ const seedOf = v => { const n = Number(v); if (v !== "" && v != null && Number.i
   let h = 2166136261; for (const ch of String(v)) h = Math.imul(h ^ ch.charCodeAt(0), 16777619); return h >>> 0 };
 // A short name for the rules a run is played under: every config value that changes how a run plays (not names or zoom).
 // The best score is kept per ruleset, so scores from different rules never meet.
-const RULE_KEYS = ["map", "stackSize", "queueShown", "pickFrom", "riverShare", "opening", "grasslandShare", "marshShare", "biomeMatch", "maxLevel", "bareGroundMaxLevel", "bareGroundMode", "levelOdds", "scoreByLevel", "riverReach", "riverMonotone", "lockEnabled", "lockLevelCap", "lockCopiesGo", "lockRivers", "lockEvery", "lockHold"];
+const RULE_KEYS = ["map", "stackSize", "queueShown", "pickFrom", "riverShare", "opening", "grasslandShare", "marshShare", "biomeMatch", "maxLevel", "bareGroundMaxLevel", "bareGroundMode", "levelOdds", "scoreByLevel", "riverReach", "riverMaxLevel", "riverScore", "riverMonotone", "lockEnabled", "lockLevelCap", "lockCopiesGo", "lockRivers", "lockEvery", "lockHold"];
 const rulesKey = c => seedOf(JSON.stringify(RULE_KEYS.map(k => c[k]))).toString(36);
 function rand(S) { let t = (S.rs = (S.rs + 0x6D2B79F5) >>> 0); t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296 }
 // One new tile. The first tiles of a run are fixed (cfg.opening). After that a tile is a river tile riverShare of the time;
@@ -203,8 +209,8 @@ function options(S, i = 0) { const c = S.cfg, g = grid(c), t = S.q[i], out = [],
     // once every tile that joins it is already that high, so a river is widened from its end back towards the source.
     const mono = c.riverMonotone, has = mono ? new Set(Object.values(S.r).map(v => v.from)) : null, kidMin = {};
     if (mono) for (const k in S.r) { const f = S.r[k].from; if (f != null) kidMin[f] = Math.min(kidMin[f] === undefined ? 99 : kidMin[f], S.r[k].l) }
-    if (t.l < riverTop(c)) for (const k in S.r) if (S.r[k].l === t.l && !(k in S.lk) && (!mono || (kidMin[k] === undefined ? 99 : kidMin[k]) > t.l)) out.push({p:at(k), does:"widen", l:t.l + 1, pts:0});
-    for (const k of g.land) if (!(k in S.h) && !(k in S.r) && g.nb[k].some(q => q in S.r) && (!mono || S.r[joinTo(S, at(k), has)].l <= t.l)) out.push({p:at(k), does:"extend", l:t.l, pts:0});
+    if (t.l < riverTop(c)) for (const k in S.r) if (S.r[k].l === t.l && !(k in S.lk) && (!mono || (kidMin[k] === undefined ? 99 : kidMin[k]) > t.l)) out.push({p:at(k), does:"widen", l:t.l + 1, pts:riverPts(c, t.l + 1, true)});   // "widen" is raising a river tile a level, up to riverTop
+    for (const k of g.land) if (!(k in S.h) && !(k in S.r) && g.nb[k].some(q => q in S.r) && (!mono || S.r[joinTo(S, at(k), has)].l <= t.l)) out.push({p:at(k), does:"extend", l:t.l, pts:riverPts(c, t.l, false)});
   }
   return out }
 // How much land a river move would open: the empty land it newly brings within reach.
@@ -225,7 +231,7 @@ function why(S, i, p) { const c = S.cfg, t = S.q[i]; if (!t) return "No tiles le
       return `That's level ${hl}. Only a level ${hl} tile can go on it.` }
     return no || "Too far from the river." }
   if (hl) return "A river tile needs empty land.";
-  if (rv) { if (rv.l >= riverTop(c)) return "The river is at its widest here."; if (rv.l !== t.l) return `Only a level ${rv.l} river tile widens this.`;
+  if (rv) { if (rv.l >= riverTop(c)) return riverTop(c) > widthTop(c) ? `River level ${rv.l} is the top level.` : "The river is at its widest here."; if (rv.l !== t.l) return `Only a level ${rv.l} river tile ${rv.l < widthTop(c) ? "widens this" : "levels this up"}.`;
     return c.riverMonotone ? "The river after this tile is lower. Widen downstream first." : "" }
   if (!grid(c).nb[k].some(q => q in S.r)) return "A river tile has to touch the river.";
   const up = S.r[joinTo(S, p)]; return c.riverMonotone && up && up.l > t.l ? `A river tile can't be lower than the one it flows from (level ${up.l}).` : "" }
@@ -242,7 +248,7 @@ function place(S, i, p) { const o = options(S, i).find(o => o.p[0] === p[0] && o
   else if (o.does === "combine") { S.h[k] = o.l; S.combined++ }
   else if (o.does === "extend") { S.r[k] = {l:t.l, from:joinTo(S, p), n:S.rn++}; S.extended++ }
   else { S.r[k].l = o.l; S.widened++ }
-  if (t.k === "h") { S.score += o.pts; S.top = Math.max(S.top, o.l) }
+  S.score += o.pts; if (t.k === "h") S.top = Math.max(S.top, o.l);   // a river move scores only when riverScore says so (o.pts is 0 otherwise)
   if (t.c) { S.copyPlaced++; S.copyPoints += o.pts }
   earn(S); S.used++; S.moves.push({a:"p", i, x:p[0], y:p[1]});
   const greened = before ? [...reachOf(S)].filter(q => !before.has(q)) : [];
@@ -509,8 +515,9 @@ function draw() { if (!S || !lay.w) return; const T = now(), t = T / 1000;
         if (o.does === "extend") ell(c.x, c.y + 1, 12, 6, "rgba(98,224,200,.55)") } } }
   for (const k in S.h) { const o = iso(...GRID.at[k]); tag(o.x + 25, o.y + 13, String(S.h[k]), S.hb[k] === "g" ? "#7a5a10" : S.hb[k] === "m" ? "#0d6a66" : "#24434a", 14, k in S.lk) } // every habitat carries its level, and a padlock once it is locked
   for (const k in S.lk) if (k in S.r) { const o = iso(...GRID.at[k]); tag(o.x, o.y + 1, S.r[k].l > 1 ? String(S.r[k].l) : "", "#24434a", 14, true) } // a locked river tile gets a padlock of its own
+  for (const k in S.r) if (!(k in S.lk) && S.r[k].l > 1) { const o = iso(...GRID.at[k]); tag(o.x, o.y + 1, String(S.r[k].l), "#1f5f8f", 14) }   // and an unlocked one past level 1 carries its level
   if (lockMode) lockHints();
-  if (!S.over && !lockMode) for (const o of opts) { const c = iso(...o.p); if (o.does === "combine") tag(c.x, c.y - TALL[Math.min(o.l - 1, 7)] - 14, "+" + o.pts, "#7a5a10", 15); else if (o.does === "widen") tag(c.x, c.y - 20, "wider", "#0f7a66", 14); else if (o.does === "plant" && o.l < S.q[0].l) tag(c.x, c.y - 6, "as " + o.l, "#7a5a10", 13) }
+  if (!S.over && !lockMode) for (const o of opts) { const c = iso(...o.p); if (o.does === "combine") tag(c.x, c.y - TALL[Math.min(o.l - 1, 7)] - 14, "+" + o.pts, "#7a5a10", 15); else if (o.does === "widen") tag(c.x, c.y - 20, widenText(o), "#0f7a66", 14); else if (o.does === "plant" && o.l < S.q[0].l) tag(c.x, c.y - 6, "as " + o.l, "#7a5a10", 13) }
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
   for (let i = fx.length - 1; i >= 0; i--) { const f = fx[i], k = (T - f.t0) / 900; if (k >= 1) { fx.splice(i, 1); continue } const o = iso(...f.p), y = o.y - f.up - 26 * (1 - Math.pow(1 - k, 2)); // points float up in pale gold
     ctx.globalAlpha = k < .5 ? 1 : (1 - k) / .5; ctx.font = `800 ${17 * lay.dpr / scale}px ${HAND}`; ctx.lineWidth = 3.5 * lay.dpr / scale; ctx.strokeStyle = "rgba(60,45,10,.6)"; ctx.lineJoin = "round"; ctx.strokeText(f.text, o.x, y); ctx.fillStyle = "#ffe9a8"; ctx.fillText(f.text, o.x, y); ctx.globalAlpha = 1 } }
@@ -520,11 +527,12 @@ function draw() { if (!S || !lay.w) return; const T = now(), t = T / 1000;
 // pale green is empty land the river reaches, off-white is land it doesn't, grey is a mountain. Every river tile and habitat carries
 // its level as a number, and a locked tile carries a padlock. The rules, the pile and the buttons are the same as in the painted look.
 const SK = {sea:"#e9f0f3", bare:"#f4f3ee", reach:"#dff1d6", mtn:"#aeb7bf", mtnInk:"#77828d", edge:"rgba(25,55,65,.28)",
-  river:[null, "#5aaeea", "#2f86d6"], hab:[null, "#a8dc84", "#86cf74", "#5fba61", "#3fa258", "#2a894c", "#1f7040", "#165830", "#134e2a", "#124626", "#103f23", "#0f381f", "#0e321c", "#0d2c19", "#0c2616", "#0b2013"],
+  // a river tile has a level too (Dan, Nov 20): light blue, then deeper blue, then darker with every level like the habitats. Only the first two widen it
+  river:[null, "#5aaeea", "#2f86d6", "#2a76c4", "#2566b0", "#20579c", "#1c4a88", "#183e75", "#153463", "#122c55", "#102549", "#0e1f3d", "#0c1a34", "#0a152b", "#081123", "#060d1c"], hab:[null, "#a8dc84", "#86cf74", "#5fba61", "#3fa258", "#2a894c", "#1f7040", "#165830", "#134e2a", "#124626", "#103f23", "#0f381f", "#0e321c", "#0d2c19", "#0c2616", "#0b2013"],
   // the other two kinds (Dan, Nov 20): grasslands are yellow and marsh is turquoise, each darker with every level like the green ones
   grass:[null, "#ffe866", "#fbd83d", "#f3c51f", "#e2ac14", "#c9920f", "#a97a0e", "#8b640d", "#74530c", "#64470b", "#563d0a", "#4a3409", "#402d08", "#372607", "#2f2106", "#271b05"],
   marsh:[null, "#5fe3d3", "#34cfc0", "#1db8ab", "#12a095", "#0c887f", "#0a716a", "#095c57", "#084c48", "#074241", "#063a39", "#053332", "#042d2c", "#042726", "#032121", "#031c1c"]};
-const tileFill = t => t.k === "r" ? SK.river[Math.min(t.l, 2)] : (t.b === "g" ? SK.grass : t.b === "m" ? SK.marsh : SK.hab)[Math.min(t.l, 15)];
+const tileFill = t => t.k === "r" ? SK.river[Math.min(t.l, 15)] : (t.b === "g" ? SK.grass : t.b === "m" ? SK.marsh : SK.hab)[Math.min(t.l, 15)];
 const numInk = t => t.k === "r" ? "#ffffff" : t.b === "g" ? (t.l >= 6 ? "#ffffff" : "#4a3a05") : t.b === "m" ? (t.l >= 5 ? "#ffffff" : "#0c3b38") : t.l >= 4 ? "#ffffff" : "#173c2a";
 const flatHex = r => [0, 1, 2, 3, 4, 5].map(i => { const a = (60 * i - 90) * Math.PI / 180; return [r * Math.cos(a), r * Math.sin(a)] });
 function padlock(x, y, s, col) { ctx.save(); ctx.translate(x, y); ctx.scale(s, s); ctx.fillStyle = col; ctx.strokeStyle = col; ctx.lineWidth = 2.6; ctx.lineCap = "round";
@@ -533,7 +541,7 @@ function padlock(x, y, s, col) { ctx.save(); ctx.translate(x, y); ctx.scale(s, s
 function simpleIcon(t, px) { const c = document.createElement("canvas"), d = Math.min(devicePixelRatio || 1, 3); c.width = c.height = Math.round(px * d); c.style.width = c.style.height = px + "px";
   const keep = ctx; ctx = c.getContext("2d"); const u = px * d / 100; ctx.setTransform(u, 0, 0, u, px * d / 2, px * d / 2);
   rpath(flatHex(47), 10); ctx.fillStyle = tileFill(t); ctx.fill(); ink(SK.edge, 4);
-  if (t.k === "h" && t.l >= 8) { rpath(flatHex(38), 9); ink("#e0a31c", 6); if (t.l >= 12) { rpath(flatHex(27), 8); ink("#f3d27a", 4) } }
+  if (t.l >= 8) { rpath(flatHex(38), 9); ink("#e0a31c", 6); if (t.l >= 12) { rpath(flatHex(27), 8); ink("#f3d27a", 4) } }
   ctx.fillStyle = numInk(t); ctx.font = `800 ${t.l > 9 ? 44 : 58}px ${HAND}`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(String(t.l), 0, 4);
   ctx = keep; return c }
 function drawSimple(T, t) { ctx = ctx0; ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = SK.sea; ctx.fillRect(0, 0, cv.width, cv.height);
@@ -543,7 +551,7 @@ function drawSimple(T, t) { ctx = ctx0; ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.
     const fill = code === "B" ? SK.mtn : tile ? tileFill(tile) : reach.has(k) ? SK.reach : SK.bare;
     const a = pops[k] ? (T - pops[k]) / 280 : 1, s = a < 1 && !reduce ? .78 + .22 * easeBack(Math.max(0, a)) : 1; if (a >= 1) delete pops[k]; // a quick pop when a tile lands
     ctx.save(); ctx.translate(o.x, o.y); ctx.scale(s, s); rpath(hex, 7); ctx.fillStyle = fill; ctx.fill(); ink(SK.edge, 1.6);
-    if (hl >= 8) { rpath(flatHex(R - 7), 7); ink("#e0a31c", 3.2); if (hl >= 12) { rpath(flatHex(R - 13), 7); ink("#f3d27a", 2.4) } }   // levels 8 and up have a gold rim, 12 and up a second one
+    if (tile && tile.l >= 8) { rpath(flatHex(R - 7), 7); ink("#e0a31c", 3.2); if (tile.l >= 12) { rpath(flatHex(R - 13), 7); ink("#f3d27a", 2.4) } }   // levels 8 and up have a gold rim, 12 and up a second one
     if (code === "B") { ctx.beginPath(); ctx.moveTo(-17, 13); ctx.lineTo(0, -17); ctx.lineTo(17, 13); ctx.closePath(); ctx.fillStyle = SK.mtnInk; ctx.fill() }
     if (code === "T") { ctx.beginPath(); ctx.arc(0, 0, R - 9, 0, TAU); ink("rgba(255,255,255,.85)", 2.4) }   // the source has a white ring inside its tile
     if (tile) { ctx.fillStyle = numInk(tile); ctx.font = `800 ${R * (tile.l > 9 ? .78 : .98)}px ${HAND}`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(String(tile.l), 0, 3);
@@ -555,7 +563,7 @@ function drawSimple(T, t) { ctx = ctx0; ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.
     if (o.does === "plant") { rpath(hexPts(o.p, R - 5), 7); ink(`rgba(60,150,90,${.55 + .35 * pu})`, 2.4); if (o.l < S.q[0].l) tag(c.x, c.y, "as " + o.l, "#7a5a10", 13) }   // "downgrade": a tile above the bare ground limit lands as level 1
     else if (o.does === "extend") { rpath(hexPts(o.p, R - 5), 7); ctx.fillStyle = "rgba(90,174,234,.32)"; ctx.fill(); ctx.setLineDash([7, 6]); ink("#2f86d6", 3); ctx.setLineDash([]) }
     else if (o.does === "combine") { ring("#e0a31c"); tag(c.x, c.y - R * .62, "+" + o.pts, "#7a5a10", 15) }
-    else { ring("#1f9c86"); tag(c.x, c.y - R * .62, "wider", "#0f7a66", 14) } }
+    else { ring("#1f9c86"); tag(c.x, c.y - R * .62, widenText(o), "#0f7a66", 14) } }
   if (lockMode) lockHints();
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
   for (let i = fx.length - 1; i >= 0; i--) { const f = fx[i], k = (T - f.t0) / 900; if (k >= 1) { fx.splice(i, 1); continue } const o = iso(...f.p), y = o.y - R * .3 - 34 * (1 - Math.pow(1 - k, 2)); // points float up
@@ -580,6 +588,8 @@ function tileEl(t, px, cls) { const el = document.createElement("div"); el.class
   if (t.k === "h" || t.l > 1) { const b = document.createElement("i"); b.className = "fgl"; b.textContent = t.l; el.appendChild(b) } return el }
 // A habitat above the bare ground limit that "downgrade" plants as level 1 (the hand's caption and the outlines on the island say so).
 const lowers = t => t.k === "h" && plantLevel(CFG, t.l) > 0 && plantLevel(CFG, t.l) < t.l;
+// What the ring on a river tile it can raise says (Dan, Nov 20: rivers level up): "wider" while the raise still widens the river, and its points (riverScore) or the new level after that.
+const widenText = o => o.l <= CFG.riverReach.length ? "wider" + (o.pts ? " +" + o.pts : "") : o.pts ? "+" + o.pts : "level " + o.l;
 function drawPile() { const q = $("queue"), small = innerWidth < 380; q.textContent = "";
   if (S.q[0]) { q.appendChild(tileEl(S.q[0], small ? 54 : 60, "now")); for (const t of S.q.slice(1, 1 + CFG.queueShown)) q.appendChild(tileEl(t, small ? 32 : 36, "")) }
   else { const e = document.createElement("span"); e.className = "fgempty"; e.textContent = S.over ? "Run over" : "Pile empty"; q.appendChild(e) }
@@ -656,7 +666,11 @@ fillLadder();
   hb.textContent = CFG.bareGroundMode === "downgrade" ? `Planted on bare ground, a tile above level ${n} lands as level 1.` : `Only level ${n}${n > 1 ? " or lower" : ""} can be planted on bare ground. A higher tile has to combine onto a habitat of its own level, or be discarded.`;
   tx("howLock", (CFG.lockEvery > 0 ? `Every ${CFG.lockEvery} tiles you place earns a lock. ` : "There is no limit on locks. ") + "Lock a tile to copy its neighbours, at its level or below, to the back of your pile. A locked tile can't grow any more.");
   const hv = $("howBiome"); hv.hidden = !(CFG.grasslandShare > 0 || CFG.marshShare > 0);
-  hv.textContent = "Yellow tiles are Grasslands and turquoise tiles are Marsh. " + (CFG.biomeMatch ? "They grow the same way as the green ones, but a tile only combines with a habitat of its own kind and level." : "Any kind combines with any kind of the same level.") }
+  hv.textContent = "Yellow tiles are Grasslands and turquoise tiles are Marsh. " + (CFG.biomeMatch ? "They grow the same way as the green ones, but a tile only combines with a habitat of its own kind and level." : "Any kind combines with any kind of the same level.");
+  const hr = $("howRiver"); hr.hidden = CFG.riverMaxLevel <= CFG.riverReach.length && CFG.riverScore === "none";
+  hr.textContent = CFG.riverMaxLevel > CFG.riverReach.length
+    ? `A river tile put on a river tile of its own level raises it a level${CFG.riverScore === "none" ? "" : " and scores the points for the new level"}. Only the first ${CFG.riverReach.length} levels widen the river and reach more land. After that the level just counts.`
+    : `A river tile put on a river tile of its own level widens it${CFG.riverScore === "none" ? "" : " and scores points"}.` }
 // Switch the look and remember it. The camera starts again on the source, since the two looks have different bounds.
 function setSkin(v) { if (!LOOKS.includes(v) || v === skin) return; skin = v; mem.set("look", v); $("app").classList.toggle("simple", flat());
   B = bounds(); resort(); landKey = ""; lastSize = ""; view.z = null; fillLadder(); resize(); sync() }

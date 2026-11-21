@@ -115,7 +115,7 @@ function nrpaSearch(until, level, N) {
     if (S.q.length) { const t = S.q[0], tag = t.k + (t.b || "") + t.l, copy = !!t.c, nHab = Object.keys(S.h).length;
       for (const o of R.options(S, 0)) { let bias = 0;
         if (t.k === "h") { if (o.does === "combine") bias = 2 * Math.log(1 + o.pts); else { if (!nbrs(o.p).some(q => has(S, q))) continue; bias = 2 * Math.log(1 + o.pts) - 1 + (nHab < 12 ? 1 : 0) } }
-        else bias = o.does === "widen" ? 1.5 : copy ? -1 : .5;
+        else bias = (o.does === "widen" ? 1.5 : copy ? -1 : .5) + 2 * Math.log(1 + o.pts);   // a river move that scores (river levels) is liked like a habitat move
         mv.push({code: tag + ":" + o.does + ":" + K(o.p), bias, o}) }
       mv.push({code: tag + ":d", bias: t.k === "r" ? (copy ? 1.5 : -1) : -3, d: true})
     } else { let any = false;

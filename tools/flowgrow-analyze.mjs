@@ -25,7 +25,7 @@ let S; try { S = R.replay(CFG, run.seed, run.moves) } catch (e) { die(`The run d
 
 console.log(`seed ${run.seed} · replayed score ${S.score} (saved ${run.score}) · ${S.moves.length} moves · locks ${S.lockUsed} · top level ${S.top} · over ${S.over}`);
 const by = {}, lv = {}, lockLv = {}, lockCopies = {};
-for (const e of S.log) { if (e.did === "plant" || e.did === "combine") { const k = e.did + (e.t.c ? " of copies" : " of dealt tiles"); by[k] = (by[k] || 0) + e.pts; const key = e.did + " to level " + e.l; lv[key] = (lv[key] || 0) + 1 }
+for (const e of S.log) { if (e.did === "plant" || e.did === "combine" || (e.did === "widen" && e.pts)) { const k = e.did + (e.t.c ? " of copies" : " of dealt tiles"); by[k] = (by[k] || 0) + e.pts; const key = e.did + " to level " + e.l; lv[key] = (lv[key] || 0) + 1 }
   if (e.did === "lock") { const key = (e.t.k === "r" ? "river " : "habitat ") + "L" + e.t.l; lockLv[key] = (lockLv[key] || 0) + 1; lockCopies[key] = (lockCopies[key] || 0) + e.copies.length } }
 console.log("points from:", Object.entries(by).map(([k, v]) => `${k} ${v}`).join(" · "));
 const low = S.log.filter(e => e.did === "plant" && e.l < e.t.l);   // bare ground mode "downgrade": tiles planted as level 1 (they are inside the "plant" points above)
