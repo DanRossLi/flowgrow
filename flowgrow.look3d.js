@@ -56,6 +56,10 @@ Batch.prototype.add = function (tp, m, col, amount) {
   for (let i = base; i < p.length; i += 3) { cc.push(col.r, col.g, col.b); ss.push(am ? am * clamp((p[i + 1] - this.y0) / .55, 0, 1) : 0) } };
 // one vertex given outright (the ground's top and the soil walls have their own normals)
 Batch.prototype.vert = function (x, y, z, nx, ny, nz, c) { this.p.push(x, y, z); this.n.push(nx, ny, nz); this.c.push(c[0], c[1], c[2]); this.s.push(0) };
+// copy another batch into this one, moved by (ox, oy, oz): a tile's plants are built once around their own origin and copied into each tile that has the same look
+Batch.prototype.append = function (o, ox, oy, oz) { const op = o.p, p = this.p, n = this.n, c = this.c, s = this.s;
+  for (let i = 0; i < op.length; i += 3) p.push(op[i] + ox, op[i + 1] + oy, op[i + 2] + oz);
+  for (let i = 0; i < o.n.length; i++) n.push(o.n[i]); for (let i = 0; i < o.c.length; i++) c.push(o.c[i]); for (let i = 0; i < o.s.length; i++) s.push(o.s[i]) };
 Batch.prototype.geometry = function () { const g = new T.BufferGeometry();
   g.setAttribute("position", new T.BufferAttribute(new Float32Array(this.p), 3)); g.setAttribute("normal", new T.BufferAttribute(new Float32Array(this.n), 3));
   g.setAttribute("color", new T.BufferAttribute(new Float32Array(this.c), 3)); g.setAttribute("aSway", new T.BufferAttribute(new Float32Array(this.s), 1)); g.computeBoundingSphere(); return g };
@@ -91,7 +95,7 @@ function mount(B) {
   const cv3 = document.createElement("canvas"); cv3.id = "cv3d"; cv3.setAttribute("aria-label", "The island, drawn in 3D"); board.insertBefore(cv3, B.cv.nextSibling);
   let renderer; try { renderer = new T.WebGLRenderer({canvas:cv3, antialias:true, alpha:false, powerPreference:"high-performance"}) } catch (_) { cv3.remove(); return null }
   const coarse = !!(matchMedia && matchMedia("(pointer:coarse)").matches);
-  let quality = pickQuality(), alive = true, w = 0, h = 0, topH = 0, dtLast = 0;
+  let quality = pickQuality(), alive = true, w = 0, h = 0, topH = 0, dtLast = 0, detail = 1;   // detail: how much of the plants and grass is drawn (1 is all of it; step 5 lowers it if a late game would pass the triangle budget)
   const reduced = () => !!B.reduce;
   renderer.outputEncoding = T.sRGBEncoding; renderer.toneMapping = T.ACESFilmicToneMapping; renderer.toneMappingExposure = .98; renderer.shadowMap.type = T.PCFSoftShadowMap;
   const scene = new T.Scene(), camera = new T.PerspectiveCamera(C3.fov, 1, 1, 1400), uTime = {value:0};
@@ -108,8 +112,9 @@ function mount(B) {
   // ---------- what each cell looks like now, from the game's state; a signature finds the cells that changed
   let S = B.state(), reach = new Set(), elev = null;
   function describe(cl) { const k = cl.k, rv = S.r[k], hl = S.h[k] || 0, hb = S.hb[k] || "";
-    return {code:cl.code, river:rv ? rv.l : 0, from:rv ? rv.from : null, level:hl, kind:hl ? (hb || "g") : "", up:hl ? (B.upgradeOf(cfg, {k:"h", b:hb || undefined, l:hl, f:S.hf[k]}) || "") : "", locked:k in S.lk, reach:reach.has(k) ? 1 : 0, elev:elev ? elev[k] : 0} }
-  const sigOf = d => d.code + "|" + d.river + "|" + d.level + "|" + d.kind + "|" + d.up + "|" + (d.locked ? 1 : 0) + "|" + d.reach + "|" + d.elev;
+    return {code:cl.code, river:rv ? rv.l : 0, from:rv ? rv.from : null, level:hl, kind:hl ? (hb || "g") : "", up:hl ? (B.upgradeOf(cfg, {k:"h", b:hb || undefined, l:hl, f:S.hf[k]}) || "") : "", locked:k in S.lk, reach:reach.has(k) ? 1 : 0, elev:elev ? elev[k] : 0,
+      fall:rv && rv.from != null && elev && elev[rv.from] > elev[k] ? 1 : 0} }   // fall: a river tile that steps down from the one it flows from (the elevation rule)
+  const sigOf = d => d.code + "|" + d.river + "|" + d.level + "|" + d.kind + "|" + d.up + "|" + (d.locked ? 1 : 0) + "|" + d.reach + "|" + d.elev + "|" + d.fall;
 
   // ---------- the ground: one continuous surface. Each cell has a height and a colour; surf(x, z) blends them with Gaussian weights across the nearby cell centres (height variance .2, colour .4), so there
   // is no hard border between tiles. Only a cell and its six neighbours can change a cell's ground, so only those are rebuilt when a tile changes.
@@ -180,10 +185,81 @@ function mount(B) {
         for (let k = 0; k < per; k++) { const a = hsh(k, gx + gz) * 6.28, hh = (.08 + hsh(gz, k + gx) * .11) * sc, lean = .2 + hsh(k * 3, gz) * .5; put(b, GT.blade, X + Math.cos(a) * .015, gh, Z + Math.sin(a) * .015, .016, hh, .01, shade(base, .9 + r() * .2), a, lean, 0) }
         const dn = Math.sin(X * .9 + 1.3) * Math.sin(Z * 1.1 - .4); if (dn > .35 && hsh(gx + 3.1, gz + 9.7) < .35) { const hh2 = .06 + hsh(gx, gz) * .08;
           put(b, GT.blade, X, gh, Z, .006, hh2, .006, STEM, 0, 0, 0); put(b, GT.ico0, X, gh + hh2, Z, .016, .012, .016, DRIFT[Math.floor((Math.sin(X * .7 + Z * .5) * .5 + .5) * 3.99)], hsh(gx, gz) * 6) } } }
-    const art = G.Flowgrow3D && G.Flowgrow3D.art; if (art && art.content) art.content(b, cl, d, {quality, put, GT, rng, lin, Batch, surf, heightAt, hsh, pick, riverD2, cc, ground:CH[cl.i]});   // step 3: what grows on the tile
-    return b }
-  function refreshTile(cl) { if (cl.mesh) { islandGroup.remove(cl.mesh); cl.mesh.geometry.dispose(); cl.mesh = null }
-    const g = buildTile(cl, cl.d).geometry(), m = new T.Mesh(g, tileMat); m.castShadow = true; m.receiveShadow = true; m.userData.cell = cl; islandGroup.add(m); cl.mesh = m }
+    // what grows on the tile (flowgrow.look3d.art.js): built once for each look of a tile and copied in, so a tile that looks like another one costs only the copy
+    const art = G.Flowgrow3D && G.Flowgrow3D.art, pb = art && art.content ? art.content(cl, d, {quality, detail}) : null; cl.info = pb ? pb.info : null;
+    return {b, pb} }
+  // a tile's mesh: its ground and its plants merged into one. A tile that has just grown keeps its plants as a mesh of their own for a moment (they spring up out of the ground, see popTick) and is merged
+  // when the spring is over, so a tile is one draw call except while it is being celebrated.
+  const pops = [], POPLEN = .9;
+  function dropPop(cl) { const p = cl.pop; if (!p) return; islandGroup.remove(p.mesh); p.mesh.geometry.dispose(); const i = pops.indexOf(p); if (i >= 0) pops.splice(i, 1); cl.pop = null }
+  function refreshTile(cl, anim) { if (cl.mesh) { islandGroup.remove(cl.mesh); cl.mesh.geometry.dispose(); cl.mesh = null }
+    if (anim || !cl.pop) dropPop(cl);   // a tile that is still springing up keeps its spring when only its ground is rebuilt (because a neighbour changed)
+    const t = buildTile(cl, cl.d), gy = CH[cl.i];
+    if (anim && t.pb && t.pb.p.length && !reduced()) { const pm = new T.Mesh(t.pb.geometry(), tileMat); pm.position.set(cl.x, gy, cl.z); pm.scale.set(.01, .01, .01); pm.castShadow = true; pm.receiveShadow = true; islandGroup.add(pm);
+      const rec = {cl, mesh:pm, t0:uTime.value, gy, drop:anim > 1 ? .4 : 0}; cl.pop = rec; pops.push(rec) }
+    else if (t.pb && !cl.pop) t.b.append(t.pb, cl.x, gy, cl.z);
+    const m = new T.Mesh(t.b.geometry(), tileMat); m.castShadow = true; m.receiveShadow = true; m.userData.cell = cl; islandGroup.add(m); cl.mesh = m }
+  // the spring: the plants grow out of the ground with an elastic overshoot (a plant dropped on bare land also falls in from a little above)
+  const elastic = a => a <= 0 ? 0 : a >= 1 ? 1 : Math.pow(2, -10 * a) * Math.sin((a * 10 - .75) * 2.0944) + 1;
+  function popTick() { for (let i = pops.length - 1; i >= 0; i--) { const p = pops[i], a = (uTime.value - p.t0) / POPLEN;
+      if (a >= 1) { const cl = p.cl; dropPop(cl); refreshTile(cl, 0); continue }
+      const e = elastic(a), sy = Math.max(.01, e), sx = Math.max(.01, .55 + .45 * Math.min(1, e) + .18 * Math.max(0, e - 1)); p.mesh.scale.set(sx, sy, sx); p.mesh.position.y = p.gy + p.drop * (1 - sstep(0, .38, a)) } }
+
+  // sparks (one points mesh, one draw call): a few soft lights that fly up from a tile that has grown and fall back. And a ring that spreads over the ground from it.
+  const MAXP = 200, pPos = new Float32Array(MAXP * 3), pCol = new Float32Array(MAXP * 3), pSz = new Float32Array(MAXP), pAl = new Float32Array(MAXP), sparks = [], pU = {scale:{value:400}};
+  const pGeo = new T.BufferGeometry(); for (const [nm, ar, n] of [["position", pPos, 3], ["aCol", pCol, 3], ["aSize", pSz, 1], ["aAlpha", pAl, 1]]) pGeo.setAttribute(nm, new T.BufferAttribute(ar, n).setUsage(T.DynamicDrawUsage));
+  const pMesh = new T.Points(pGeo, new T.ShaderMaterial({uniforms:pU, transparent:true, depthWrite:false, blending:T.AdditiveBlending,
+    vertexShader:"attribute vec3 aCol;attribute float aSize;attribute float aAlpha;uniform float scale;varying vec3 vC;varying float vA;void main(){vC=aCol;vA=aAlpha;vec4 mv=modelViewMatrix*vec4(position,1.);gl_Position=projectionMatrix*mv;gl_PointSize=aSize*scale/-mv.z;}",
+    fragmentShader:"varying vec3 vC;varying float vA;void main(){float r=length(gl_PointCoord-.5)*2.;float a=smoothstep(1.,.2,r)*vA;if(a<.01)discard;gl_FragColor=vec4(vC*a,a);}"}));
+  pMesh.frustumCulled = false; pMesh.renderOrder = 6; pGeo.setDrawRange(0, 0); scene.add(pMesh);
+  const BURST = {g:["#a6e47f", "#fff4b0"], p:["#f2d45a", "#fff3b0"], m:["#7be0c2", "#c8f6ff"], t:["#5fd08f", "#d8ffc8"], r:["#8fe6ff", "#ffffff"], gold:["#f2c14e", "#fff3c0"], frost:["#ffffff", "#cfe8ff"]};
+  function burst(cl, key, n) { const pal = BURST[key] || BURST.g, rr = Math.random; for (let i = 0; i < n && sparks.length < MAXP; i++) { const a = rr() * 6.28, sp = .25 + rr() * .7, c = new T.Color(pal[rr() < .5 ? 0 : 1]);
+      sparks.push({x:cl.x + Math.cos(a) * .2, y:CH[cl.i] + .25 + rr() * .2, z:cl.z + Math.sin(a) * .2, vx:Math.cos(a) * sp, vy:1.1 + rr() * 1.5, vz:Math.sin(a) * sp, age:0, life:.7 + rr() * .7, size:.045 + rr() * .06, r:c.r, g:c.g, b:c.b}) } }
+  function sparkTick(dt) { let n = 0; for (let i = sparks.length - 1; i >= 0; i--) { const s = sparks[i]; s.age += dt; if (s.age >= s.life) { sparks.splice(i, 1); continue } s.vy -= 3 * dt; s.x += s.vx * dt; s.y += s.vy * dt; s.z += s.vz * dt }
+    for (const s of sparks) { pPos[n * 3] = s.x; pPos[n * 3 + 1] = s.y; pPos[n * 3 + 2] = s.z; pCol[n * 3] = s.r; pCol[n * 3 + 1] = s.g; pCol[n * 3 + 2] = s.b; pSz[n] = s.size; pAl[n] = 1 - s.age / s.life; n++ }
+    if (n || pGeo.drawRange.count) { pGeo.setDrawRange(0, n); for (const k in pGeo.attributes) pGeo.attributes[k].needsUpdate = true } }
+  const pulseGeo = new T.RingGeometry(.78, .9, 6, 1, Math.PI / 6).rotateX(-Math.PI / 2), pulses = [];
+  for (let i = 0; i < 6; i++) { const m = new T.Mesh(pulseGeo, new T.MeshBasicMaterial({transparent:true, depthWrite:false, side:T.DoubleSide, opacity:0, polygonOffset:true, polygonOffsetFactor:-4, polygonOffsetUnits:-4})); m.visible = false; m.renderOrder = 5; scene.add(m); pulses.push({m, t0:0, on:false}) }
+  function pulse(cl, hex) { const p = pulses.find(q => !q.on) || pulses[0]; p.on = true; p.t0 = uTime.value; p.m.material.color.copy(lin(hex)); p.m.position.set(cl.x, CH[cl.i] + .14, cl.z); p.m.visible = true }
+  function pulseTick() { for (const p of pulses) { if (!p.on) continue; const a = (uTime.value - p.t0) / .85; if (a >= 1) { p.on = false; p.m.visible = false; continue } const s = .62 + .75 * a; p.m.scale.set(s, 1, s); p.m.material.opacity = Math.pow(1 - a, 1.4) * .95 } }
+  // what a change looks like: a plant, a level or a river tile that grows springs up with sparks and a ring in its own colours; a lock is a pale ring and a few white sparks
+  const RINGC = {g:"#48c04f", p:"#d9b83a", m:"#38b59a", t:"#1f8a52", r:"#52d3c6", gold:"#f2c14e", frost:"#cfe8ff"};
+  function celebrate(cl, what) { if (reduced()) return; const d = cl.d, k = what === "frost" ? "frost" : d.river ? "r" : d.level >= 8 ? "gold" : d.kind || "g"; burst(cl, k, k === "frost" ? 10 : d.level >= 8 ? 26 : 16); pulse(cl, RINGC[k] || RINGC.g) }
+
+  // ---------- the day's state, read by everything that depends on the time of day (step 4 drives it from the clock: night 0 is full day, 1 is deep night). Until then it is day.
+  const dayState = {t:.2, night:0};
+
+  // ---------- the animals. The art module makes each animal's shape (a small merged template), says who lives on what and how each one moves; here every animal on the island is posed by the CPU each frame into
+  // ONE dynamic mesh, so any number of them is one draw call. By day each tile's day animal is out and by night its night animal (the swap follows dayState.night). None on the low tier. Cosmetic only.
+  const zooMat = new T.MeshStandardMaterial({vertexColors:true, roughness:.82, metalness:0});
+  let zoo = [], zooCap = 0, zPos = null, zNor = null, zCol = null, zGeo = null, zMesh = null, zooNight = -1;
+  function buildZoo() { const art = G.Flowgrow3D && G.Flowgrow3D.art, list = []; let nv = 0;
+    if (art && art.animal && quality !== "low") for (const cl of cells) { const d = cl.d; if (!d) continue; const pr = art.pairFor(d); if (!pr) continue;
+      for (let s = 0; s < 2; s++) { let name = pr[s]; const info = cl.info || {}; if ((name === "owl" || name === "woodpecker") && !info.perch) name = s ? "hedgehog" : "squirrel"; if (name === "duck" && !info.pond) name = "frog";
+        const tp = art.animal(name, quality === "high" ? 1 : 0); if (!tp) continue; const rr = rng(cl.i * 53 + s * 7 + 3);
+        list.push({cl, name, tp, mv:art.MOVE[name] || {r:.3, s:.1}, night:s === 1, ph:rr() * 6.28, dir:rr() < .5 ? -1 : 1, x0:cl.x, z0:cl.z, info}); nv += tp.p.length / 3 } }
+    if (nv > zooCap) { zooCap = Math.ceil(nv * 1.2); zPos = new Float32Array(zooCap * 3); zNor = new Float32Array(zooCap * 3); zCol = new Float32Array(zooCap * 3); if (zMesh) { scene.remove(zMesh); zGeo.dispose() }
+      zGeo = new T.BufferGeometry(); zGeo.setAttribute("position", new T.BufferAttribute(zPos, 3).setUsage(T.DynamicDrawUsage)); zGeo.setAttribute("normal", new T.BufferAttribute(zNor, 3).setUsage(T.DynamicDrawUsage)); zGeo.setAttribute("color", new T.BufferAttribute(zCol, 3).setUsage(T.DynamicDrawUsage));
+      zMesh = new T.Mesh(zGeo, zooMat); zMesh.frustumCulled = false; zMesh.receiveShadow = true; scene.add(zMesh) }
+    zoo = list; zooNight = -1; if (zMesh) { zMesh.visible = list.length > 0; if (!list.length) zGeo.setDrawRange(0, 0) } }
+  function poseZoo(t) { if (!zMesh || !zoo.length) return; const night = dayState.night, still = reduced(); if (still && night === zooNight) return; zooNight = night; if (still) t = 0;
+    let o = 0; for (const a of zoo) { const vis = a.night ? sstep(.3, .7, night) : 1 - sstep(.2, .55, night); if (vis < .02) continue;
+      const mv = a.mv, info = a.info, gy = CH[a.cl.i], th0 = a.ph; let px, py, pz, hd, fl = 0;
+      if (a.name === "owl" && info.perch) { const pc = info.perch; px = a.x0 + pc.x; pz = a.z0 + pc.z; py = gy + pc.top + .01; hd = th0 + Math.sin(t * .35 + th0) * 1.1 }
+      else if (a.name === "woodpecker" && info.perch) { const pc = info.perch, ca = Math.cos(th0), sa = Math.sin(th0), rr = pc.tr + .02; px = a.x0 + pc.x + ca * rr; pz = a.z0 + pc.z + sa * rr; py = gy + pc.mid + Math.sin(t * 5 + th0) * .004; hd = Math.atan2(-ca, -sa) }
+      else if (a.name === "duck" && info.pond) { const pd = info.pond, ra = Math.min(pd.rx, pd.rz) * .55, th = th0 + t * .13 * a.dir, x = Math.cos(th) * ra, z = Math.sin(th) * ra * .8; px = a.x0 + pd.x + x; pz = a.z0 + pd.z + z; py = gy + pd.y + .004 + Math.sin(t * 1.6 + th0) * .004; hd = Math.atan2(-Math.sin(th) * a.dir, Math.cos(th) * .8 * a.dir) }
+      else if (a.name === "frog" && info.pond) { const pd = info.pond, ra = Math.max(pd.rx, pd.rz) * 1.12, th = th0 + Math.sin(t * .17 + th0) * .5, cyc = (t * .7 + th0) % 4.5, jump = cyc < .5 ? Math.sin(cyc / .5 * Math.PI) * .07 : 0; px = a.x0 + pd.x + Math.cos(th) * ra; pz = a.z0 + pd.z + Math.sin(th) * ra; py = gy + .006 + jump; hd = Math.atan2(-Math.cos(th), -Math.sin(th)) }
+      else { const r = mv.r, om = mv.s / Math.max(r, .15) * a.dir, th = th0 + t * om + (mv.hop ? Math.sin(t * mv.hf * .2 + th0) * .5 : 0), x = Math.cos(th) * r, z = Math.sin(th) * r * .85 + Math.sin(th * 2.3 + th0) * .05 * r;
+        px = a.x0 + x; pz = a.z0 + z; const th2 = th + .04 * a.dir, dx = Math.cos(th2) * r - x, dz = Math.sin(th2) * r * .85 + Math.sin(th2 * 2.3 + th0) * .05 * r - z; hd = Math.atan2(dx, dz); py = gy;
+        if (mv.fly) { py += mv.fly + Math.sin(t * 1.3 + th0) * .05; fl = Math.sin(t * mv.ff + th0) * 1.1 } else if (mv.hop) py += Math.abs(Math.sin(t * mv.hf + th0)) * mv.hop }
+      const tp = a.tp, sc = tp.scale * vis, c = Math.cos(hd), s = Math.sin(hd), pa = tp.p, na = tp.n, wg = tp.wing, nv = pa.length / 3;
+      zCol.set(tp.c, o * 3);
+      for (let i = 0, j = o * 3; i < nv; i++, j += 3) { const x = pa[i * 3], z = pa[i * 3 + 2]; let y = pa[i * 3 + 1]; if (wg && wg[i]) y += Math.abs(x) * fl;
+        zPos[j] = (x * c + z * s) * sc + px; zPos[j + 1] = y * sc + py; zPos[j + 2] = (-x * s + z * c) * sc + pz;
+        const nx = na[i * 3], nz = na[i * 3 + 2]; zNor[j] = nx * c + nz * s; zNor[j + 1] = na[i * 3 + 1]; zNor[j + 2] = -nx * s + nz * c }
+      o += nv }
+    zGeo.setDrawRange(0, o); const at = zGeo.attributes; at.position.needsUpdate = at.normal.needsUpdate = at.color.needsUpdate = true; zooVerts = o }
+  let zooVerts = 0;
 
   // ---------- the sea: a plane with a hex distance field of the island's outline in a texture (the island never moves), foam along the edge, deeper colour further out. The sky behind it.
   const sdfM = 7, sdfX0 = minX - SQ / 2 - sdfM, sdfZ0 = minZ - 1 - sdfM, sdfW = maxX - minX + SQ + 2 * sdfM, sdfH = maxZ - minZ + 2 + 2 * sdfM, sdfR = 5, sdfNx = Math.ceil(sdfW * sdfR), sdfNz = Math.ceil(sdfH * sdfR), sdfMax = 7;
@@ -294,10 +370,10 @@ function mount(B) {
     e.seen = labFrame; return e }
   function placeLabel(e, x, y, z, o) { pv.set(x, y, z).project(camera); if (pv.z > 1 || pv.z < -1) { e.el.style.display = "none"; return } const px = (pv.x * .5 + .5) * w, py = (-pv.y * .5 + .5) * h; if (e.el.style.display === "none") e.el.style.display = "";
     const tx = px.toFixed(1), ty = py.toFixed(1); if (e.x !== tx || e.y !== ty || (o != null && e.o !== o)) { e.x = tx; e.y = ty; e.o = o; e.el.style.transform = "translate3d(" + (px - e.el.offsetWidth / 2).toFixed(1) + "px," + (py - 11).toFixed(1) + "px,0)"; if (o != null) e.el.style.opacity = o } }
-  const pillY = d => d.level ? .35 + .06 * Math.min(d.level, 10) : .3;   // the height of a level pill above the ground (step 3 sets it from the plants)
+  const pillY = d => { const art = G.Flowgrow3D && G.Flowgrow3D.art; return art && art.pillH ? art.pillH(d) : .3 };   // the height of a level pill above the ground: above the tile's plants (the art says how tall they are)
   function updateLabels(T0) { labFrame++;
     for (const cl of cells) { const d = cl.d; if (!d || d.code === "B") continue; const gnd = CH[cl.i];
-      if (d.level) { const cls = d.kind === "g" ? "" : d.kind; const e = label("p" + cl.k, String(d.level), cls, d.locked ? LOCK : ""); placeLabel(e, cl.x + .3, gnd + pillY(d), cl.z + .2) }
+      if (d.level) { const cls = d.kind === "g" ? "" : d.kind; const e = label("p" + cl.k, String(d.level), cls, d.locked ? LOCK : ""); placeLabel(e, cl.x + .34, gnd + pillY(d), cl.z + .5) }   // a level pill sits at the foot of its tile, to the right and in front, so it stays with the tile whatever grows on it
       else if (d.river > 1) { const e = label("p" + cl.k, String(d.river), "r", d.locked ? LOCK : ""); placeLabel(e, cl.x, gnd + .35, cl.z) }
       else if (d.river && d.locked) { const e = label("p" + cl.k, "", "r", LOCK); placeLabel(e, cl.x, gnd + .35, cl.z) } }
     for (const t of ringTags) { const e = label(t.id, t.text, t.cls, ""); placeLabel(e, t.cell.x, CH[t.cell.i] + (t.dy || .5) + .5, t.cell.z) }
@@ -360,36 +436,42 @@ function mount(B) {
   function setHover(c) { if (!c) { hoverMesh.visible = false; return } const L = [{x:c.x, z:c.z, kind:"pick"}]; hoverMesh.geometry.dispose(); hoverMesh.geometry = ringGeom(L); hoverMesh.visible = true }
 
   // ---------- the game's state, into the scene: find the cells that changed (and their neighbours, for the ground), rebuild only those; the river and the rings are cheap and rebuilt when they change
-  let riverSig = null, lastSeed = null;
+  let riverSig = null, lastSeed = null, firstSync = true;
   function syncState() { S = B.state(); const seedChanged = lastSeed !== S.seed; lastSeed = S.seed; reach = rules.reachOf(S); elev = cfg.elevation ? rules.elevOf(cfg, S.seed) : null;
-    const dirty = new Set(), changed = [];
-    for (const cl of cells) { const d = describe(cl), sg = sigOf(d); cl.d = d; if (sg !== cl.sig || seedChanged) { cl.sig = sg; changed.push(cl) } groundOf(cl, d) }
+    const dirty = new Set(), changed = [], born = new Map(), frozen = [], animate = !firstSync && !seedChanged; firstSync = false;
+    for (const cl of cells) { const old = cl.d, d = describe(cl), sg = sigOf(d); cl.d = d;
+      if (sg !== cl.sig || seedChanged) { cl.sig = sg; changed.push(cl);   // a tile that grew (a plant, a level, a river tile) springs up, a tile that was locked gets a frost ring; undo and a new island just rebuild
+        if (animate && old) { if (d.level > old.level || d.river > old.river) born.set(cl, !old.level && d.level ? 2 : 1); else if (d.locked && !old.locked) frozen.push(cl) } }
+      groundOf(cl, d) }
     for (const cl of changed) { dirty.add(cl); for (const n of cl.nbc) if (n) dirty.add(n) }
     const rs = Object.keys(S.r).sort().map(k => k + ":" + S.r[k].l + ":" + S.r[k].from).join(";") + "|" + (elev ? S.seed : ""); if (rs !== riverSig) { riverSig = rs; buildRiver() }
-    for (const cl of dirty) refreshTile(cl);
+    for (const cl of dirty) refreshTile(cl, born.get(cl) || 0);
+    for (const cl of born.keys()) celebrate(cl, "grow"); for (const cl of frozen) celebrate(cl, "frost");
+    if (changed.length) buildZoo();
     buildRings(); dirtyLabels = true }
   let dirtyLabels = true;
 
   function resize() { if (!alive) return; w = board.clientWidth; h = board.clientHeight; if (!w || !h) return;
-    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, coarse ? C3.pixelRatio.touch : C3.pixelRatio.other)); renderer.setSize(w, h, false); camera.aspect = w / h; computeFit(); camera.updateProjectionMatrix(); applyCamera(true); updateFitButton(); dirtyLabels = true }
+    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, coarse ? C3.pixelRatio.touch : C3.pixelRatio.other)); renderer.setSize(w, h, false); pU.scale.value = renderer.getPixelRatio() * h / (2 * Math.tan(C3.fov * Math.PI / 360)); camera.aspect = w / h; computeFit(); camera.updateProjectionMatrix(); applyCamera(true); updateFitButton(); dirtyLabels = true }
   let frames = 0, fpsT = performance.now(), fps = 0, lastT = 0, lastCam = "";
   function draw(T0) { if (!alive || !w) return; const dt = lastT ? Math.min(.05, (T0 - lastT) / 1000) : 0; lastT = T0; dtLast = dt; uTime.value += dt;
     for (const c of clouds) { c.position.x += c.userData.sp * dt; if (c.position.x > 120) c.position.x = -120 }
     applyCamera(false); const cs = view.tx.toFixed(3) + view.tz.toFixed(3) + view.dist.toFixed(2); if (cs !== lastCam) { lastCam = cs; dirtyLabels = true }
+    popTick(); sparkTick(dt); pulseTick(); poseZoo(uTime.value);
     ringMat.opacity = reduced() ? .9 : .72 + .26 * Math.sin(uTime.value * 3);
     renderer.render(scene, camera); if (dirtyLabels || B.fx.length || Object.keys(B.pops).length) { updateLabels(T0); dirtyLabels = false }
     frames++; const n = performance.now(); if (n - fpsT >= 1000) { fps = frames * 1000 / (n - fpsT); frames = 0; fpsT = n } }
-  const stats = () => { const i = renderer.info; return {quality, triangles:i.render.triangles, calls:i.render.calls, fps:Math.round(fps * 10) / 10, geometries:i.memory.geometries, textures:i.memory.textures, width:w, height:h} };
+  const stats = () => { const i = renderer.info; return {quality, detail, triangles:i.render.triangles, calls:i.render.calls, fps:Math.round(fps * 10) / 10, geometries:i.memory.geometries, textures:i.memory.textures, animals:zoo.length, animalTriangles:Math.round(zooVerts / 3), popping:pops.length, sparks:sparks.length, width:w, height:h} };
   const sample = (n = 12) => { renderer.render(scene, camera); const gl = renderer.getContext(), px = new Uint8Array(4), out = [], Wd = gl.drawingBufferWidth, Hd = gl.drawingBufferHeight;   // read an n by n grid of pixels back, for the smoke test
     for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) { gl.readPixels(Math.floor((i + .5) * Wd / n), Math.floor((j + .5) * Hd / n), 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); out.push([px[0], px[1], px[2]]) } return out };
   // the page coordinates of a cell's top (for tests and for the page's own helpers)
   function scr(p) { const c = cellAt(p[0], p[1]); if (!c) return [0, 0]; const r = cv3.getBoundingClientRect(); pv.set(c.x, CH[c.i] + .1, c.z).project(camera); return [r.left + (pv.x * .5 + .5) * w, r.top + (-pv.y * .5 + .5) * h] }
   function look(p, z) { const c = cellAt(p[0], p[1]); if (!c) return; view.gx = c.x; view.gz = c.z; if (z) view.gd = clamp(fit.dist / (z || 1), fit.near, fit.dist); clampView(); updateFitButton() }
-  const ctl = {draw, resize, sync: syncState, scr, look, toggleFit, unmount() { alive = false; delete G.__flowgrow3d; for (const c of cells) if (c.mesh) c.mesh.geometry.dispose(); renderer.dispose(); cv3.remove(); lab.remove(); B.fit && (B.fit.style.top = "") }};
-  G.__flowgrow3d = {setTime() {}, getTime: () => 0, setQuality(q) { if (TIERS.includes(q) && q !== quality) { quality = q; applyQuality(); for (const cl of cells) cl.sig = ""; syncState() } }, stats, sample, renderer, scene, camera, view};
+  const ctl = {draw, resize, sync: syncState, scr, look, toggleFit, unmount() { alive = false; delete G.__flowgrow3d; for (const c of cells) { dropPop(c); if (c.mesh) c.mesh.geometry.dispose() } if (zGeo) zGeo.dispose(); pGeo.dispose(); renderer.dispose(); cv3.remove(); lab.remove(); B.fit && (B.fit.style.top = "") }};
+  G.__flowgrow3d = {setTime() {}, getTime: () => 0, setNight(n) { dayState.night = n }, setQuality(q) { if (TIERS.includes(q) && q !== quality) { quality = q; applyQuality(); for (const cl of cells) cl.sig = ""; syncState() } }, stats, sample, renderer, scene, camera, view};
   syncState(); resize();
   return ctl;
 }
 
-G.Flowgrow3D = {mount, util:{Batch, GT, put, rng, lin, hsh, pick, clamp, sstep}};
+G.Flowgrow3D = {mount, util:{Batch, GT, put, rng, lin, hsh, pick, clamp, sstep, tpl}};
 })();

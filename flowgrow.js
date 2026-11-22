@@ -965,7 +965,7 @@ function setSkin(v) { if (!LOOKS.includes(v) || v === skin) return; mem.set("loo
   B = bounds(); resort(); landKey = ""; lastSize = ""; view.z = null; fillLadder(); resize(); sync() }
 // ---------- the 3D look (LOU-311). The vendored three.js (r128) and flowgrow.look3d.js are fetched the first time it is asked for (?look=3d, or the Look row), so the other looks never load them. The look only reads the
 // game (the bridge below) and calls tap(); it never changes a rule, a score, a save or the seed. If the files or WebGL aren't there the page keeps the look it has and says so.
-const LOOK3D_FILES = ["vendor/three.r128.min.js", "flowgrow.look3d.js"];
+const LOOK3D_FILES = ["vendor/three.r128.min.js", "flowgrow.look3d.js", "flowgrow.look3d.art.js"];
 let l3Loading = null;
 function load3d() { if (G.Flowgrow3D) return Promise.resolve(G.Flowgrow3D); if (l3Loading) return l3Loading;
   l3Loading = LOOK3D_FILES.reduce((p, f) => p.then(() => new Promise((ok, bad) => { const s = document.createElement("script"); s.src = new URL(f, SRC_URL).href; s.onload = ok; s.onerror = () => bad(new Error("Couldn't load " + f)); document.head.appendChild(s) })), Promise.resolve()).then(() => G.Flowgrow3D);
