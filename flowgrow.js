@@ -107,6 +107,10 @@ const KEYS = [
   ["riverScore", oneOf("all", "levels", "none"), "River points", "levels: only raising a river tile a level scores. all: every river move scores like a habitat of its level. none: rivers score nothing", "choice"],
   ["riverMonotone", bool, "Rivers rise downstream", "on: a river tile can't be lower than the one it flows from", "bool"],
   ["riverRaiseGuard", bool, "Don't strand river tiles", "on: a river tile can't raise a river tile when that would leave a river tile waiting in the pile with no legal move (the first of four river tiles on the source, for one). off: it can", "bool"],
+  ["elevation", bool, "Elevation", "on: land has heights, a river tile can't be put on land higher than the river tile behind it, and a step down is a waterfall (LOU-310). off: the island is flat", "bool"],
+  ["elevationLevels", whole(1, 6), "Highest elevation", "land runs from 0 to this; the river's source is on the highest ground and neighbouring land differs by at most 1. Only used with elevation on", "int"],
+  ["elevationShape", oneOf("foothills", "ridges", "terraces"), "Elevation shape", "foothills: the land falls away from the source in rings, with some bumps. ridges: ridges run out from the source and the land between them is lower. terraces: broad flat tiers with sharp steps, falling away in one direction. Only used with elevation on", "choice"],
+  ["stepAdjacency", oneOf("score", "all", "none"), "Across a step", "score: Meadow's multiplier ignores marsh and trees across a step. all: Roots, Steppe, lock copies, prairie spread, reed beds and pine-oneers do too. none: a step changes nothing here. Only used with elevation on", "choice"],
   ["tilesAcross", real(2, 16), "Tiles across", "opening zoom on a phone", "num"],
   ["levelNames", listOf(s => { const t = String(s).trim().slice(0, 24); return t ? t : undefined }, 1, 24), "Level names", "level 1 first", "list"],
   ["lockEnabled", bool, "Locking", "off: Flowgrow without locking", "bool"],
@@ -158,7 +162,8 @@ const seedOf = v => { const n = Number(v); if (v !== "" && v != null && Number.i
 // A short name for the rules a run is played under: every config value that changes how a run plays (not names or zoom).
 // The best score is kept per ruleset, so scores from different rules never meet.
 const RULE_KEYS = ["map", "stackSize", "queueShown", "pickFrom", "riverShare", "opening", "prairieShare", "marshShare", "biomeMatch", "marshNeedsRiver", "marshRiverMultiplier", "marshRiverRamp", "prairieSpreads", "treeShare", "overgrow", "upgradeLevel", "steppePerLevel", "meadowMax", "rootsPerLevel", "rootsChain", "maxLevel", "bareGroundMaxLevel", "bareGroundMode", "levelOdds", "scoreByLevel", "riverReach", "riverMaxLevel", "riverScore", "riverMonotone", "riverRaiseGuard", "lockEnabled", "lockLevelCap", "lockCopiesGo", "lockRivers", "lockEvery", "lockHold"];
-const rulesKey = c => seedOf(JSON.stringify(RULE_KEYS.map(k => c[k]))).toString(36);
+// The elevation values join the key only when elevation is on (they change nothing when it is off), so the usual game's key, and its best score, don't change when elevation was added.
+const rulesKey = c => seedOf(JSON.stringify(RULE_KEYS.map(k => c[k]).concat(c.elevation ? [c.elevationLevels, c.elevationShape, c.stepAdjacency] : []))).toString(36);
 function rand(S) { let t = (S.rs = (S.rs + 0x6D2B79F5) >>> 0); t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296 }
 // One new tile. The first tiles of a run are fixed (cfg.opening). After that a tile is a river tile riverShare of the time;
 // otherwise a habitat whose level is rolled from 1 up to the highest habitat level on the map right now, each level
@@ -190,6 +195,41 @@ function fresh(cfg, seed) { seed = seedOf(seed);
   cfg.map.forEach((row, y) => [...row].forEach((ch, x) => { if (ch === "T") S.r[key([x, y])] = {l:1, from:null, n:0} })); // the source counts as a level 1 river tile
   fill(S); return S }
 
+// ---------- elevation (LOU-310; Dan, Nov 21: "create a ticket for "elevation" such that there is a "step down" on the tiles, this creates a water fall. what we'll do is that river tiles can 'step down" but for the land
+// tiles there is no adjacency bonus on the step down. Rivers can never "go up"."). Every land cell (bare ground, and the source's) has a height from 0 to elevationLevels. It is worked out from the run's seed alone,
+// with a random stream of its own (so the pile is dealt exactly as it is with elevation off), and nothing about it is saved: elevOf(c, seed) rebuilds it and keeps the last few. The source is on the highest ground,
+// mountains count as the top height (the river never enters them) and neighbouring land cells differ by at most 1, so a step is always one level. How the land is shaped is a placeholder (elevationShape).
+const prng = s => () => { s = (s + 0x6D2B79F5) >>> 0; let t = Math.imul(s ^ (s >>> 15), s | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296 };
+function makeElevation(c, seed) { const g = grid(c), L = c.elevationLevels, rnd = prng(seedOf(seed + "|elevation")), out = {}, h = {}, nbr = k => g.nb[k] || [];
+  const src = Object.keys(g.at).find(k => codeAt(c, g.at[k]) === "T"), land = [src, ...g.land], isLand = new Set(land);
+  // distance from the source through land (a mountain blocks it), with a parent for each cell: the neighbours are tried in a seeded order, so the parents give the seeded paths the ridges follow
+  const dist = {[src]:0}, par = {}, q = [src];
+  for (let i = 0; i < q.length; i++) { const k = q[i], ns = nbr(k).filter(n => isLand.has(n)); for (let j = ns.length - 1; j > 0; j--) { const r = Math.floor(rnd() * (j + 1)); [ns[j], ns[r]] = [ns[r], ns[j]] }
+    for (const n of ns) if (!(n in dist)) { dist[n] = dist[k] + 1; par[n] = k; q.push(n) } }
+  const maxd = Math.max(1, ...Object.values(dist)), far = k => k in dist ? dist[k] : maxd, band = d => Math.min(L, Math.floor(d * (L + 1) / (maxd + 1)));   // band: how many levels down at distance d
+  if (c.elevationShape === "ridges") {   // 2 or 3 ridges follow seeded paths out from the source and fall away at half the speed; the land between them is a level lower
+    const crest = new Set([src]), arms = 2 + (rnd() < .5 ? 1 : 0), ends = land.filter(k => far(k) >= Math.min(5, maxd - 1));
+    for (let a = 0; a < arms && ends.length; a++) for (let k = ends[Math.floor(rnd() * ends.length)]; k != null; k = par[k]) crest.add(k);
+    const dc = {}, cq = [...crest]; for (const k of cq) dc[k] = 0; for (let i = 0; i < cq.length; i++) for (const n of nbr(cq[i])) if (isLand.has(n) && !(n in dc)) { dc[n] = dc[cq[i]] + 1; cq.push(n) }
+    for (const k of land) h[k] = crest.has(k) ? L - Math.floor(band(far(k)) / 2) : Math.max(0, L - band(far(k)) - ((k in dc ? dc[k] : 9) >= 2 ? 1 : 0)) }
+  else if (c.elevationShape === "terraces") {   // broad flat tiers falling away in one seeded direction: the source's side is a plateau at the top, and each tier is a level lower
+    const ang = (Math.floor(rnd() * 6) * 60 + (rnd() - .5) * 30) * Math.PI / 180, ux = Math.cos(ang), uy = Math.sin(ang), at = k => [g.at[k][0] + (g.at[k][1] & 1 ? .5 : 0), g.at[k][1] * .8660254], s0 = at(src), pj = {};
+    let mp = 1; for (const k of land) { const p = at(k); pj[k] = (p[0] - s0[0]) * ux + (p[1] - s0[1]) * uy; mp = Math.max(mp, pj[k]) }
+    for (const k of land) h[k] = L - (pj[k] <= 0 ? 0 : Math.min(L, Math.floor(pj[k] * (L + 1) / (mp + 1e-9)))) }
+  else for (const k of land) { const u = rnd(); h[k] = Math.max(0, Math.min(L, L - band(far(k)) + (u < .2 ? -1 : u > .8 ? 1 : 0))) }   // foothills: rings falling away from the source, with some bumps
+  h[src] = L;
+  for (let ch = true; ch;) { ch = false; for (const k of land) { let m = 0; for (const n of nbr(k)) if (isLand.has(n) && h[n] - 1 > m) m = h[n] - 1; if (h[k] < m) { h[k] = m; ch = true } } }   // neighbours differ by at most 1: low cells are raised to one below their highest neighbour
+  for (const k in g.at) out[k] = k in h ? h[k] : L;   // a mountain is at the top height
+  return out }
+const ELEVS = new WeakMap();
+function elevOf(c, seed) { let m = ELEVS.get(c); if (!m) ELEVS.set(c, m = new Map()); let e = m.get(seed);
+  if (!e) { if (m.size >= 64) m.delete(m.keys().next().value); m.set(seed, e = makeElevation(c, seed)) } return e }
+// A river tile that stepped down from the tile it flows from makes a waterfall on that edge. It is read from the heights and the river, so nothing is stored.
+const fallAt = (S, k) => { const c = S.cfg, v = S.r[k]; if (!c.elevation || !v || v.from == null) return false; const e = elevOf(c, S.seed); return e[k] < e[v.from] };
+// Do these two cells count as neighbours for this kind of effect? Across a step they don't (stepAdjacency): for "score" (Meadow's multiplier) with "score" or "all", for every kind with "all" ("grow": Roots and Steppe,
+// "copy": lock copies, "plant": prairie spread, reed beds and pine-oneers). A river tile is never blocked here: land beside a river counts as before. True means the step blocks it.
+function across(S, a, b, kind) { const c = S.cfg; if (!c.elevation || c.stepAdjacency === "none" || (kind !== "score" && c.stepAdjacency !== "all") || a in S.r || b in S.r) return false; const e = elevOf(c, S.seed); return e[a] !== e[b] }
+
 // ---------- reach: a river tile of level l reaches riverReach[l - 1] tiles out, in hex steps. Mountains don't block it.
 // Every tile within n steps of p, added to the set `out`.
 function ball(c, p, n, out) { const H = c.map.length, W = c.map[0].length, pq = p[0] - (p[1] - (p[1] & 1)) / 2;
@@ -213,11 +253,11 @@ function plantable(S, reach = reachOf(S)) { const out = []; for (const k of grid
 // A marsh bank tile is next to a river tile, or (LOU-304) next to a reed bed: a marsh habitat of upgradeLevel or higher. Reed beds are derived from kind and level, so nothing is stored.
 // A locked reed bed still counts, as a locked river tile does.
 const reedBedAt = (S, k) => S.cfg.upgradeLevel > 0 && S.hb[k] === "m" && S.h[k] >= S.cfg.upgradeLevel;
-const marshBank = (S, k) => grid(S.cfg).nb[k].some(q => q in S.r || reedBedAt(S, q));
-const prairieNext = (S, k) => grid(S.cfg).nb[k].some(q => S.hb[q] === "p");
+const marshBank = (S, k) => grid(S.cfg).nb[k].some(q => q in S.r || (reedBedAt(S, q) && !across(S, k, q, "plant")));
+const prairieNext = (S, k) => grid(S.cfg).nb[k].some(q => S.hb[q] === "p" && !across(S, k, q, "plant"));
 // A pine-oneer (LOU-306) is a tree habitat of upgradeLevel or higher that picked it (a locked one still counts). Trees can be planted on empty land beside one: the exception to LOU-302's rule that a tree never plants
 // on bare ground. (With overgrow off trees plant by reach like green as well.)
-const pineBank = (S, k) => grid(S.cfg).nb[k].some(q => S.cfg.upgradeLevel > 0 && S.hb[q] === "t" && S.hf[q] === "pine" && S.h[q] >= S.cfg.upgradeLevel);
+const pineBank = (S, k) => grid(S.cfg).nb[k].some(q => S.cfg.upgradeLevel > 0 && S.hb[q] === "t" && S.hf[q] === "pine" && S.h[q] >= S.cfg.upgradeLevel && !across(S, k, q, "plant"));
 function plantableFor(S, t, reach = reachOf(S)) { const c = S.cfg, out = [];
   if (t.b === "t") { const base = c.overgrow ? null : plantable(S, reach); for (const k of grid(c).land) if (!(k in S.h) && !(k in S.r) && (pineBank(S, k) || (base && reach.has(k)))) out.push(k); return out }
   if (t.b === "m" && c.marshNeedsRiver) { for (const k of grid(c).land) if (!(k in S.h) && !(k in S.r) && marshBank(S, k)) out.push(k); return out }
@@ -240,9 +280,9 @@ const upgradeOf = (c, t) => c.upgradeLevel > 0 && t && t.k === "h" && t.l >= c.u
 const CW = [1, 0, 5, 4, 3, 2];
 const readingOrder = (a, b) => { const p = unkey(a), q = unkey(b); return p[1] - q[1] || p[0] - q[0] };
 // The empty land beside k, in the fixed order: not a mountain, a river tile or an occupied tile.
-const freeSpots = (S, k) => { const out = []; for (const d of CW) { const q = step(unkey(k), d); if (inside(S.cfg, q) && openKey(S, key(q))) out.push(key(q)) } return out };
+const freeSpots = (S, k) => { const out = []; for (const d of CW) { const q = step(unkey(k), d); if (inside(S.cfg, q) && openKey(S, key(q)) && !across(S, k, key(q), "grow")) out.push(key(q)) } return out };
 // What a meadow's level-up is multiplied by: 1 + the marsh and trees habitats beside it (any level, locked or not; green, prairie and river tiles don't count), up to meadowMax.
-const meadowMult = (S, k) => { let n = 0; for (const q of grid(S.cfg).nb[k]) if (S.hb[q] === "m" || S.hb[q] === "t") n++; return Math.min(S.cfg.meadowMax, 1 + n) };
+const meadowMult = (S, k) => { let n = 0; for (const q of grid(S.cfg).nb[k]) if ((S.hb[q] === "m" || S.hb[q] === "t") && !across(S, k, q, "score")) n++; return Math.min(S.cfg.meadowMax, 1 + n) };   // (marsh and trees across a step don't count with elevation on, LOU-310)
 // The marsh river multiplier (LOU-309; Dan, Nov 21: "let's do a marsh bonus that for each "additional" river tile, it's a score multiple. 1 river = x1 (normal), 2 river = 2x...3x, 4x, 5x...."): the points a marsh
 // tile scores (planted, combined onto, levelled, lifted by roots) are multiplied by a number that grows with the river tiles that share an edge with it. Dan first set it to the count itself (x1 to x6), then
 // (Nov 21: "make the marsh multiplier 1, 1.5, 2, 2.5, 3, 3.5 instead") to marshRiverRamp: the multiplier for 1, 2, 3 ... river tiles touching, and the last number for any more. None touching is x1, and no
@@ -267,7 +307,7 @@ function levelUp(S, k) { const got = {free:[], lifts:[], pts:0, liftPts:0};
 const ROOTS_LIMIT = 20000;
 function roots(S, k0, got) { const c = S.cfg, queue = [k0]; let steps = 0;
   while (queue.length && c.rootsPerLevel > 0) { const x = queue.shift(), lx = S.h[x]; let el = [];
-    for (const d of CW) { const q = step(unkey(x), d); if (!inside(c, q)) continue; const j = key(q); if (j in S.h && !(j in S.lk) && S.h[j] < lx) el.push(j) }
+    for (const d of CW) { const q = step(unkey(x), d); if (!inside(c, q)) continue; const j = key(q); if (j in S.h && !(j in S.lk) && S.h[j] < lx && !across(S, x, j, "grow")) el.push(j) }
     if (el.length > c.rootsPerLevel) el = el.map((j, i) => [j, i]).sort((a, b) => S.h[a[0]] - S.h[b[0]] || a[1] - b[1]).slice(0, c.rootsPerLevel).sort((a, b) => a[1] - b[1]).map(a => a[0]);
     for (const j of el) { if (++steps > ROOTS_LIMIT) return; S.h[j]++; const l2 = S.h[j]; let pts = scoreOf(c, l2);
       if (c.rootsChain && S.hf[j] === "meadow") pts *= meadowMult(S, j);
@@ -306,10 +346,11 @@ function options(S, i = 0) { const c = S.cfg, g = grid(c), t = S.q[i], out = [],
 function riverMoves(S, t, skip) { const c = S.cfg, g = grid(c), out = [], at = k => [g.at[k][0], g.at[k][1]];
   // Rivers rise downstream (riverMonotone): a new river tile can't be lower than the tile it joins, and a tile can only be widened
   // once every tile that joins it is already that high, so a river is widened from its end back towards the source.
-  const mono = c.riverMonotone, has = mono ? new Set(Object.values(S.r).map(v => v.from)) : null, kidMin = {};
+  const mono = c.riverMonotone, el = c.elevation ? elevOf(c, S.seed) : null, has = mono || el ? new Set(Object.values(S.r).map(v => v.from)) : null, kidMin = {};
   if (mono) for (const k in S.r) { const f = S.r[k].from; if (f != null) kidMin[f] = Math.min(kidMin[f] === undefined ? 99 : kidMin[f], S.r[k].l) }
   if (t.l < riverTop(c)) for (const k in S.r) if (S.r[k].l === t.l && !(k in S.lk) && (!mono || (kidMin[k] === undefined ? 99 : kidMin[k]) > t.l) && (skip < 0 || !strands(S, skip, k, t.l + 1))) out.push({p:at(k), does:"widen", l:t.l + 1, pts:riverPts(c, t.l + 1, true)});   // "widen" is raising a river tile a level, up to riverTop
-  for (const k of g.land) if (!(k in S.h) && !(k in S.r) && g.nb[k].some(q => q in S.r) && (!mono || S.r[joinTo(S, at(k), has)].l <= t.l)) out.push({p:at(k), does:"extend", l:t.l, pts:riverPts(c, t.l, false)});
+  for (const k of g.land) if (!(k in S.h) && !(k in S.r) && g.nb[k].some(q => q in S.r)) { const j = has ? joinTo(S, at(k), has) : null;   // j: the river tile it would flow from
+    if ((!mono || S.r[j].l <= t.l) && (!el || el[k] <= el[j])) out.push({p:at(k), does:"extend", l:t.l, pts:riverPts(c, t.l, false)}) }   // rivers never go up (LOU-310): the new tile can't be higher than the one behind it
   return out }
 // The stranding guard (riverRaiseGuard; Dan, Nov 21: "fix the opening trap"). Would raising river tile k to level nl leave a river tile that is waiting in the pile (not the one being placed, at skip) with no legal move?
 // Four river tiles open a run, so raising the source with the first strands the other three: a level 1 river tile can't be lower than the source it would flow from. The pile that counts is what the player can see.
@@ -344,7 +385,9 @@ function why(S, i, p) { const c = S.cfg, t = S.q[i]; if (S.pend.length) return "
     if (c.riverRaiseGuard && riverMoves(S, t, -1).some(o => o.does === "widen" && key(o.p) === k)) return "Extend the river first: raising it now would leave your other river tiles nowhere to go.";   // the raise is legal except for the guard
     return c.riverMonotone ? "The river after this tile is lower. Widen downstream first." : "" }
   if (!grid(c).nb[k].some(q => q in S.r)) return "A river tile has to touch the river.";
-  const up = S.r[joinTo(S, p)]; return c.riverMonotone && up && up.l > t.l ? `A river tile can't be lower than the one it flows from (level ${up.l}).` : "" }
+  const jt = joinTo(S, p), up = S.r[jt];
+  if (c.elevation && jt != null) { const e = elevOf(c, S.seed); if (e[k] > e[jt]) return `Rivers can't flow uphill: that land is height ${e[k]} and the river beside it is height ${e[jt]}.` }
+  return c.riverMonotone && up && up.l > t.l ? `A river tile can't be lower than the one it flows from (level ${up.l}).` : "" }
 // Which river tile a new one joins, for drawing: the river's end if it touches one, otherwise the newest river tile it touches.
 function joinTo(S, p, has = new Set(Object.values(S.r).map(v => v.from))) { let best = null;
   for (const q of nbrs(S.cfg, p)) { const k = key(q), v = S.r[k]; if (!v) continue; const end = !has.has(k);
@@ -379,7 +422,7 @@ const lockable = (S, p) => { const k = key(p); return hasLock(S) && !S.over && !
 // What locking the tile at p would do: copies (the tiles banked, river tiles first, then habitats from the lowest level),
 // from (the neighbours they are copied from, in the same order) and high (neighbours above its level, which give nothing).
 function copiesOf(S, p) { const c = S.cfg, k0 = key(p), L = k0 in S.h ? S.h[k0] : k0 in S.r ? S.r[k0].l : 0, from = [], high = [];
-  for (const k of grid(c).nb[k0] || []) { if (k in S.lk) continue; const t = k in S.h ? {k:"h", l:S.h[k], c:1, ...(S.hb[k] ? {b:S.hb[k]} : {}), ...(S.hf[k] ? {f:S.hf[k]} : {})} : k in S.r && c.lockRivers ? {k:"r", l:S.r[k].l, c:1} : null; if (!t) continue;
+  for (const k of grid(c).nb[k0] || []) { if (k in S.lk || across(S, k0, k, "copy")) continue; const t = k in S.h ? {k:"h", l:S.h[k], c:1, ...(S.hb[k] ? {b:S.hb[k]} : {}), ...(S.hf[k] ? {f:S.hf[k]} : {})} : k in S.r && c.lockRivers ? {k:"r", l:S.r[k].l, c:1} : null; if (!t) continue;
     if (c.lockLevelCap && t.l > L) high.push(k); else from.push([k, t]) }
   from.sort((a, b) => (a[1].k === "r" ? 0 : 1) - (b[1].k === "r" ? 0 : 1) || a[1].l - b[1].l);
   return {copies:from.map(f => f[1]), from:from.map(f => f[0]), high} }
@@ -416,7 +459,7 @@ function logText(S) { const c = S.cfg, lines = [`Flowgrow run log · seed ${S.se
 const settingsText = c => ["Flowgrow settings", ...KEYS.map(([k, , label]) => `${label}: ${k === "map" ? "\n  " + c.map.join("\n  ") : Array.isArray(c[k]) ? c[k].join(", ") : c[k]}`)].join("\n");
 
 const rules = {HEX, step, hexDist, key, unkey, KEYS, tidy, mapOf, parseTile, tileWord, inside, codeAt, nbrs, isOpen, levelName, scoreOf, riverTop, reachAt, plantLevel, seedOf, rulesKey,
-  roll, fill, left, fresh, reachOf, plantable, options, opens, why, place, discard, replay, tileText, logText, settingsText, upgradeOf, UPGRADE, PICKS, reedBedAt, pick, needPick, undoCount, meadowMult, marshMult, freeSpots,
+  roll, fill, left, fresh, reachOf, plantable, options, opens, why, place, discard, replay, tileText, logText, settingsText, upgradeOf, UPGRADE, PICKS, reedBedAt, pick, needPick, undoCount, meadowMult, marshMult, freeSpots, makeElevation, elevOf, fallAt, across,
   hasLock, lockable, copiesOf, lockWouldCopy, lock, end};
 G.Flowgrow = {rules};
 // With no page, or when the simulator asks (FLOWGROW_SIM), the file stops here: only the rules are loaded.
@@ -436,12 +479,12 @@ const mem = {get(k) { try { return localStorage.getItem("flowgrow." + k) } catch
 // Until Nov 20, 2026 Flowgrow lived inside Flow Tile and saved under "flowtile.flowgrow.". Both sites share one address, so those old
 // keys may still be here: bring the best score and any run in progress across once, then drop them.
 for (const k of ["best", "run.v2"]) try { const old = localStorage.getItem("flowtile.flowgrow." + k); if (old != null) { if (mem.get(k) == null) mem.set(k, old); localStorage.removeItem("flowtile.flowgrow." + k) } } catch (_) {}
-for (const v of ["run.v2", "run.v3", "run.v4", "run.v5", "run.v6", "run.v7", "run.v8", "run.v9", "run.v10"]) mem.set(v, null); // runs are saved as run.v11 since the marsh ramp (Nov 21; run.v10 since LOU-309, run.v9 since the stranding guard, run.v8 since LOU-306) (a rule change can make an older move list illegal, so each one bumps the version): the older keys are dead, drop them
+for (const v of ["run.v2", "run.v3", "run.v4", "run.v5", "run.v6", "run.v7", "run.v8", "run.v9", "run.v10", "run.v11"]) mem.set(v, null); // runs are saved as run.v12.<ruleset> since LOU-310 (Nov 21: one slot for each ruleset, so the elevation maps keep their own runs; run.v11 since the marsh ramp, run.v10 since LOU-309, run.v9 since the stranding guard, run.v8 since LOU-306) (a rule change can make an older move list illegal, so each one bumps the version): the older keys are dead, drop them
 // Any config value can be changed in the address for one visit, as key=value, with the simulator's names and checks (LOU-309: "so he can play it"), for example ?marshRiverMultiplier=true. A run and its
-// best score are kept per ruleset, so they never mix with the default game's (a saved run is one slot: playing another ruleset starts that one fresh).
+// best score are kept per ruleset, so they never mix with the default game's (and each ruleset has its own saved run slot, run.v12.<ruleset>).
 const QS = {}; for (const [k, v] of new URLSearchParams(location.search)) if (KEYS.some(e => e[0] === k)) QS[k] = v;
 const MADE = tidy({...G.FLOWGROW, ...QS}, G.FLOWGROW), CFG = MADE.cfg, ASKED = Object.keys(QS).filter(k => !MADE.bad.includes(k) && JSON.stringify(CFG[k]) !== JSON.stringify(G.FLOWGROW[k])), GRID = grid(CFG), W = CFG.map[0].length, H = CFG.map.length;
-const RK = rulesKey(CFG), BEST = "best." + RK; // the best score is kept per ruleset (every number that changes how a run plays), so scores from different rules never meet
+const RK = rulesKey(CFG), BEST = "best." + RK, SLOT = "run.v12." + RK, NAME = G.FLOWGROW_NAME || "";   // each ruleset has its own saved run too (run.v12), so the maps and the usual game don't overwrite one another; NAME is set by a map page // the best score is kept per ruleset (every number that changes how a run plays), so scores from different rules never meet
 const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches, now = () => performance.now();
 let S = null, opts = [], landSig = "", wonShown = false, msgT = 0, lockMode = false, lockSel = null, lockList = [];
 const pops = {}, fx = [];
@@ -554,6 +597,14 @@ const upgradeLine = t => { const u = upgradeOf(CFG, t); return u ? UPGRADE[u].li
 const COL = {bare:"#d6cf98", grass:"#86c46f"}, DABS = {grass:["#b3dc86", "#5a9f62", "#b9dc98"], bare:["#c9c48c", "#e4dbb0", "#dcd5a0"]};
 const landC = document.createElement("canvas"), LPAD = 60; let landKey = "";
 const isGreen = (reach, p) => reach.has(key(p)) && CFG.map[p[1]][p[0]] === "_";
+// ---------- elevation on the page (LOU-310). Empty land is tinted darker the lower it is (the simple look) or lighter the higher it is (the painted look), a dark line runs along the high side of every step, and a
+// waterfall is white foam lines across the edge a river tile stepped down at. All of it is worked out from the heights and the river each time it is drawn.
+const EL = () => CFG.elevation && S ? elevOf(CFG, S.seed) : null;
+function stepEdges(fn) { const E = EL(); if (!E) return; for (const p of ORDER) { const k = key(p); if (CFG.map[p[1]][p[0]] === "B") continue; const hp = hexPts(p, R - 1.5);
+  for (let i = 0; i < 6; i++) { const q = step(p, EDGE_FACE(i)); if (inside(CFG, q) && CFG.map[q[1]][q[0]] !== "B" && E[key(q)] < E[k]) fn(hp[i], hp[(i + 1) % 6]) } } }   // edge i faces neighbour EDGE_FACE(i)
+function fallMarks() { if (!CFG.elevation) return; for (const k in S.r) { if (!fallAt(S, k)) continue; const p = GRID.at[k], v = S.r[k], c = iso(...p), hp = hexPts(p, R - 1.5);
+  for (let d = 0; d < 6; d++) if (key(step(p, d)) === v.from) { const i = (7 - d) % 6, a = hp[i], b = hp[(i + 1) % 6], m = z => [z[0] + (c.x - z[0]) * .3, z[1] + (c.y - z[1]) * .3];
+    line([a, b], "rgba(255,255,255,.96)", 4.4); line([m(a), m(b)], "rgba(255,255,255,.75)", 2.6) } } }
 function paintLand(reach) { const edges = [];
   for (const p of ORDER) { const h = hexPts(p); for (let i = 0; i < 6; i++) if (!inside(CFG, step(p, EDGE_FACE(i)))) edges.push({a:h[i], b:h[(i + 1) % 6], front:FRONT[i]}) }
   const top = hexPath(ORDER, R + .6);
@@ -570,6 +621,8 @@ function paintLand(reach) { const edges = [];
     else { for (let i = 0; i < 3; i++) { const [x, y] = inTile(p, r); pebble(x, y, .6 + r() * .4) }
       if (r() < .3) { const [x, y] = inTile(p, r, .5); line([[x - 6, y], [x - 1, y + 2], [x + 4, y - 1], [x + 7, y + 1]], "rgba(120,100,60,.35)", .9) } } }
   ctx.strokeStyle = "rgba(255,255,255,.09)"; ctx.lineWidth = 1; for (const p of ORDER) { rpath(hexPts(p, R - .5), 6); ctx.stroke() } // the hex grid, just a hint
+  if (CFG.elevation) { const E = EL(); for (const p of ORDER) { if (CFG.map[p[1]][p[0]] === "B") continue; rpath(hexPts(p, R - .5), 6); ctx.fillStyle = `rgba(255,255,255,${.1 * E[key(p)]})`; ctx.fill() }   // higher land is lighter (LOU-310)
+    stepEdges((a, b) => line([a, b], "rgba(60,42,25,.55)", 2.8)) }
   ctx.restore() }
 function land() { const lw = B.w + 2 * LPAD, lh = B.h + 2 * LPAD; ps = Math.min(Math.pow(2, Math.ceil(Math.log2(scale) * 2) / 2), 4096 / Math.max(lw, lh));
   const lk = ps + "|" + landSig; if (lk === landKey) return; landKey = lk; landC.width = Math.ceil(lw * ps); landC.height = Math.ceil(lh * ps);
@@ -679,7 +732,7 @@ function draw() { if (!S || !lay.w) return; const T = now(), t = T / 1000;
   land(); ctx = ctx0; ctx.setTransform(1, 0, 0, 1, 0, 0);
   const g = ctx.createLinearGradient(0, 0, 0, cv.height); g.addColorStop(0, "#cfe3ea"); g.addColorStop(.3, "#cfe6ea"); g.addColorStop(1, "#8fbccb"); ctx.fillStyle = g; ctx.fillRect(0, 0, cv.width, cv.height);
   ctx.setTransform(scale, 0, 0, scale, off.x, off.y); ctx.drawImage(landC, B.x - LPAD, B.y - LPAD, landC.width / ps, landC.height / ps);
-  river(t);
+  river(t); fallMarks();
   for (const p of ORDER) { const k = key(p), o = iso(...p), code = CFG.map[p[1]][p[0]], l = S.h[k];
     if (code === "T") source(o, t); else if (code === "B") mountain(o.x, o.y);
     if (l) { const a = pops[k] ? (T - pops[k]) / 320 : 1, s = a < 1 && !reduce ? easeBack(Math.max(.05, a)) : 1; if (a >= 1) delete pops[k]; // a quick pop when a tile lands
@@ -730,11 +783,13 @@ function simpleIcon(t, px) { const c = document.createElement("canvas"), d = Mat
   ctx = keep; return c }
 function drawSimple(T, t) { ctx = ctx0; ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = SK.sea; ctx.fillRect(0, 0, cv.width, cv.height);
   ctx.setTransform(scale, 0, 0, scale, off.x, off.y);
-  const reach = reachOf(S), pu = reduce ? .5 : .5 + .5 * Math.sin(t * 3), hex = flatHex(R - 2.2);
+  const reach = reachOf(S), pu = reduce ? .5 : .5 + .5 * Math.sin(t * 3), hex = flatHex(R - 2.2), EV = EL();
   for (const p of ORDER) { const k = key(p), o = iso(...p), rv = S.r[k], hl = S.h[k], code = CFG.map[p[1]][p[0]], tile = rv ? {k:"r", l:rv.l} : hl ? {k:"h", l:hl, b:S.hb[k], f:S.hf[k]} : null;
     const fill = code === "B" ? SK.mtn : tile ? tileFill(tile) : reach.has(k) ? SK.reach : SK.bare;
     const a = pops[k] ? (T - pops[k]) / 280 : 1, s = a < 1 && !reduce ? .78 + .22 * easeBack(Math.max(0, a)) : 1; if (a >= 1) delete pops[k]; // a quick pop when a tile lands
-    ctx.save(); ctx.translate(o.x, o.y); ctx.scale(s, s); rpath(hex, 7); ctx.fillStyle = fill; ctx.fill(); ink(SK.edge, 1.6);
+    ctx.save(); ctx.translate(o.x, o.y); ctx.scale(s, s); rpath(hex, 7); ctx.fillStyle = fill; ctx.fill();
+    if (EV && !tile && code !== "B") { rpath(hex, 7); ctx.fillStyle = `rgba(60,85,110,${.13 * (CFG.elevationLevels - EV[k])})`; ctx.fill() }   // empty land is tinted darker the lower it is (LOU-310)
+    ink(SK.edge, 1.6);
     const up = tile ? upgradeOf(CFG, tile) : "";
     if (up) { rpath(hex, 7); ink(UPG_LOOK[up].rim, 3.6) }                                                        // an upgrade has a tinted rim round its tile (LOU-304)
     if (tile && tile.l >= 8) { rpath(flatHex(R - 7), 7); ink("#e0a31c", 3.2); if (tile.l >= 12) { rpath(flatHex(R - 13), 7); ink("#f3d27a", 2.4) } }   // levels 8 and up have a gold rim, 12 and up a second one
@@ -744,6 +799,7 @@ function drawSimple(T, t) { ctx = ctx0; ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.
       if (up) UPG_LOOK[up].mark(0, R * .63, 1.05, ...UPG_LOOK[up].tile);                                        // and a small mark under its number
       if (k in S.lk) padlock(0, -R * .6, 1.05, numInk(tile)); else if (tile.b === "m" && CFG.marshRiverMultiplier) { const m = marshMult(S, k); if (m > 1) tag(R * .56, -R * .4, "×" + m, "#0c3b38", 13) } }   // a marsh tile that scores more shows its multiplier (LOU-309)                                                  // a locked tile carries a padlock
     ctx.restore() }
+  stepEdges((a, b) => line([a, b], "rgba(25,45,65,.6)", 3.4)); fallMarks();   // the steps, and the waterfalls (LOU-310)
   // what the tile in hand can do: a green outline on land it can be planted on, a gold ring on a tile it combines with (and its points),
   // a teal ring on a river tile it widens, a dashed blue ring on land it extends the river onto
   if (!S.over && !lockMode) for (const o of opts) { const c = iso(...o.p), ring = col => { rpath(hexPts(o.p, R - 4), 7); ink("rgba(255,255,255,.95)", 7); rpath(hexPts(o.p, R - 4), 7); ink(col, 3.4) };
@@ -800,7 +856,7 @@ function doPick(f) { const k = S.pend[0]; if (!k || !pick(S, k, f)) return; say(
 function pickRing(T) { if (!S.pend.length) return; const p = GRID.at[S.pend[0]], pu = reduce ? .5 : .5 + .5 * Math.sin(T / 1000 * 3);   // a gold ring on the tile that is waiting for its pick
   if (flat()) { rpath(hexPts(p, R - 3), 7); ink("rgba(255,255,255,.95)", 8); rpath(hexPts(p, R - 3), 7); ink("#d9a520", 4 + pu) }
   else { const c = iso(...p); ctx.beginPath(); ctx.ellipse(c.x, c.y + 1, 34, 17, 0, 0, 7); ink("rgba(255,244,214,.95)", 5); ctx.beginPath(); ctx.ellipse(c.x, c.y + 1, 34, 17, 0, 0, 7); ink("#d9a520", 2.2) } }
-function sync() { opts = options(S, 0); landSig = [...reachOf(S)].join(";");
+function sync() { opts = options(S, 0); landSig = [...reachOf(S)].join(";") + (CFG.elevation ? "|e" + S.seed : "");   // with elevation the painted land also depends on the seed (its heights)
   const waiting = !S.q.length && !S.over; // the pile is empty but a lock would still bank a copy: lock, or end the run
   if (S.over || !hasLock(S)) { lockMode = false; lockSel = null } else if (waiting) lockMode = true;
   lockList = lockMode ? [...Object.keys(S.h), ...Object.keys(S.r)].map(k => GRID.at[k]).filter(p => lockable(S, p)).map(p => ({p, n:copiesOf(S, p).copies.length})) : [];
@@ -809,7 +865,7 @@ function sync() { opts = options(S, 0); landSig = [...reachOf(S)].join(";");
   { const lb = $("lockBtn"); lb.hidden = !CFG.lockEnabled; lb.classList.toggle("on", lockMode); lb.classList.toggle("none", !hasLock(S)); tx("lockN", CFG.lockEvery === 0 ? "∞" : S.locks); tx("lockIn", CFG.lockEvery > 0 ? "next in " + (CFG.lockEvery - S.toLock) : "") }
   $("endq").hidden = !waiting || !!lockSel; $("lockq").hidden = !lockSel; if (lockSel) lockCard();
   if (S.over && !wonShown) result(); if (!S.over) wonShown = false; $("win").hidden = !S.over; $("app").classList.toggle("won", S.over);
-  mem.set("run.v11", S.over ? null : JSON.stringify({seed:S.seed, moves:S.moves, at:Date.now(), rules:RK})); draw() }
+  mem.set(SLOT, S.over ? null : JSON.stringify({seed:S.seed, moves:S.moves, at:Date.now(), rules:RK})); draw() }
 // When the tiles run out: the score, the best score on this device, the top level and what was done.
 function result() { wonShown = true; const best = +mem.get(BEST) || 0, low = S.log.filter(e => e.did === "plant" && e.l < e.t.l).length; if (S.score > best) mem.set(BEST, String(S.score));
   $("wScore").innerHTML = `<b>${S.score} points</b> · ${S.score > best ? (best ? `New best (was ${best})` : "New best") : `Best ${best}`}`;
@@ -820,16 +876,19 @@ function result() { wonShown = true; const best = +mem.get(BEST) || 0, low = S.l
 // ---------- a run: new, saved after every move, rebuilt from its seed and moves on reload (a finished or day-old run starts fresh)
 const urlSeed = new URLSearchParams(location.search).get("seed");
 function newRun() { S = fresh(CFG, urlSeed != null && urlSeed !== "" ? urlSeed : Math.floor(Math.random() * 1e9)); for (const k in pops) delete pops[k]; fx.length = 0; lockMode = false; lockSel = null; say(S.q[0] && S.q[0].k === "r" ? "Tap land next to your river to make it longer." : "Tap green land to place the tile in hand."); sync() }
-function load() { try { const d = JSON.parse(mem.get("run.v11") || "null"); if (!d || d.rules !== RK || !Array.isArray(d.moves) || Date.now() - d.at > 12 * 3600e3) return false; S = replay(CFG, d.seed, d.moves); return !S.over } catch (_) { return false } }
+function load() { try { const d = JSON.parse(mem.get(SLOT) || "null"); if (!d || d.rules !== RK || !Array.isArray(d.moves) || Date.now() - d.at > 12 * 3600e3) return false; S = replay(CFG, d.seed, d.moves); return !S.over } catch (_) { return false } }
+// With elevation, a tap that has nothing else to say gives the height of the land it was on (LOU-310), and a river tile that stepped down says so.
+const heightLine = (p, res) => { if (!CFG.elevation) return ""; const k = key(p), h = elevOf(CFG, S.seed)[k]; return res.does === "extend" && fallAt(S, k) ? `Waterfall: the river steps down to height ${h}.` : `Height ${h}.` };
 function tap(p) { if (!S || S.over || !p) return;
   if (lockMode) { if (!lockable(S, p)) { say(key(p) in S.lk ? "That tile is locked." : "Pick a habitat or a river tile.", true); return } lockSel = p; say(""); sync(); return }
   const had = S.locks, res = place(S, 0, p);
-  if (!res) { const k = key(p), u = k in S.h ? upgradeLine({k:"h", b:S.hb[k], l:S.h[k], f:S.hf[k]}) : ""; say(why(S, 0, p) + (u ? " " + u : ""), true); return }   // a refused tap on a tile with an upgrade says what the upgrade is
+  if (!res) { const k = key(p), u = k in S.h ? upgradeLine({k:"h", b:S.hb[k], l:S.h[k], f:S.hf[k]}) : "", w = why(S, 0, p), hg = CFG.elevation && w && !/uphill/.test(w) && CFG.map[p[1]][p[0]] !== "B" ? ` Height ${elevOf(CFG, S.seed)[k]}.` : "";
+    say(w + hg + (u ? " " + u : ""), true); return }   // a refused tap says why, and with elevation the land's height   // a refused tap on a tile with an upgrade says what the upgrade is
   pops[key(p)] = now(); if (res.pts) fx.push({p, text:"+" + res.pts, t0:now(), up:TALL[Math.min(res.l, 7)]});
   for (const j of res.free) { pops[j] = now(); fx.push({p:unkey(j), text:"+1", t0:now(), up:TALL[1]}) }   // a steppe's free tiles pop in and score 1 each
   for (const L of res.lifts) { pops[L.k] = now(); fx.push({p:unkey(L.k), text:"+" + L.pts, t0:now(), up:TALL[Math.min(S.h[L.k], 7)]}) }   // and so do the tiles roots lifted
   const kind = res.does === "overgrow" ? "t" : res.tile.b, gained = res.tile.k === "h" && upgradeOf(CFG, {k:"h", b:kind, l:res.l}) && !(res.does === "combine" && upgradeOf(CFG, {k:"h", b:kind, l:res.l - 1}));   // a move that gives a tile its upgrade says what it is
-  say(S.locks > had ? "You earned a lock. Tap Lock to use it." : res.lifts.length ? `Roots +${res.lifts.length} ${res.lifts.length === 1 ? "tile" : "tiles"}, ${res.liftPts} points.` : S.pend.length ? "Choose an upgrade." : res.mult > 1 ? `${res.mk === "marsh" ? "Marsh" : "Meadow"} ×${res.mult}: +${res.pts}.` : res.free.length ? `Steppe planted ${res.free.length === 1 ? "a free prairie" : res.free.length + " free prairies"}.` : res.does === "plant" && res.l < res.tile.l ? `Planted as level ${res.l}.` : res.does === "overgrow" ? `Trees grew over the ${res.from ? BIOME_NAME[res.from].toLowerCase() : "green"} tile.` : gained ? upgradeLine({k:"h", b:kind, l:res.l}) : ""); sync() }
+  say(S.locks > had ? "You earned a lock. Tap Lock to use it." : res.lifts.length ? `Roots +${res.lifts.length} ${res.lifts.length === 1 ? "tile" : "tiles"}, ${res.liftPts} points.` : S.pend.length ? "Choose an upgrade." : res.mult > 1 ? `${res.mk === "marsh" ? "Marsh" : "Meadow"} ×${res.mult}: +${res.pts}.` : res.free.length ? `Steppe planted ${res.free.length === 1 ? "a free prairie" : res.free.length + " free prairies"}.` : res.does === "plant" && res.l < res.tile.l ? `Planted as level ${res.l}.` : res.does === "overgrow" ? `Trees grew over the ${res.from ? BIOME_NAME[res.from].toLowerCase() : "green"} tile.` : gained ? upgradeLine({k:"h", b:kind, l:res.l}) : heightLine(p, res)); sync() }
 function undo() { if (!S.moves.length) return; S = replay(CFG, S.seed, S.moves.slice(0, S.moves.length - undoCount(S.moves))); lockMode = false; lockSel = null; say("Stepped back."); sync() }   // a pick goes back with the move that led to it
 async function copyText(t) { try { await navigator.clipboard.writeText(t); return true } catch (_) {} try { const a = document.createElement("textarea"); a.value = t; a.style.cssText = "position:fixed;opacity:0"; document.body.appendChild(a); a.select(); const ok = document.execCommand("copy"); a.remove(); return ok } catch (_) { return false } }
 
@@ -891,6 +950,10 @@ function marshRampText(c) { const r = c.marshRiverRamp, W = ["", "one", "two", "
     ? `A river tile put on a river tile of its own level raises it a level${CFG.riverScore === "none" ? "" : " and scores the points for the new level"}. Only the first ${CFG.riverReach.length} levels widen the river and reach more land. After that the level just counts.`
     : `A river tile put on a river tile of its own level widens it${CFG.riverScore === "none" ? "" : " and scores points"}.`)
     + (CFG.riverRaiseGuard ? " A river tile can't raise a river tile if that would leave another river tile in your pile with nowhere to go, so extend the river first." : "") }
+// A map page (the elevation maps) names itself, and says what the heights mean (LOU-310).
+if (NAME) { document.title = "Flowgrow · " + NAME; const mb = document.querySelector("#menu .mhead b"); if (mb) mb.textContent = "Flowgrow · " + NAME }
+{ const he = $("howElev"); he.hidden = !CFG.elevation; if (CFG.elevation) he.textContent = `Heights, 0 to ${CFG.elevationLevels}: the land is shaded by height (lighter is higher) and a dark line is a step down. The river starts on the highest ground and can go level or down, never up; where it steps down it makes a waterfall, shown as white lines. `
+  + (CFG.stepAdjacency === "all" ? "Tiles across a step don't count as neighbours: no Meadow bonus, no Roots lift, no Steppe tile, no lock copy, and no prairie spread, reed bed or pine-oneer land." : CFG.stepAdjacency === "score" ? "Marsh and trees across a step don't count towards a Meadow's multiplier." : "A step changes nothing else.") }
 // Switch the look and remember it. The camera starts again on the source, since the two looks have different bounds.
 function setSkin(v) { if (!LOOKS.includes(v) || v === skin) return; skin = v; mem.set("look", v); $("app").classList.toggle("simple", flat());
   B = bounds(); resort(); landKey = ""; lastSize = ""; view.z = null; fillLadder(); resize(); sync() }

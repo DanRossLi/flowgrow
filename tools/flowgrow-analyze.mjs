@@ -89,3 +89,12 @@ const W = CFG.map[0].length, H = CFG.map.length, rows = [];
 for (let y = 0; y < H; y++) { let r = y & 1 ? " " : ""; for (let x = 0; x < W; x++) { const k = x + "," + y, code = CFG.map[y][x], lk = k in S.lk;
   r += (code === "B" ? "^^" : k in S.r ? (lk ? "~" : "w") + S.r[k].l : k in S.h ? (lk ? "#" : S.hb[k] || "h") + S.h[k] : "..") + " " } rows.push(r) }
 console.log("island (hN green habitat of level N, pN prairie, mN marsh, tN trees, #N locked habitat, wN river, ~N locked river, ^^ mountain):\n" + rows.join("\n"));
+// What elevation did in this run (LOU-310; replayed move by move): the river's waterfalls and length, the river tiles that had no legal cell and were discarded, what height the river tiles sit at, and what the step rule did to Meadow.
+if (CFG.elevation) { const T = R.fresh(CFG, run.seed), o = {meadowUps:0, lowered:0};
+  for (const mv of run.moves) { if (mv.a === "p") { const kk = mv.x + "," + mv.y, up = T.hf[kk]; let n0 = 0; for (const q of R.nbrs(CFG, [mv.x, mv.y]).map(R.key)) if (T.hb[q] === "m" || T.hb[q] === "t") n0++;
+      const r = R.place(T, mv.i, [mv.x, mv.y]); if (r.does === "combine" && up === "meadow") { o.meadowUps++; if ((r.mult || 1) < Math.min(CFG.meadowMax, 1 + n0)) o.lowered++ } }
+    else mv.a === "d" ? R.discard(T, mv.i) : mv.a === "l" ? R.lock(T, [mv.x, mv.y]) : mv.a === "u" ? R.pick(T, mv.x + "," + mv.y, mv.f) : R.end(T) }
+  const E = R.elevOf(CFG, run.seed), falls = Object.keys(S.r).filter(k => R.fallAt(S, k)), rd = S.log.filter(e => e.did === "discard" && e.t && e.t.k === "r").length, hs = {}; for (const k in S.r) hs[E[k]] = (hs[E[k]] || 0) + 1;
+  console.log(`elevation: ${CFG.elevationShape}, ${CFG.elevationLevels} levels, step rule ${CFG.stepAdjacency} · ${falls.length} waterfalls on a river of ${Object.keys(S.r).length} tiles (river tiles by height: ${Object.keys(hs).sort().map(h => `${h}: ${hs[h]}`).join(", ")}) · ${rd} river tiles discarded with no legal cell · Meadow: ${o.meadowUps} level-ups, ${o.lowered} multipliers lowered by a step`);
+  const hrows = []; for (let y = 0; y < H; y++) { let r = y & 1 ? " " : ""; for (let x = 0; x < W; x++) { const k = x + "," + y; r += (CFG.map[y][x] === "B" ? "^" : k in S.r ? (R.fallAt(S, k) ? "v" : "w") : k in S.h ? "h" : ".") + (CFG.map[y][x] === "B" ? "^" : E[k]) + " " } hrows.push(r) }
+  console.log("heights (wN river at height N, vN river tile that stepped down to N, hN habitat on height N, .N empty land at height N, ^^ mountain):\n" + hrows.join("\n")) }

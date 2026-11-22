@@ -51,6 +51,14 @@ window.FLOWGROW = {
   riverMonotone: true,      // rivers rise downstream (Dan, Nov 20): a river tile can't be lower than the one it flows from, so a river is widened from its end back towards the source. false: the first build's rule
   riverRaiseGuard: true,    // Dan, Nov 21: "fix the opening trap". The pile opens with four river tiles, and raising the source with the first one leaves the other three nowhere to go (a level 1 river tile can't be lower than the source). true: a river tile can't raise a river tile when that would leave a river tile waiting in the pile with no legal move. false: it can
 
+  // Elevation (LOU-310; Dan, Nov 21: "create a ticket for "elevation" such that there is a "step down" on the tiles, this creates a water fall. what we'll do is that river tiles can 'step down" but for the land tiles
+  // there is no adjacency bonus on the step down. Rivers can never "go up"."). Off here: the usual game is flat. Dan then asked for it as separate maps with 2 or 3 variations ("do LOU-310 but make it a separate map"),
+  // so the maps at /elevation/foothills/, /ridges/ and /terraces/ switch it on for themselves, and nothing in the usual game changes.
+  elevation: false,         // true: land has heights, a river tile can't be put on land higher than the river tile behind it (a step down is a waterfall), and land bonuses stop at a step. false: flat
+  elevationLevels: 3,       // the highest height: land runs from 0 to this (neighbouring land differs by at most 1; the source is on the highest ground)
+  elevationShape: "foothills", // how the land is shaped, from the seed: "foothills" (rings falling away from the source, with bumps), "ridges" (ridges run out from the source, lower land between) or "terraces" (broad flat tiers falling away in one direction)
+  stepAdjacency: "score",   // what a step stops counting as a neighbour: "score" (only Meadow's multiplier), "all" (Roots, Steppe, lock copies, prairie spread, reed beds and pine-oneers too) or "none"
+
   tilesAcross: 5,           // opening zoom: about this many tiles fit across a phone
 
   // The names of the first seven levels, lowest first: how land grows back. Levels past the list are just called Level 8, Level 9 and so on until they are named
