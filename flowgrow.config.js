@@ -71,4 +71,21 @@ window.FLOWGROW = {
   lockRivers: true,         // false: river tiles can't be locked or copied
   lockEvery: 0,             // tiles placed per lock earned. 0: locks are free and unlimited (Dan, Nov 20: "there is no lock limit"). 10 in the first build
   lockHold: 1,              // locks the player can hold (not used while locks are unlimited)
+
+  // The 3D look (LOU-311; Dan, Nov 22: "this looks good, can you provide very detailed instructions in linear to make it for flowgrow. some changes, you do not need the rotation. include day/night cycles.
+  // everything else looks great."). ?look=3d draws the same game as a small living island from a fixed angle (flowgrow.look3d.js, loaded only when it is asked for). It is cosmetic: it reads the game and never
+  // changes a rule, a score, a save or a tap. Every number of the look is in this one block, and none of it is a rule (it is not part of the ruleset key).
+  look3d: {
+    quality: "auto",        // "low", "med", "high", or "auto" (picked from a short frame-time probe when the look starts). ?q=low|med|high picks one for a visit
+    dayNight: "cycle",      // "cycle": the clock below runs (Dan, Nov 22: the clock is the default for now). "progress": the pile is the day, morning at the first tile and night when it is empty. "fixed:day", "fixed:gold", "fixed:night": hold one moment. ?time=night|gold|day|cycle|progress
+    dayLength: 240,         // seconds for a whole day: dawn, day, golden hour, dusk, night
+    startPhase: 0.20,       // where the clock starts (0.20 is morning)
+    azimuth: 0.62,          // the camera angle never changes (nothing rotates it): the fixed azimuth and polar angle, in radians
+    polar: 0.98,
+    fov: 30,
+    nearTilesAcross: 4,     // the closest zoom shows about this many tiles across; the farthest shows the whole island (the opening view, Dan: "Follow the spec")
+    budget: {triangles: 250000, drawCalls: 150, fps: 30},   // what the build aims for at 390x844 on q=med
+    shadowMap: {low: 0, med: 1024, high: 2048},             // shadow map size by quality (0: no shadows)
+    pixelRatio: {touch: 1.5, other: 2}                       // the highest pixel ratio drawn
+  },
 };

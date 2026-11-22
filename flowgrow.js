@@ -472,7 +472,7 @@ if (typeof document === "undefined" || G.FLOWGROW_SIM) return;
 // Locking (LOU-299) has its button, lock mode, a confirm card and the banked copies at the back of the pile.
 // Not built yet: Tuning, sound, the settings sheet and the painterly extras.
 // ====================================================================================================================
-const SW_URL = new URL("sw.js", document.currentScript.src).href; // sw.js sits next to this file
+const SRC_URL = document.currentScript.src, SW_URL = new URL("sw.js", SRC_URL).href; // sw.js sits next to this file (and the 3D look's files are found from here too)
 const $ = id => document.getElementById(id), tx = (id, v) => { const e = $(id); if (e) e.textContent = v };
 const mem = {get(k) { try { return localStorage.getItem("flowgrow." + k) } catch (_) { return null } },
   set(k, v) { try { if (v == null) localStorage.removeItem("flowgrow." + k); else localStorage.setItem("flowgrow." + k, v) } catch (_) {} }};
@@ -491,9 +491,11 @@ const pops = {}, fx = [];
 
 // ---------- the look (Dan, Nov 20): "simple" is flat blue and green hexes with a number on each, for piloting; "painted" is the first look.
 // The page opens on the simple look. ?look=painted shows the painted one for that visit, and the menu's Look row switches and remembers.
-const LOOKS = ["simple", "painted"];
-let skin = (() => { const u = new URLSearchParams(location.search).get("look"), m = mem.get("look"); return LOOKS.includes(u) ? u : LOOKS.includes(m) ? m : "simple" })();
-const flat = () => skin === "simple";
+// LOU-311: "3d" is a third look, drawn by flowgrow.look3d.js (and the vendored three.js), which are loaded only when it is asked for. Until it has loaded the page draws the simple look.
+const LOOKS = ["simple", "painted", "3d"];
+const WANT = (() => { const u = new URLSearchParams(location.search).get("look"), m = mem.get("look"); return LOOKS.includes(u) ? u : LOOKS.includes(m) ? m : "simple" })();
+let skin = WANT === "3d" ? "simple" : WANT, L3 = null;   // L3: the 3D look's controller, once it is mounted (then skin is "3d")
+const flat = () => skin !== "painted";   // the simple look and the 3D look share the flat maths and the simple tile pictures
 $("app").classList.toggle("simple", flat());
 
 // ---------- the hex projection (from play.js): pointy-top hexes built flat in world space (radius R), then projected isometrically (or, in the simple look, not at all)
@@ -710,7 +712,7 @@ function resize() { const box = $("board"), w = box.clientWidth, h = box.clientH
   const availH = Math.max(40, h - topH), fit = Math.min(w / B.w, availH / B.h), play = Math.min(1.3, w / (CFG.tilesAcross * (flat() ? 80 : 89))); // a hex is about 89 world px across when tilted, 80 flat
   Object.assign(lay, {w, h, topH, availH, dpr, fit, zAuto:Math.max(1, play / fit)});
   if (view.z === null) { view.z = lay.zAuto; const o = iso(...SRC); view.cx = o.x; view.cy = o.y }   // open on the source, with about tilesAcross tiles across
-  cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); $("fitBtn").style.top = topH + 6 + "px"; applyView() }
+  cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); $("fitBtn").style.top = topH + 6 + "px"; if (L3) L3.resize(); applyView() }
 function applyView() { view.z = Math.min(Math.max(5, lay.zAuto * 1.6), Math.max(1, view.z)); const s = lay.fit * view.z, vw = lay.w / s, vh = lay.availH / s;
   view.cx = vw >= B.w ? B.x + B.w / 2 : Math.min(B.x + B.w - vw / 2, Math.max(B.x + vw / 2, view.cx));
   view.cy = vh >= B.h ? B.y + B.h / 2 : Math.min(B.y + B.h - vh / 2, Math.max(B.y + vh / 2, view.cy));
@@ -723,11 +725,12 @@ function tileAt(cx, cy) { const r = cv.getBoundingClientRect(), d = cv.width / r
   for (let yy = ry - 1; yy <= ry + 1; yy++) { const rx = Math.round((wx - (yy & 1 ? SQ3 * R / 2 : 0)) / (SQ3 * R));
     for (let xx = rx - 1; xx <= rx + 1; xx++) { if (!inside(CFG, [xx, yy])) continue; const [qx, qy] = world(xx, yy), dd = Math.hypot(qx - wx, qy - wy); if (dd < bd) { bd = dd; best = [xx, yy] } } }
   return best && bd <= R ? best : null }
-const scr = p => { const r = cv.getBoundingClientRect(), d = cv.width / r.width, o = iso(...p); return [r.left + (o.x * scale + off.x) / d, r.top + (o.y * scale + off.y) / d] };
+const scr = p => { if (L3 && skin === "3d") return L3.scr(p); const r = cv.getBoundingClientRect(), d = cv.width / r.width, o = iso(...p); return [r.left + (o.x * scale + off.x) / d, r.top + (o.y * scale + off.y) / d] };
 
 // ---------- drawing, every frame: the sea, the island, the river, then everything standing on it from back to front
 const easeBack = k => 1 + 2.70158 * Math.pow(k - 1, 3) + 1.70158 * Math.pow(k - 1, 2);
 function draw() { if (!S || !lay.w) return; const T = now(), t = T / 1000;
+  if (L3 && skin === "3d") return L3.draw(T, t);
   if (flat()) return drawSimple(T, t);
   land(); ctx = ctx0; ctx.setTransform(1, 0, 0, 1, 0, 0);
   const g = ctx.createLinearGradient(0, 0, 0, cv.height); g.addColorStop(0, "#cfe3ea"); g.addColorStop(.3, "#cfe6ea"); g.addColorStop(1, "#8fbccb"); ctx.fillStyle = g; ctx.fillRect(0, 0, cv.width, cv.height);
@@ -865,7 +868,7 @@ function sync() { opts = options(S, 0); landSig = [...reachOf(S)].join(";") + (C
   { const lb = $("lockBtn"); lb.hidden = !CFG.lockEnabled; lb.classList.toggle("on", lockMode); lb.classList.toggle("none", !hasLock(S)); tx("lockN", CFG.lockEvery === 0 ? "∞" : S.locks); tx("lockIn", CFG.lockEvery > 0 ? "next in " + (CFG.lockEvery - S.toLock) : "") }
   $("endq").hidden = !waiting || !!lockSel; $("lockq").hidden = !lockSel; if (lockSel) lockCard();
   if (S.over && !wonShown) result(); if (!S.over) wonShown = false; $("win").hidden = !S.over; $("app").classList.toggle("won", S.over);
-  mem.set(SLOT, S.over ? null : JSON.stringify({seed:S.seed, moves:S.moves, at:Date.now(), rules:RK})); draw() }
+  mem.set(SLOT, S.over ? null : JSON.stringify({seed:S.seed, moves:S.moves, at:Date.now(), rules:RK})); if (L3) L3.sync(); draw() }
 // When the tiles run out: the score, the best score on this device, the top level and what was done.
 function result() { wonShown = true; const best = +mem.get(BEST) || 0, low = S.log.filter(e => e.did === "plant" && e.l < e.t.l).length; if (S.score > best) mem.set(BEST, String(S.score));
   $("wScore").innerHTML = `<b>${S.score} points</b> · ${S.score > best ? (best ? `New best (was ${best})` : "New best") : `Best ${best}`}`;
@@ -904,7 +907,7 @@ cv.addEventListener("pointercancel", e => { lift(e); dragged = false });
 cv.addEventListener("contextmenu", e => e.preventDefault());
 cv.addEventListener("wheel", e => { e.preventDefault(); view.z *= Math.exp(-e.deltaY * .0015); applyView() }, {passive:false});
 cv.addEventListener("pointerup", e => { const wasDrag = dragged; lift(e); if (wasDrag) { if (!ptrs.size) dragged = false; return } tap(tileAt(e.clientX, e.clientY)) });
-$("fitBtn").onclick = () => { view.z = view.z > 1.02 ? 1 : lay.zAuto; applyView() };
+$("fitBtn").onclick = () => { if (L3 && skin === "3d") { L3.toggleFit(); return } view.z = view.z > 1.02 ? 1 : lay.zAuto; applyView() };
 $("undoBtn").onclick = undo;
 $("discardBtn").onclick = () => { if (discard(S, 0)) { say("Discarded."); sync() } };
 $("again").onclick = newRun;
@@ -917,12 +920,12 @@ $("lockNo").onclick = () => { lockSel = null; sync() };
 $("endYes").onclick = () => { if (end(S)) sync() };
 $("copyLog").onclick = async () => { const e = $("dToast"); e.textContent = await copyText(logText(S)) ? "Run log copied." : "Couldn't copy on this device."; e.hidden = false; setTimeout(() => { e.hidden = true }, 2200) };
 // The menu: how to play, the seven levels, a new run, the run log and Home. Tap outside to close.
-const menu = open => { $("mConf").hidden = true; tx("mSeed", "Seed " + S.seed); tx("lookNote", flat() ? "Simple. Tap for the painted look" : "Painted. Tap for the simple look"); $("menu").hidden = !open };
+const menu = open => { $("mConf").hidden = true; tx("mSeed", "Seed " + S.seed); tx("lookNote", skin === "3d" ? "3D. Tap for the simple look" : skin === "painted" ? "Painted. Tap for the 3D look" : "Simple. Tap for the painted look"); $("menu").hidden = !open };
 $("menuBtn").onclick = () => menu(true);
 $("menu").addEventListener("click", async e => { if (e.target === $("menu")) { menu(false); return } const b = e.target.closest("[data-m]"); if (!b) return; const k = b.dataset.m;
   if (k === "new") { $("mConf").hidden = false; return } if (k === "newNo") { $("mConf").hidden = true; return }
   if (k === "log") { const ok = await copyText(logText(S)); menu(false); say(ok ? "Run log copied." : "Couldn't copy on this device."); return }
-  menu(false); if (k === "newYes") newRun(); else if (k === "look") setSkin(flat() ? "painted" : "simple"); else if (k === "zoom") { view.z = view.z > 1.02 ? 1 : lay.zAuto; applyView() } });
+  menu(false); if (k === "newYes") newRun(); else if (k === "look") setSkin(LOOKS[(LOOKS.indexOf(skin) + 1) % LOOKS.length]); else if (k === "zoom") { if (L3 && skin === "3d") L3.toggleFit(); else { view.z = view.z > 1.02 ? 1 : lay.zAuto; applyView() } } });
 addEventListener("keydown", e => { if (e.key === "Escape") menu(false) });
 function fillLadder() { const L = $("ladder"); L.textContent = ""; for (let l = 1; l <= CFG.maxLevel; l++) { const d = document.createElement("div"); d.appendChild(tileEl({k:"h", l}, 40, "")); const n = document.createElement("small"); n.innerHTML = `${levelName(CFG, l)}<b>+${scoreOf(CFG, l)}</b>`; d.appendChild(n); L.appendChild(d) } }
 fillLadder();
@@ -955,8 +958,24 @@ if (NAME) { document.title = "Flowgrow · " + NAME; const mb = document.querySel
 { const he = $("howElev"); he.hidden = !CFG.elevation; if (CFG.elevation) he.textContent = `Heights, 0 to ${CFG.elevationLevels}: the land is shaded by height (lighter is higher) and a dark line is a step down. The river starts on the highest ground and can go level or down, never up; where it steps down it makes a waterfall, shown as white lines. `
   + (CFG.stepAdjacency === "all" ? "Tiles across a step don't count as neighbours: no Meadow bonus, no Roots lift, no Steppe tile, no lock copy, and no prairie spread, reed bed or pine-oneer land." : CFG.stepAdjacency === "score" ? "Marsh and trees across a step don't count towards a Meadow's multiplier." : "A step changes nothing else.") }
 // Switch the look and remember it. The camera starts again on the source, since the two looks have different bounds.
-function setSkin(v) { if (!LOOKS.includes(v) || v === skin) return; skin = v; mem.set("look", v); $("app").classList.toggle("simple", flat());
+function setSkin(v) { if (!LOOKS.includes(v) || v === skin) return; mem.set("look", v);
+  if (v === "3d") { enter3d(); return }   // it loads first, and the page keeps drawing the look it has until then
+  if (skin === "3d") leave3d();
+  skin = v; $("app").classList.toggle("simple", flat());
   B = bounds(); resort(); landKey = ""; lastSize = ""; view.z = null; fillLadder(); resize(); sync() }
+// ---------- the 3D look (LOU-311). The vendored three.js (r128) and flowgrow.look3d.js are fetched the first time it is asked for (?look=3d, or the Look row), so the other looks never load them. The look only reads the
+// game (the bridge below) and calls tap(); it never changes a rule, a score, a save or the seed. If the files or WebGL aren't there the page keeps the look it has and says so.
+const LOOK3D_FILES = ["vendor/three.r128.min.js", "flowgrow.look3d.js"];
+let l3Loading = null;
+function load3d() { if (G.Flowgrow3D) return Promise.resolve(G.Flowgrow3D); if (l3Loading) return l3Loading;
+  l3Loading = LOOK3D_FILES.reduce((p, f) => p.then(() => new Promise((ok, bad) => { const s = document.createElement("script"); s.src = new URL(f, SRC_URL).href; s.onload = ok; s.onerror = () => bad(new Error("Couldn't load " + f)); document.head.appendChild(s) })), Promise.resolve()).then(() => G.Flowgrow3D);
+  l3Loading.catch(() => { l3Loading = null }); return l3Loading }
+const bridge3d = () => ({board:$("board"), cv, top:$("top"), cfg:CFG, grid:GRID, rules, W, H, key, unkey, step, reduce, state:() => S, options:() => opts, tap, say, fit:$("fitBtn"),
+  lock:() => ({mode:lockMode, sel:lockSel, list:lockList}), pops, fx, widenText, marshMult, upgradeOf, levelName, tileText, BIOME_NAME});
+function enter3d() { if (L3) return; say("Loading the 3D look…");
+  load3d().then(m => { const ctl = m.mount(bridge3d()); if (!ctl) throw new Error("This device can't draw 3D."); L3 = ctl; skin = "3d"; cv.style.visibility = "hidden"; $("app").classList.toggle("simple", true);
+    say(""); lastSize = ""; resize(); sync() }).catch(err => { say((err && err.message || "The 3D look couldn't start.") + " Staying on the " + skin + " look.", true) }) }
+function leave3d() { if (!L3) return; L3.unmount(); L3 = null; cv.style.visibility = "" }
 
 addEventListener("resize", resize);
 if (window.ResizeObserver) { const ro = new ResizeObserver(resize); ro.observe($("board")); ro.observe($("top")) }
@@ -965,7 +984,8 @@ if (load()) sync(); else newRun();
 resize(); if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { lastSize = ""; resize(); drawPile() });
 if (reduce) draw(); else loop();
 if ("serviceWorker" in navigator) addEventListener("load", () => navigator.serviceWorker.register(SW_URL).catch(() => {}));
+if (WANT === "3d") enter3d();   // ?look=3d (or the remembered look)
 // for checking the page from a script
 Object.assign(G.Flowgrow, {run:() => S, tap, undo, pick:doPick, lockMode:() => lockMode, discard:() => $("discardBtn").click(), newRun, scr, options:() => opts, skin:() => skin, setSkin,
-  show(h, r) { S.h = h; if (r) S.r = r; S.top = Math.max(0, ...Object.values(h)); sync() }, look(p, z) { const o = iso(...p); view.cx = o.x; view.cy = o.y; if (z) view.z = z; applyView() }});
+  show(h, r) { S.h = h; if (r) S.r = r; S.top = Math.max(0, ...Object.values(h)); sync() }, look3d:() => L3, look(p, z) { if (L3 && skin === "3d") return L3.look(p, z); const o = iso(...p); view.cx = o.x; view.cy = o.y; if (z) view.z = z; applyView() }});
 })();
