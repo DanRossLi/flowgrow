@@ -23,7 +23,7 @@ const BASE = R.tidy(base).cfg;
 // The rule checks are written for these values, the first build's, so tuning flowgrow.config.js never breaks them (the pilot pile, for one,
 // changes the pile; bare ground takes any level, and the bare ground rule is checked on its own below). The report and the command line use the config file as it is.
 const REF = (() => { const t = R.tidy({...base, map:["_____________", "_BB__________", "__B_______B__", "__________BB_", "______T______", "_____________", "___BB________", "_____________", "_____________"],
-  stackSize:80, queueShown:3, pickFrom:1, riverShare:.1, opening:["habitat 1", "habitat 1", "river"], maxLevel:7, levelOdds:.5, scoreByLevel:[1, 3, 6, 10, 15, 21, 28], riverReach:[1, 2], riverMonotone:false, riverRaiseGuard:false, bareGroundMaxLevel:24, bareGroundMode:"refuse", prairieShare:0, marshShare:0, biomeMatch:true, marshNeedsRiver:false, prairieSpreads:false, treeShare:0, overgrow:true, upgradeLevel:0, riverMaxLevel:2, riverScore:"none",
+  stackSize:80, queueShown:3, pickFrom:1, riverShare:.1, opening:["habitat 1", "habitat 1", "river"], maxLevel:7, levelOdds:.5, scoreByLevel:[1, 3, 6, 10, 15, 21, 28], riverReach:[1, 2], riverMonotone:false, riverRaiseGuard:false, bareGroundMaxLevel:24, bareGroundMode:"refuse", prairieShare:0, marshShare:0, biomeMatch:true, marshNeedsRiver:false, marshRiverMultiplier:false, prairieSpreads:false, treeShare:0, overgrow:true, upgradeLevel:0, riverMaxLevel:2, riverScore:"none",
   levelNames:["Sprouts", "Meadow", "Thicket", "Saplings", "Grove", "Forest", "Old forest"], lockEnabled:true, lockLevelCap:true, lockCopiesGo:"back", lockRivers:true, lockEvery:10, lockHold:1}, base);
   if (t.bad.length) throw new Error("bad reference config: " + t.bad); return t.cfg })();
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -71,6 +71,15 @@ function upStats(cfg, S) { const T = R.fresh(cfg, S.seed), o = {steppeUps:0, mea
       if (r.does === "plant" && t.b === "t") o.pineTrees++ }
     else m.a === "d" ? R.discard(T, m.i) : m.a === "l" ? R.lock(T, [m.x, m.y]) : m.a === "u" ? R.pick(T, m.x + "," + m.y, m.f) : R.end(T) }
   return o }
+// What the marsh river multiplier did in a run (LOU-309), worked out by replaying its moves: every score a marsh tile earned (planted, combined onto, lifted by roots) by its multiplier, the points
+// from marsh, the largest single marsh score, and the points each marsh tile earned over the run (the most one tile earned says whether a marsh tile became a farm).
+function marshStats(cfg, S) { const T = R.fresh(cfg, S.seed), o = {b:[0, 0, 0, 0, 0, 0], pts:0, big:0, tile:{}};
+  const add = (k, m, p) => { o.b[Math.min(5, m - 1)]++; o.pts += p; o.big = Math.max(o.big, p); o.tile[k] = (o.tile[k] || 0) + p };
+  for (const m of S.moves) { if (m.a === "p") { const t = T.q[m.i], kk = m.x + "," + m.y, was = T.hb[kk], r = R.place(T, m.i, [m.x, m.y]);
+      if (r.does === "plant" && t.b === "m") add(kk, r.mult || 1, r.pts); else if (r.does === "combine" && was === "m") add(kk, r.mult || 1, r.pts);
+      for (const L of r.lifts) if (T.hb[L.k] === "m") add(L.k, Math.round(L.pts / R.scoreOf(cfg, T.h[L.k])), L.pts) }
+    else m.a === "d" ? R.discard(T, m.i) : m.a === "l" ? R.lock(T, [m.x, m.y]) : m.a === "u" ? R.pick(T, m.x + "," + m.y, m.f) : R.end(T) }
+  return o }
 
 // ---------- the report
 const avg = a => a.reduce((x, y) => x + y, 0) / (a.length || 1), pct = (a, p) => [...a].sort((x, y) => x - y)[Math.min(a.length - 1, Math.floor(a.length * p))];
@@ -102,6 +111,8 @@ function report(cfg, runs) { const res = []; for (let seed = 1; seed <= runs; se
     console.log(`  overgrow             ${f2(avg(O.map(l => l.length)))} a run: ${kind("")} on green · ${kind("p")} on prairie · ${kind("m")} on marsh · ${f1(avg(O.map(l => l.reduce((n, e) => n + e.pts, 0))))} points from overgrows · ${f2(avg(S.map(s => s.combined - s.overgrown)))} plain combines a run`) }
   if (cfg.upgradeLevel > 0 && cfg.marshShare > 0) { const M = ok.map(r => r.m), up = cfg.upgradeLevel, reach = s => s.log.filter(e => e.t && e.t.b === "m" && ((e.did === "combine" && e.l === up) || (e.did === "plant" && e.l >= up))).length;   // upgrades (LOU-304): how often a marsh tile reaches the upgrade level, and how often the reed bed is used
     console.log(`  reed beds            ${f2(avg(S.map(reach)))} marsh tiles reach level ${up} a run (in ${share(S, s => reach(s) > 0)} of runs) · ${f1(avg(S.map(s => Object.keys(s.h).filter(k => s.hb[k] === "m" && s.h[k] >= up).length)))} reed beds on the map at the end · ${f1(avg(M.map(m => m.marshPlanted)))} marsh planted a run, ${f2(avg(M.map(m => m.reedPlanted)))} of them only because of a reed bed (${f2(avg(M.map(m => m.reedRescued)))} marsh tiles a run had no other place to plant)`) }
+  if (cfg.marshRiverMultiplier && cfg.marshShare > 0) { const Q = S.map(s => marshStats(cfg, s)), b = i => f2(avg(Q.map(q => q.b[i]))), best = q => Math.max(0, ...Object.values(q.tile));   // the marsh river multiplier (LOU-309) is on: how the multipliers are spread, and what marsh earns
+    console.log(`  marsh multiplier     ${f1(avg(Q.map(q => sum(q.b))))} marsh scores a run: x1 ${b(0)} · x2 ${b(1)} · x3 ${b(2)} · x4 ${b(3)} · x5 ${b(4)} · x6 ${b(5)} · ${f1(avg(Q.map(q => q.pts)))} points from marsh (${Math.round(100 * sum(Q.map(q => q.pts)) / Math.max(1, sum(sc)))}% of the score) · the most one marsh tile earned in a run: ${f1(avg(Q.map(best)))} on average, ${Math.max(0, ...Q.map(best))} at most · the largest single marsh score ${Math.max(0, ...Q.map(q => q.big))}`) }
   if (cfg.upgradeLevel > 0 && (cfg.prairieShare > 0 || cfg.treeShare > 0)) { const U = S.map(s => upStats(cfg, s)), up = cfg.upgradeLevel, n = b => f2(avg(S.map(s => s.log.filter(e => e.did === "pick" && e.t.b === b).length))), any = b => share(S, s => s.log.some(e => e.did === "pick" && e.t.b === b)),
       pk = (b, f) => f2(avg(S.map(s => s.log.filter(e => e.did === "pick" && e.t.b === b && e.f === f).length)));   // the prairie and tree upgrades (LOU-305, LOU-306): how often level 4 is reached, how the picks go, what each upgrade added
     if (cfg.prairieShare > 0) console.log(`  prairie upgrades     ${n("p")} prairie tiles reach level ${up} a run (in ${any("p")} of runs) · picks ${pk("p", "steppe")} steppe, ${pk("p", "meadow")} meadow a run · steppe: ${f2(avg(U.map(u => u.steppeUps)))} level-ups a run, ${f2(avg(U.map(u => u.free)))} free tiles planted (as many points) · meadow: ${f2(avg(U.map(u => u.meadowUps)))} level-ups a run, ${f2(avg(U.map(u => u.meadowExtra)))} extra points from the multiplier, at the cap ${f2(avg(U.map(u => u.meadowCap)))} times a run`);
@@ -742,6 +753,59 @@ function checks() { let n = 0; const fails = [];
     ok(`a whole run of random legal moves with tree picks, roots and chains (${name}): six runs end and replay from their seeds, the score is the sum of the moves, every stored upgrade is on a pickable habitat at the upgrade level, and roots lifted tiles`, ends === 6 && replays === 6 && sums === 6 && clean === 6 && picks > 0 && lifted > 0) }
   for (const [name, mode] of [["refuse", RF], ["downgrade", DG]]) { const bad = []; for (let s = 1; s <= 8; s++) { const a = play(cfgWith({...mode, upgradeLevel:2, treeShare:.5, overgrow:false, lockEvery:0, stackSize:20}), s); if (a.error || !a.S.over || a.S.pend.length) bad.push(s) }
     ok(`the simple player makes every tree pick and ends every run (${name})`, bad.length === 0) }
+
+  // ----- the marsh river multiplier (LOU-309; Dan, Nov 21: "let's do a marsh bonus that for each "additional" river tile, it's a score multiple. 1 river = x1 (normal), 2 river = 2x...3x, 4x, 5x...."). Every score a marsh tile earns
+  // (planted, combined onto, levelled, lifted by roots) is multiplied by the number of river tiles that share an edge with it, at least x1: the source and locked river tiles count, the river is read at the moment of the score,
+  // and no other kind is multiplied. REF has it off, so every check above is about the game as it was.
+  const MM = {marshRiverMultiplier:true}, riv6 = k => Object.fromEntries(STEP.slice(0, k).map(q => [q, 1])), RIVER3 = {"9,5":1, "7,5":1, "8,4":1};   // k river tiles round (8,6); three river tiles round (8,5)
+  for (const [name, mode] of [["refuse", RF], ["downgrade", DG]]) {
+    { const pl = [], co = [], lv = [], offered = [], off = [];
+      for (const k of [1, 2, 3, 4]) {
+        const P = setup({}, riv6(k), {...mode, ...MM, opening:["marsh 1"]}), ring = R.options(P, 0).find(o => o.p + "" === C6 + ""), a = R.place(P, 0, C6);
+        pl.push(a && a.does === "plant" && a.pts === k && P.score === k && (k === 1 ? a.mult === undefined && a.mk === undefined : a.mult === k && a.mk === "marsh") && (k === 1 || ring.mult === k));
+        const Cb = setup({"8,6":1}, riv6(k), {...mode, ...MM, opening:["marsh 1"]}); Cb.hb["8,6"] = "m"; const bo = R.options(Cb, 0).find(o => o.p + "" === C6 + ""), b = R.place(Cb, 0, C6);
+        co.push(b && b.does === "combine" && b.pts === 3 * k && Cb.score === 3 * k && bo.pts === 3 * k); offered.push(k === 1 || bo.mult === k);
+        const Lv = setup({"8,6":2}, riv6(k), {...mode, ...MM, opening:["marsh 2"]}); Lv.hb["8,6"] = "m"; lv.push(R.place(Lv, 0, C6).pts === 6 * k);
+        const Z = setup({"8,6":1}, riv6(k), {...mode, opening:["marsh 1"]}); Z.hb["8,6"] = "m"; off.push(R.place(Z, 0, C6).pts === 3 && R.options(setup({}, riv6(k), {...mode, opening:["marsh 1"]}), 0).every(o => o.mult === undefined)) }
+      ok(`marsh x (${name}): a marsh tile touching 1, 2, 3 and 4 river tiles scores x1, x2, x3 and x4 when it is planted`, pl.every(Boolean));
+      ok(`marsh x (${name}): ...and when it is combined onto (the target scores, and the ring shows it) and when it levels up`, co.every(Boolean) && offered.every(Boolean) && lv.every(Boolean));
+      ok(`marsh x (${name}): with marshRiverMultiplier off marsh scores as before, whatever touches it`, off.every(Boolean)) }
+    { const S = setup({"8,6":4}, {}, {...mode, ...MM, ...PK, marshNeedsRiver:true, opening:["marsh 1", "marsh 1"]}); S.hb["8,6"] = "m"; const a = R.place(S, 0, [8, 5]), b = R.place(S, 0, [8, 5]);
+      ok(`marsh x (${name}): a marsh tile that touches no river tile (planted beside a reed bed) scores x1, planted and combined onto`, R.reedBedAt(S, "8,6") && a.does === "plant" && a.pts === 1 && a.mult === undefined && b.does === "combine" && b.pts === 3 && b.mult === undefined) }
+    { const S = setup({"7,4":1}, {"8,4":1}, {...mode, ...MM, opening:["marsh 1", "marsh 1"]}); S.hb["7,4"] = "m"; const lone = R.options(S, 0).find(o => o.p + "" === "7,4" + "").pts; S.lk["8,4"] = 1; const a = R.place(S, 0, [7, 4]);
+      ok(`marsh x (${name}): the source and a locked river tile count`, lone === 6 && a.pts === 6 && a.mult === 2 && ((T) => { T.hb["7,4"] = "m"; return R.place(T, 0, [7, 4]).pts })(setup({"7,4":1}, {}, {...mode, ...MM, opening:["marsh 1"]})) === 3) }
+    { const cfg = cfgWith({...mode, ...MM, opening:["river", "marsh 1", "marsh 1", "river", "river", "marsh 2"], stackSize:20, lockEvery:0}), S = R.fresh(cfg, 7);
+      R.place(S, 0, [7, 4]); const a = R.place(S, 0, [6, 5]), b = R.place(S, 0, [6, 5]); R.place(S, 0, [7, 5]); R.place(S, 0, [5, 5]); const c = R.place(S, 0, [6, 5]);
+      ok(`marsh x (${name}): the multiplier uses the river at the moment of the score: x2 planted, x2 combined, then two more river tiles and x4 at the level-up, and a replay gives the same run`,
+        a.pts === 2 && b.pts === 6 && c.pts === 24 && S.score === 32 && a.mult === 2 && c.mult === 4 && same(R.replay(cfg, 7, S.moves), S) && /\(Marsh ×2\)/.test(R.logText(S)) && /\(Marsh ×4\)/.test(R.logText(S)));
+      const U = R.replay(cfg, 7, S.moves.slice(0, -1)); ok(`marsh x (${name}): undo takes the multiplied points and the log text back with the move`, U.score === 8 && !/Marsh ×4/.test(R.logText(U)) && U.h["6,5"] === 2) }
+    { const mk = o => { const S = setup({"8,6":4, "8,5":2, "9,6":2, "8,7":2}, RIVER3, {...mode, ...PK, opening:["trees 4"], ...o}); treesAt(S, ["8,6"], "roots"); S.hb["8,5"] = "m"; S.hb["9,6"] = "p"; return S };   // roots at (8,6); round it a marsh 2 (three river tiles touch it), a prairie 2 and a green 2
+      const S = mk(MM), a = R.place(S, 0, C6), T = mk({}), b = R.place(T, 0, C6);
+      ok(`marsh x (${name}): a roots lift of a marsh tile is multiplied (x3 for the three river tiles touching it), and the prairie and green tiles lifted with it are not`, same(liftedKeys(a), ["8,5", "9,6", "8,7"]) && a.lifts[0].pts === 18 && a.lifts[1].pts === 6 && a.lifts[2].pts === 6 && a.pts === 15 + 18 + 6 + 6 && S.score === 45);
+      ok(`marsh x (${name}): with the multiplier off the same lift scores 6`, b.lifts[0].pts === 6 && b.pts === 15 + 6 + 6 + 6 && T.score === 33);
+      const N = mk({...MM, rootsChain:false}); ok(`marsh x (${name}): the lift is multiplied with the chain off as well`, R.place(N, 0, C6).lifts[0].pts === 18) }
+    { const K = [["habitat 1", undefined, "green"], ["prairie 1", "p", "prairie"]];
+      for (const [tile, b, word] of K) { const S = setup({}, riv6(3), {...mode, ...MM, opening:[tile]}), a = R.place(S, 0, C6); const T = setup({"8,6":1}, riv6(3), {...mode, ...MM, opening:[tile]}); if (b) T.hb["8,6"] = b; const c = R.place(T, 0, C6);
+        ok(`marsh x (${name}): a ${word} tile touching three river tiles scores as usual, planted and combined onto`, a.pts === 1 && a.mult === undefined && c.pts === 3 && c.mult === undefined) }
+      const O = setup({"8,6":1}, riv6(3), {...mode, ...MM, opening:["trees 1"]}); O.hb["8,6"] = "m"; const a = R.place(O, 0, C6);
+      ok(`marsh x (${name}): a tree that overgrows a marsh tile scores the tree's points, not the marsh multiplier`, a.does === "overgrow" && a.pts === 3 && a.mult === undefined && O.hb["8,6"] === "t");
+      const D = setup({"8,6":5}, riv6(3), {...mode, ...MM, ...PK, opening:["prairie 5"]}); prairies(D, ["8,6"], "meadow"); const d = R.place(D, 0, C6); const E2 = setup({"8,6":5}, riv6(3), {...mode, ...PK, opening:["prairie 5"]}); prairies(E2, ["8,6"], "meadow"); const e = R.place(E2, 0, C6);
+      ok(`marsh x (${name}): a meadow beside river tiles is not multiplied by them (the two multipliers don't stack), with the switch on or off`, d.pts === 21 && e.pts === 21 && d.mult === undefined) }
+  }
+  { const t = R.tidy({...REF, marshRiverMultiplier:"maybe"}, REF), u = R.tidy({...REF, marshRiverMultiplier:"on"}, REF);
+    ok("a bad marsh multiplier value is refused and the old value stands, and on is read as true", same(t.bad, ["marshRiverMultiplier"]) && t.cfg.marshRiverMultiplier === false && u.bad.length === 0 && u.cfg.marshRiverMultiplier === true) }
+  ok("the ruleset key changes with the marsh multiplier", R.rulesKey(cfgWith({marshRiverMultiplier:true})) !== R.rulesKey(REF));
+  ok("the config file has the marsh multiplier off", BASE.marshRiverMultiplier === false);
+  for (const [name, mode] of [["refuse", RF], ["downgrade", DG]]) { let ends = 0, replays = 0, sums = 0, mults = 0, big = 0;
+    for (const sd of [51, 52, 53, 54, 55, 56]) { const cfg = cfgWith({...mode, ...MM, marshNeedsRiver:true, upgradeLevel:4, marshShare:.5, prairieShare:.2, treeShare:.1, opening:["river", "river", "marsh 1", "marsh 1", "habitat 1"], lockEvery:0, stackSize:40, riverShare:.25}), S = R.fresh(cfg, sd);
+      let z = 21 + sd, guard = 0; const rn = () => (z = (z * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+      while (!S.over && guard++ < 4000) { if (S.pend.length) { const k = S.pend[0], ch = R.PICKS[S.hb[k] || ""]; R.pick(S, k, ch[Math.floor(rn() * ch.length)]); continue }
+        if (!S.q.length) { const lk = [...Object.keys(S.h), ...Object.keys(S.r)].map(R.unkey).find(p => R.lockable(S, p) && R.copiesOf(S, p).copies.length); if (!lk) { R.end(S); break } R.lock(S, lk); continue }
+        const o = R.options(S, 0); if (!o.length || rn() < .08) { R.discard(S, 0); continue } R.place(S, 0, o[Math.floor(rn() * o.length)].p) }
+      if (S.over && guard < 4000) ends++; if (same(S, R.replay(cfg, sd, S.moves))) replays++;
+      if (S.planted + S.combined + S.extended + S.widened + S.discarded === S.used && S.log.reduce((m, e) => m + e.pts, 0) === S.score) sums++;
+      mults += S.log.filter(e => e.mk === "marsh").length; if (S.log.some(e => e.mk === "marsh" && e.mult >= 3)) big++ }
+    ok(`a whole run of random legal moves with the marsh multiplier on (${name}): six runs end and replay from their seeds, the score is the sum of the moves, and marsh was multiplied (x3 or more in some)`, ends === 6 && replays === 6 && sums === 6 && mults > 0 && big > 0) }
 
   for (const f of fails) console.log("FAILED: " + f);
   console.log(fails.length ? `${fails.length} of ${n} rule checks failed` : `all ${n} rule checks passed`);

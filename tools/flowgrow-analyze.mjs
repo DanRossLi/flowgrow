@@ -69,6 +69,21 @@ if (CFG.upgradeLevel > 0) { const T = R.fresh(CFG, run.seed), o = {steppeUps:0, 
     else mv.a === "d" ? R.discard(T, mv.i) : mv.a === "l" ? R.lock(T, [mv.x, mv.y]) : mv.a === "u" ? R.pick(T, mv.x + "," + mv.y, mv.f) : R.end(T) }
   const label = {"p:steppe":"prairie steppe", "p:meadow":"prairie meadow", "t:roots":"trees roots", "t:pine":"trees pine-oneer"}, got = Object.entries(picks).map(([k, v]) => `${label[k]} ${v}`).join(" · ") || "none";
   if (CFG.prairieShare > 0 || CFG.treeShare > 0) console.log(`upgrade picks: ${got} · steppe ${o.steppeUps} level-ups, ${o.free} free tiles · meadow ${o.meadowUps} level-ups, ${Math.round(o.meadowExtra)} extra points from the multiplier (at the ×${CFG.meadowMax} cap ${o.meadowCap} times) · roots ${o.rootsUps} level-ups lifting ${o.lifted} tiles for ${o.chainPts} points (longest chain ${o.chainMax} tiles, most points in one move ${o.maxMove}) · ${o.pineTrees} trees planted`) }
+// What the marsh river multiplier did in this run (LOU-309; replayed move by move): the marsh scores by multiplier, the points marsh earned, the largest single marsh score, and what the busiest marsh tile earned in all.
+if (CFG.marshRiverMultiplier) { const T = R.fresh(CFG, run.seed), o = {b:[0, 0, 0, 0, 0, 0], pts:0, big:0, tile:{}};
+  const add = (k, m, p) => { o.b[Math.min(5, m - 1)]++; o.pts += p; o.big = Math.max(o.big, p); o.tile[k] = (o.tile[k] || 0) + p };
+  for (const mv of run.moves) { if (mv.a === "p") { const t = T.q[mv.i], kk = mv.x + "," + mv.y, was = T.hb[kk], r = R.place(T, mv.i, [mv.x, mv.y]);
+      if (r.does === "plant" && t.b === "m") add(kk, r.mult || 1, r.pts); else if (r.does === "combine" && was === "m") add(kk, r.mult || 1, r.pts);
+      for (const L of r.lifts) if (T.hb[L.k] === "m") add(L.k, Math.round(L.pts / R.scoreOf(CFG, T.h[L.k])), L.pts) }
+    else mv.a === "d" ? R.discard(T, mv.i) : mv.a === "l" ? R.lock(T, [mv.x, mv.y]) : mv.a === "u" ? R.pick(T, mv.x + "," + mv.y, mv.f) : R.end(T) }
+  const hot = Object.entries(o.tile).sort((a, b) => b[1] - a[1])[0];
+  console.log(`marsh multiplier: ${o.b.reduce((a, b) => a + b, 0)} marsh scores: x1 ${o.b[0]} · x2 ${o.b[1]} · x3 ${o.b[2]} · x4 ${o.b[3]} · x5 ${o.b[4]} · x6 ${o.b[5]} · ${o.pts} points from marsh (${Math.round(100 * o.pts / Math.max(1, S.score))}% of ${S.score}) · the largest single marsh score ${o.big} · the busiest marsh tile ${hot ? `(${hot[0]}) earned ${hot[1]} over the run` : "none"}`) }
+// The river's shape (LOU-309): its tiles, its longest path from the source, its branches (tiles with more than one tile flowing from them) and its bends (a tile whose direction from the one it flows from differs from that tile's own).
+{ const rv = S.r, ks = Object.keys(rv), kids = {}, cube = k => { const p = R.unkey(k); return [p[0] - (p[1] - (p[1] & 1)) / 2, p[1]] }, dirOf = (a, b) => { const p = cube(a), q = cube(b); return (q[0] - p[0]) + "," + (q[1] - p[1]) };
+  for (const k of ks) { const f = rv[k].from; if (f != null) (kids[f] = kids[f] || []).push(k) }
+  const depth = k => 1 + Math.max(0, ...(kids[k] || []).map(depth)), root = ks.find(k => rv[k].from == null);
+  let bends = 0, steps = 0; for (const k of ks) { const p = rv[k].from, g = p != null ? rv[p].from : null; if (p != null && g != null) { steps++; if (dirOf(g, p) !== dirOf(p, k)) bends++ } }
+  console.log(`river: ${ks.length} tiles with the source · longest path ${root ? depth(root) : 0} tiles · ${Object.values(kids).filter(a => a.length > 1).length} branches · ${bends} bends in ${steps} steps (${steps ? Math.round(100 * bends / steps) : 0}% of the steps turn)`) }
 const W = CFG.map[0].length, H = CFG.map.length, rows = [];
 for (let y = 0; y < H; y++) { let r = y & 1 ? " " : ""; for (let x = 0; x < W; x++) { const k = x + "," + y, code = CFG.map[y][x], lk = k in S.lk;
   r += (code === "B" ? "^^" : k in S.r ? (lk ? "~" : "w") + S.r[k].l : k in S.h ? (lk ? "#" : S.hb[k] || "h") + S.h[k] : "..") + " " } rows.push(r) }

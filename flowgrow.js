@@ -87,6 +87,7 @@ const KEYS = [
   ["marshShare", real(0, 1), "Marsh tiles", "the share of dealt habitats that are marsh (turquoise)", "num"],
   ["biomeMatch", bool, "Same kind to combine", "on: a tile only combines with a habitat of its own kind and level. off: any kind", "bool"],
   ["marshNeedsRiver", bool, "Marsh needs the river", "on: marsh can only be planted on empty land that shares an edge with a river tile. off: marsh plants wherever green does", "bool"],
+  ["marshRiverMultiplier", bool, "Marsh river multiplier", "on: every score a marsh tile earns is multiplied by the number of river tiles that share an edge with it (at least x1). off: marsh scores like the other kinds", "bool"],
   ["prairieSpreads", bool, "Prairie spreads", "on: prairie can also be planted on empty land that shares an edge with another prairie habitat, even outside the river's reach. off: prairie plants only inside reach", "bool"],
   ["treeShare", real(0, 1), "Trees tiles", "the share of dealt habitats after the opening that are trees (deep green). 0: no trees", "num"],
   ["overgrow", bool, "Trees overgrow", "on: trees are never planted on bare ground and grow over a habitat of the same level, of any kind. off: trees play like green habitats", "bool"],
@@ -155,7 +156,7 @@ const seedOf = v => { const n = Number(v); if (v !== "" && v != null && Number.i
   let h = 2166136261; for (const ch of String(v)) h = Math.imul(h ^ ch.charCodeAt(0), 16777619); return h >>> 0 };
 // A short name for the rules a run is played under: every config value that changes how a run plays (not names or zoom).
 // The best score is kept per ruleset, so scores from different rules never meet.
-const RULE_KEYS = ["map", "stackSize", "queueShown", "pickFrom", "riverShare", "opening", "prairieShare", "marshShare", "biomeMatch", "marshNeedsRiver", "prairieSpreads", "treeShare", "overgrow", "upgradeLevel", "steppePerLevel", "meadowMax", "rootsPerLevel", "rootsChain", "maxLevel", "bareGroundMaxLevel", "bareGroundMode", "levelOdds", "scoreByLevel", "riverReach", "riverMaxLevel", "riverScore", "riverMonotone", "riverRaiseGuard", "lockEnabled", "lockLevelCap", "lockCopiesGo", "lockRivers", "lockEvery", "lockHold"];
+const RULE_KEYS = ["map", "stackSize", "queueShown", "pickFrom", "riverShare", "opening", "prairieShare", "marshShare", "biomeMatch", "marshNeedsRiver", "marshRiverMultiplier", "prairieSpreads", "treeShare", "overgrow", "upgradeLevel", "steppePerLevel", "meadowMax", "rootsPerLevel", "rootsChain", "maxLevel", "bareGroundMaxLevel", "bareGroundMode", "levelOdds", "scoreByLevel", "riverReach", "riverMaxLevel", "riverScore", "riverMonotone", "riverRaiseGuard", "lockEnabled", "lockLevelCap", "lockCopiesGo", "lockRivers", "lockEvery", "lockHold"];
 const rulesKey = c => seedOf(JSON.stringify(RULE_KEYS.map(k => c[k]))).toString(36);
 function rand(S) { let t = (S.rs = (S.rs + 0x6D2B79F5) >>> 0); t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296 }
 // One new tile. The first tiles of a run are fixed (cfg.opening). After that a tile is a river tile riverShare of the time;
@@ -241,6 +242,10 @@ const readingOrder = (a, b) => { const p = unkey(a), q = unkey(b); return p[1] -
 const freeSpots = (S, k) => { const out = []; for (const d of CW) { const q = step(unkey(k), d); if (inside(S.cfg, q) && openKey(S, key(q))) out.push(key(q)) } return out };
 // What a meadow's level-up is multiplied by: 1 + the marsh and trees habitats beside it (any level, locked or not; green, prairie and river tiles don't count), up to meadowMax.
 const meadowMult = (S, k) => { let n = 0; for (const q of grid(S.cfg).nb[k]) if (S.hb[q] === "m" || S.hb[q] === "t") n++; return Math.min(S.cfg.meadowMax, 1 + n) };
+// The marsh river multiplier (LOU-309; Dan, Nov 21: "let's do a marsh bonus that for each "additional" river tile, it's a score multiple. 1 river = x1 (normal), 2 river = 2x...3x, 4x, 5x...."): the points a marsh
+// tile scores (planted, combined onto, levelled, lifted by roots) are multiplied by the number of river tiles that share an edge with it, at least x1. River tiles count at any level, locked or not, the source
+// included. It is worked out from the board at the moment of the score and paid once, so nothing is stored. Off (marshRiverMultiplier false) it is x1.
+const marshMult = (S, k) => { if (!S.cfg.marshRiverMultiplier) return 1; let n = 0; for (const q of grid(S.cfg).nb[k]) if (q in S.r) n++; return Math.max(1, n) };
 // A habitat at the upgrade level with no upgrade yet, of a kind that picks, has a pick to make. The picks are asked in reading order (row, then column), one at a time, before any other move.
 function needPick(S, k) { const c = S.cfg; if (c.upgradeLevel > 0 && S.h[k] >= c.upgradeLevel && PICKS[S.hb[k] || ""] && !S.hf[k] && !S.pend.includes(k)) { S.pend.push(k); S.pend.sort(readingOrder) } }
 // A habitat that levelled up (by a combine, or lifted by roots) fires its upgrade. Steppe: steppePerLevel free level 1 prairies on empty land beside it, in the fixed order; they aren't taken from the pile, so
@@ -263,6 +268,7 @@ function roots(S, k0, got) { const c = S.cfg, queue = [k0]; let steps = 0;
     if (el.length > c.rootsPerLevel) el = el.map((j, i) => [j, i]).sort((a, b) => S.h[a[0]] - S.h[b[0]] || a[1] - b[1]).slice(0, c.rootsPerLevel).sort((a, b) => a[1] - b[1]).map(a => a[0]);
     for (const j of el) { if (++steps > ROOTS_LIMIT) return; S.h[j]++; const l2 = S.h[j]; let pts = scoreOf(c, l2);
       if (c.rootsChain && S.hf[j] === "meadow") pts *= meadowMult(S, j);
+      if (S.hb[j] === "m") pts *= marshMult(S, j);   // a lifted marsh tile scores times the river tiles touching it (LOU-309), chain or not
       got.pts += pts; got.liftPts += pts; got.lifts.push({k:j, pts}); S.lifted++; S.top = Math.max(S.top, l2);
       if (c.rootsChain) { if (S.hf[j] === "steppe") steppe(S, j, got); else if (S.hf[j] === "roots") queue.push(j) }
       needPick(S, j) } } }
@@ -286,10 +292,10 @@ function options(S, i = 0) { const c = S.cfg, g = grid(c), t = S.q[i], out = [],
     const tree = t.b === "t" && c.overgrow;
     if (t.l < c.maxLevel) for (const k in S.h) if (S.h[k] === t.l && !(k in S.lk)) { const from = S.hb[k];
       if (tree && from !== "t") out.push({p:at(k), does:"overgrow", l:t.l + 1, pts:scoreOf(c, t.l + 1), from:from || ""});
-      else if (!c.biomeMatch || from === t.b) { const mult = S.hf[k] === "meadow" ? meadowMult(S, k) : 1;   // biomeMatch: only the same kind combines. A meadow's level-up scores times 1 + its marsh and trees
-        out.push({p:at(k), does:"combine", l:t.l + 1, pts:scoreOf(c, t.l + 1) * mult, ...(mult > 1 ? {mult} : {})}) } }
+      else if (!c.biomeMatch || from === t.b) { const mm = from === "m" ? marshMult(S, k) : 1, mult = S.hf[k] === "meadow" ? meadowMult(S, k) : mm;   // biomeMatch: only the same kind combines. A meadow's level-up scores times 1 + its marsh and trees
+        out.push({p:at(k), does:"combine", l:t.l + 1, pts:scoreOf(c, t.l + 1) * mult, ...(mult > 1 ? {mult} : {}), ...(mult > 1 && from === "m" ? {mk:"marsh"} : {})}) } }
     const lp = plantLevel(c, t.l);   // the level it lands as on empty land (0: refused). A tree only plants beside a pine-oneer (plantableFor)
-    if (lp) for (const k of plantableFor(S, t)) out.push({p:at(k), does:"plant", l:lp, pts:scoreOf(c, lp)});   // by kind: marsh on the river bank, prairie also next to prairie
+    if (lp) for (const k of plantableFor(S, t)) { const mm = t.b === "m" ? marshMult(S, k) : 1; out.push({p:at(k), does:"plant", l:lp, pts:scoreOf(c, lp) * mm, ...(mm > 1 ? {mult:mm, mk:"marsh"} : {})}) }   // by kind: marsh on the river bank, prairie also next to prairie
   } else for (const o of riverMoves(S, t, c.riverRaiseGuard ? i : -1)) out.push(o);
   return out }
 // Where river tile t can go: raise ("widen") a river tile of its own level, or extend the river onto empty land that touches it. skip is the tile's place in the pile when the stranding
@@ -354,7 +360,7 @@ function place(S, i, p) { const o = options(S, i).find(o => o.p[0] === p[0] && o
   if (t.c) { S.copyPlaced++; S.copyPoints += pts }
   earn(S); S.used++; S.moves.push({a:"p", i, x:p[0], y:p[1]});
   const greened = before ? [...reachOf(S)].filter(q => !before.has(q)) : [];
-  fill(S); note(S, t, o.does, p, o.l, pts); const e = S.log[S.log.length - 1]; if (o.does === "overgrow") e.from = o.from; if (o.mult > 1) e.mult = o.mult; if (got.free.length) e.free = got.free; if (got.lifts.length) { e.lifted = got.lifts.length; e.liftPts = got.liftPts } return {...o, pts, tile:t, greened, free:got.free, lifts:got.lifts, liftPts:got.liftPts} }
+  fill(S); note(S, t, o.does, p, o.l, pts); const e = S.log[S.log.length - 1]; if (o.does === "overgrow") e.from = o.from; if (o.mult > 1) { e.mult = o.mult; if (o.mk) e.mk = o.mk } if (got.free.length) e.free = got.free; if (got.lifts.length) { e.lifted = got.lifts.length; e.liftPts = got.liftPts } return {...o, pts, tile:t, greened, free:got.free, lifts:got.lifts, liftPts:got.liftPts} }
 // Throw tile i away. It scores nothing and still uses up the tile, so a run can never get stuck.
 function discard(S, i = 0) { if (S.over || !S.q[i] || S.pend.length) return null; const t = S.q.splice(i, 1)[0];
   S.discarded++; if (t.c) S.copyDiscarded++; S.used++; S.moves.push({a:"d", i}); fill(S); note(S, t, "discard", null, 0, 0); return {does:"discard", tile:t} }
@@ -393,7 +399,7 @@ function replay(cfg, seed, moves) { const S = fresh(cfg, seed);
 // ---------- words
 const tileText = (c, t) => t.k === "r" ? (t.l > 1 ? `River tile (level ${t.l})` : "River tile") : t.b ? `${BIOME_NAME[t.b]} (level ${t.l})` : (n => n === "Level " + t.l ? n : `${n} (level ${t.l})`)(levelName(c, t.l));
 const DID = {plant:"planted", combine:"combined", overgrow:"overgrew", extend:"extended the river", widen:"widened the river", discard:"discarded"};
-const extras = e => (e.mult > 1 ? ` (Meadow ×${e.mult})` : "") + (e.free ? ` (Steppe planted ${e.free.length} free)` : "") + (e.lifted ? ` (Roots lifted ${e.lifted}, ${e.liftPts} points)` : "");   // what a level-up's upgrade did, for the run log
+const extras = e => (e.mult > 1 ? ` (${e.mk === "marsh" ? "Marsh" : "Meadow"} ×${e.mult})` : "") + (e.free ? ` (Steppe planted ${e.free.length} free)` : "") + (e.lifted ? ` (Roots lifted ${e.lifted}, ${e.liftPts} points)` : "");   // what a level-up's upgrade did, for the run log
 // The run log: one line per move, with the tile (dealt, or a copy), what was done and where, the points, the score and the
 // plantable tiles left. A lock's line has the tile locked and the copies it banked.
 function logText(S) { const c = S.cfg, lines = [`Flowgrow run log · seed ${S.seed} · ${c.stackSize ? c.stackSize + " tiles" : "endless"} · places are column,row from 0`];
@@ -427,8 +433,11 @@ const mem = {get(k) { try { return localStorage.getItem("flowgrow." + k) } catch
 // Until Nov 20, 2026 Flowgrow lived inside Flow Tile and saved under "flowtile.flowgrow.". Both sites share one address, so those old
 // keys may still be here: bring the best score and any run in progress across once, then drop them.
 for (const k of ["best", "run.v2"]) try { const old = localStorage.getItem("flowtile.flowgrow." + k); if (old != null) { if (mem.get(k) == null) mem.set(k, old); localStorage.removeItem("flowtile.flowgrow." + k) } } catch (_) {}
-for (const v of ["run.v2", "run.v3", "run.v4", "run.v5", "run.v6", "run.v7", "run.v8"]) mem.set(v, null); // runs are saved as run.v9 since the stranding guard (Nov 21; before that run.v8 since LOU-306) (a rule change can make an older move list illegal, so each one bumps the version): the older keys are dead, drop them
-const CFG = tidy(G.FLOWGROW).cfg, GRID = grid(CFG), W = CFG.map[0].length, H = CFG.map.length;
+for (const v of ["run.v2", "run.v3", "run.v4", "run.v5", "run.v6", "run.v7", "run.v8", "run.v9"]) mem.set(v, null); // runs are saved as run.v10 since LOU-309 (Nov 21; run.v9 since the stranding guard, run.v8 since LOU-306) (a rule change can make an older move list illegal, so each one bumps the version): the older keys are dead, drop them
+// Any config value can be changed in the address for one visit, as key=value, with the simulator's names and checks (LOU-309: "so he can play it"), for example ?marshRiverMultiplier=true. A run and its
+// best score are kept per ruleset, so they never mix with the default game's (a saved run is one slot: playing another ruleset starts that one fresh).
+const QS = {}; for (const [k, v] of new URLSearchParams(location.search)) if (KEYS.some(e => e[0] === k)) QS[k] = v;
+const MADE = tidy({...G.FLOWGROW, ...QS}, G.FLOWGROW), CFG = MADE.cfg, ASKED = Object.keys(QS).filter(k => !MADE.bad.includes(k)), GRID = grid(CFG), W = CFG.map[0].length, H = CFG.map.length;
 const RK = rulesKey(CFG), BEST = "best." + RK; // the best score is kept per ruleset (every number that changes how a run plays), so scores from different rules never meet
 const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches, now = () => performance.now();
 let S = null, opts = [], landSig = "", wonShown = false, msgT = 0, lockMode = false, lockSel = null, lockList = [];
@@ -681,10 +690,11 @@ function draw() { if (!S || !lay.w) return; const T = now(), t = T / 1000;
       else { const rx = o.does === "extend" ? 22 + 2 * pu : 31 + 2 * pu; ctx.beginPath(); ctx.ellipse(c.x, c.y + 1, rx, rx / 2, 0, 0, 7); ink("rgba(232,255,248,.95)", 4.5); ctx.beginPath(); ctx.ellipse(c.x, c.y + 1, rx, rx / 2, 0, 0, 7); ink("rgba(63,191,164,.9)", 1.6);
         if (o.does === "extend") ell(c.x, c.y + 1, 12, 6, "rgba(98,224,200,.55)") } } }
   for (const k in S.h) { const o = iso(...GRID.at[k]); tag(o.x + 25, o.y + 13, String(S.h[k]), S.hb[k] === "p" ? "#7a5a10" : S.hb[k] === "m" ? "#0d6a66" : S.hb[k] === "t" ? "#0f4f31" : "#24434a", 14, k in S.lk, upgradeOf(CFG, {k:"h", b:S.hb[k], l:S.h[k], f:S.hf[k]})) } // every habitat carries its level (and its upgrade's mark), and a padlock once it is locked
+  if (CFG.marshRiverMultiplier) for (const k in S.h) if (S.hb[k] === "m" && !(k in S.lk)) { const m = marshMult(S, k); if (m > 1) { const o = iso(...GRID.at[k]); tag(o.x + 25, o.y - 3, "×" + m, "#0d6a66", 12) } }   // a marsh tile that scores more shows its multiplier above its level (LOU-309)
   for (const k in S.lk) if (k in S.r) { const o = iso(...GRID.at[k]); tag(o.x, o.y + 1, S.r[k].l > 1 ? String(S.r[k].l) : "", "#24434a", 14, true) } // a locked river tile gets a padlock of its own
   for (const k in S.r) if (!(k in S.lk) && S.r[k].l > 1) { const o = iso(...GRID.at[k]); tag(o.x, o.y + 1, String(S.r[k].l), "#1f5f8f", 14) }   // and an unlocked one past level 1 carries its level
   if (lockMode) lockHints(); pickRing(T);
-  if (!S.over && !lockMode) for (const o of opts) { const c = iso(...o.p); if (o.does === "combine") tag(c.x, c.y - TALL[Math.min(o.l - 1, 7)] - 14, "+" + o.pts, "#7a5a10", 15); else if (o.does === "widen") tag(c.x, c.y - 20, widenText(o), "#0f7a66", 14); else if (o.does === "overgrow") tag(c.x, c.y - TALL[Math.min(o.l - 1, 7)] - 14, "over +" + o.pts, "#0f5a33", 14); else if (o.does === "plant" && o.l < S.q[0].l) tag(c.x, c.y - 6, "as " + o.l, "#7a5a10", 13) }
+  if (!S.over && !lockMode) for (const o of opts) { const c = iso(...o.p); if (o.does === "combine") tag(c.x, c.y - TALL[Math.min(o.l - 1, 7)] - 14, "+" + o.pts, "#7a5a10", 15); else if (o.does === "widen") tag(c.x, c.y - 20, widenText(o), "#0f7a66", 14); else if (o.does === "overgrow") tag(c.x, c.y - TALL[Math.min(o.l - 1, 7)] - 14, "over +" + o.pts, "#0f5a33", 14); else if (o.does === "plant" && (o.l < S.q[0].l || o.mult > 1)) tag(c.x, c.y - 6, (o.l < S.q[0].l ? "as " + o.l : "") + (o.mult > 1 ? (o.l < S.q[0].l ? " " : "") + "×" + o.mult : ""), o.mult > 1 ? "#0c6a64" : "#7a5a10", 13) }
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
   for (let i = fx.length - 1; i >= 0; i--) { const f = fx[i], k = (T - f.t0) / 900; if (k >= 1) { fx.splice(i, 1); continue } const o = iso(...f.p), y = o.y - f.up - 26 * (1 - Math.pow(1 - k, 2)); // points float up in pale gold
     ctx.globalAlpha = k < .5 ? 1 : (1 - k) / .5; ctx.font = `800 ${17 * lay.dpr / scale}px ${HAND}`; ctx.lineWidth = 3.5 * lay.dpr / scale; ctx.strokeStyle = "rgba(60,45,10,.6)"; ctx.lineJoin = "round"; ctx.strokeText(f.text, o.x, y); ctx.fillStyle = "#ffe9a8"; ctx.fillText(f.text, o.x, y); ctx.globalAlpha = 1 } }
@@ -729,12 +739,12 @@ function drawSimple(T, t) { ctx = ctx0; ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.
     if (code === "T") { ctx.beginPath(); ctx.arc(0, 0, R - 9, 0, TAU); ink("rgba(255,255,255,.85)", 2.4) }   // the source has a white ring inside its tile
     if (tile) { ctx.fillStyle = numInk(tile); ctx.font = `800 ${R * (tile.l > 9 ? .78 : .98)}px ${HAND}`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(String(tile.l), 0, 3);
       if (up) UPG_LOOK[up].mark(0, R * .63, 1.05, ...UPG_LOOK[up].tile);                                        // and a small mark under its number
-      if (k in S.lk) padlock(0, -R * .6, 1.05, numInk(tile)) }                                                  // a locked tile carries a padlock
+      if (k in S.lk) padlock(0, -R * .6, 1.05, numInk(tile)); else if (tile.b === "m" && CFG.marshRiverMultiplier) { const m = marshMult(S, k); if (m > 1) tag(R * .56, -R * .4, "×" + m, "#0c3b38", 13) } }   // a marsh tile that scores more shows its multiplier (LOU-309)                                                  // a locked tile carries a padlock
     ctx.restore() }
   // what the tile in hand can do: a green outline on land it can be planted on, a gold ring on a tile it combines with (and its points),
   // a teal ring on a river tile it widens, a dashed blue ring on land it extends the river onto
   if (!S.over && !lockMode) for (const o of opts) { const c = iso(...o.p), ring = col => { rpath(hexPts(o.p, R - 4), 7); ink("rgba(255,255,255,.95)", 7); rpath(hexPts(o.p, R - 4), 7); ink(col, 3.4) };
-    if (o.does === "plant") { rpath(hexPts(o.p, R - 5), 7); ink(`rgba(60,150,90,${.55 + .35 * pu})`, 2.4); if (o.l < S.q[0].l) tag(c.x, c.y, "as " + o.l, "#7a5a10", 13) }   // "downgrade": a tile above the bare ground limit lands as level 1
+    if (o.does === "plant") { rpath(hexPts(o.p, R - 5), 7); ink(`rgba(60,150,90,${.55 + .35 * pu})`, 2.4); const as = o.l < S.q[0].l; if (as) tag(c.x, c.y - (o.mult > 1 ? 10 : 0), "as " + o.l, "#7a5a10", 13); if (o.mult > 1) tag(c.x, c.y + (as ? 10 : 0), "×" + o.mult, "#0c6a64", 14) }   // "downgrade": a tile above the bare ground limit lands as level 1
     else if (o.does === "extend") { rpath(hexPts(o.p, R - 5), 7); ctx.fillStyle = "rgba(90,174,234,.32)"; ctx.fill(); ctx.setLineDash([7, 6]); ink("#2f86d6", 3); ctx.setLineDash([]) }
     else if (o.does === "combine") { ring("#e0a31c"); tag(c.x, c.y - R * .62, "+" + o.pts, "#7a5a10", 15) }
     else if (o.does === "overgrow") { ring("#15663f"); tag(c.x, c.y - R * .62, "over +" + o.pts, "#0f5a33", 14) }   // a tree can grow over this habitat
@@ -796,7 +806,7 @@ function sync() { opts = options(S, 0); landSig = [...reachOf(S)].join(";");
   { const lb = $("lockBtn"); lb.hidden = !CFG.lockEnabled; lb.classList.toggle("on", lockMode); lb.classList.toggle("none", !hasLock(S)); tx("lockN", CFG.lockEvery === 0 ? "∞" : S.locks); tx("lockIn", CFG.lockEvery > 0 ? "next in " + (CFG.lockEvery - S.toLock) : "") }
   $("endq").hidden = !waiting || !!lockSel; $("lockq").hidden = !lockSel; if (lockSel) lockCard();
   if (S.over && !wonShown) result(); if (!S.over) wonShown = false; $("win").hidden = !S.over; $("app").classList.toggle("won", S.over);
-  mem.set("run.v9", S.over ? null : JSON.stringify({seed:S.seed, moves:S.moves, at:Date.now(), rules:RK})); draw() }
+  mem.set("run.v10", S.over ? null : JSON.stringify({seed:S.seed, moves:S.moves, at:Date.now(), rules:RK})); draw() }
 // When the tiles run out: the score, the best score on this device, the top level and what was done.
 function result() { wonShown = true; const best = +mem.get(BEST) || 0, low = S.log.filter(e => e.did === "plant" && e.l < e.t.l).length; if (S.score > best) mem.set(BEST, String(S.score));
   $("wScore").innerHTML = `<b>${S.score} points</b> · ${S.score > best ? (best ? `New best (was ${best})` : "New best") : `Best ${best}`}`;
@@ -807,7 +817,7 @@ function result() { wonShown = true; const best = +mem.get(BEST) || 0, low = S.l
 // ---------- a run: new, saved after every move, rebuilt from its seed and moves on reload (a finished or day-old run starts fresh)
 const urlSeed = new URLSearchParams(location.search).get("seed");
 function newRun() { S = fresh(CFG, urlSeed != null && urlSeed !== "" ? urlSeed : Math.floor(Math.random() * 1e9)); for (const k in pops) delete pops[k]; fx.length = 0; lockMode = false; lockSel = null; say(S.q[0] && S.q[0].k === "r" ? "Tap land next to your river to make it longer." : "Tap green land to place the tile in hand."); sync() }
-function load() { try { const d = JSON.parse(mem.get("run.v9") || "null"); if (!d || d.rules !== RK || !Array.isArray(d.moves) || Date.now() - d.at > 12 * 3600e3) return false; S = replay(CFG, d.seed, d.moves); return !S.over } catch (_) { return false } }
+function load() { try { const d = JSON.parse(mem.get("run.v10") || "null"); if (!d || d.rules !== RK || !Array.isArray(d.moves) || Date.now() - d.at > 12 * 3600e3) return false; S = replay(CFG, d.seed, d.moves); return !S.over } catch (_) { return false } }
 function tap(p) { if (!S || S.over || !p) return;
   if (lockMode) { if (!lockable(S, p)) { say(key(p) in S.lk ? "That tile is locked." : "Pick a habitat or a river tile.", true); return } lockSel = p; say(""); sync(); return }
   const had = S.locks, res = place(S, 0, p);
@@ -816,7 +826,7 @@ function tap(p) { if (!S || S.over || !p) return;
   for (const j of res.free) { pops[j] = now(); fx.push({p:unkey(j), text:"+1", t0:now(), up:TALL[1]}) }   // a steppe's free tiles pop in and score 1 each
   for (const L of res.lifts) { pops[L.k] = now(); fx.push({p:unkey(L.k), text:"+" + L.pts, t0:now(), up:TALL[Math.min(S.h[L.k], 7)]}) }   // and so do the tiles roots lifted
   const kind = res.does === "overgrow" ? "t" : res.tile.b, gained = res.tile.k === "h" && upgradeOf(CFG, {k:"h", b:kind, l:res.l}) && !(res.does === "combine" && upgradeOf(CFG, {k:"h", b:kind, l:res.l - 1}));   // a move that gives a tile its upgrade says what it is
-  say(S.locks > had ? "You earned a lock. Tap Lock to use it." : res.lifts.length ? `Roots +${res.lifts.length} ${res.lifts.length === 1 ? "tile" : "tiles"}, ${res.liftPts} points.` : S.pend.length ? "Choose an upgrade." : res.mult > 1 ? `Meadow ×${res.mult}: +${res.pts}.` : res.free.length ? `Steppe planted ${res.free.length === 1 ? "a free prairie" : res.free.length + " free prairies"}.` : res.does === "plant" && res.l < res.tile.l ? `Planted as level ${res.l}.` : res.does === "overgrow" ? `Trees grew over the ${res.from ? BIOME_NAME[res.from].toLowerCase() : "green"} tile.` : gained ? upgradeLine({k:"h", b:kind, l:res.l}) : ""); sync() }
+  say(S.locks > had ? "You earned a lock. Tap Lock to use it." : res.lifts.length ? `Roots +${res.lifts.length} ${res.lifts.length === 1 ? "tile" : "tiles"}, ${res.liftPts} points.` : S.pend.length ? "Choose an upgrade." : res.mult > 1 ? `${res.mk === "marsh" ? "Marsh" : "Meadow"} ×${res.mult}: +${res.pts}.` : res.free.length ? `Steppe planted ${res.free.length === 1 ? "a free prairie" : res.free.length + " free prairies"}.` : res.does === "plant" && res.l < res.tile.l ? `Planted as level ${res.l}.` : res.does === "overgrow" ? `Trees grew over the ${res.from ? BIOME_NAME[res.from].toLowerCase() : "green"} tile.` : gained ? upgradeLine({k:"h", b:kind, l:res.l}) : ""); sync() }
 function undo() { if (!S.moves.length) return; S = replay(CFG, S.seed, S.moves.slice(0, S.moves.length - undoCount(S.moves))); lockMode = false; lockSel = null; say("Stepped back."); sync() }   // a pick goes back with the move that led to it
 async function copyText(t) { try { await navigator.clipboard.writeText(t); return true } catch (_) {} try { const a = document.createElement("textarea"); a.value = t; a.style.cssText = "position:fixed;opacity:0"; document.body.appendChild(a); a.select(); const ok = document.execCommand("copy"); a.remove(); return ok } catch (_) { return false } }
 
@@ -858,9 +868,11 @@ fillLadder();
 { const n = CFG.bareGroundMaxLevel, hb = $("howBare"); hb.hidden = n >= CFG.maxLevel;
   hb.textContent = CFG.bareGroundMode === "downgrade" ? `Planted on bare ground, a tile above level ${n} lands as level 1.` : `Only level ${n}${n > 1 ? " or lower" : ""} can be planted on bare ground. A higher tile has to combine onto a habitat of its own level, or be discarded.`;
   tx("howLock", (CFG.lockEvery > 0 ? `Every ${CFG.lockEvery} tiles you place earns a lock. ` : "There is no limit on locks. ") + "Lock a tile to copy its neighbours, at its level or below, to the back of your pile. A locked tile can't grow any more.");
+  const ha = $("howAddr"); ha.hidden = !ASKED.length; ha.textContent = ASKED.length ? "This visit changes " + ASKED.map(k => `${k}=${Array.isArray(CFG[k]) ? CFG[k].join(", ") : CFG[k]}`).join(", ") + " (from the address). Your run and best score are kept apart from the usual game's." : "";
   const hv = $("howBiome"); hv.hidden = !(CFG.prairieShare > 0 || CFG.marshShare > 0);
   hv.textContent = "Yellow tiles are Prairie and turquoise tiles are Marsh. " + (CFG.biomeMatch ? "They grow the same way as the green ones, but a tile only combines with a habitat of its own kind and level." : "Any kind combines with any kind of the same level.")
-    + (CFG.marshNeedsRiver ? " Marsh only goes on land that touches the river" + (CFG.upgradeLevel > 0 ? " or a reed bed." : ".") : "") + (CFG.prairieSpreads ? " Prairie can also go on land that touches prairie, even outside the river's reach." : "");
+    + (CFG.marshNeedsRiver ? " Marsh only goes on land that touches the river" + (CFG.upgradeLevel > 0 ? " or a reed bed." : ".") : "") + (CFG.prairieSpreads ? " Prairie can also go on land that touches prairie, even outside the river's reach." : "")
+    + (CFG.marshRiverMultiplier ? " A marsh tile scores more for each river tile it touches: x2 for two, x3 for three, and so on up to x6." : "");
   const ht = $("howTrees"); ht.hidden = !(CFG.treeShare > 0);
   ht.textContent = CFG.overgrow ? "Trees (deep green) are never planted on bare ground. A tree tile grows over a habitat of the same level, of any kind, and turns it into a tree one level up: the tile loses its old kind." : "Trees (deep green) plant like green and only combine with trees.";
   const hu = $("howUpgrade"), reedOn = CFG.marshShare > 0 && CFG.marshNeedsRiver, steppeOn = CFG.prairieShare > 0, treesOn = CFG.treeShare > 0; hu.hidden = !(CFG.upgradeLevel > 0 && (reedOn || steppeOn || treesOn));   // upgrades (LOU-304, LOU-305)
