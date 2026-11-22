@@ -437,7 +437,7 @@ for (const v of ["run.v2", "run.v3", "run.v4", "run.v5", "run.v6", "run.v7", "ru
 // Any config value can be changed in the address for one visit, as key=value, with the simulator's names and checks (LOU-309: "so he can play it"), for example ?marshRiverMultiplier=true. A run and its
 // best score are kept per ruleset, so they never mix with the default game's (a saved run is one slot: playing another ruleset starts that one fresh).
 const QS = {}; for (const [k, v] of new URLSearchParams(location.search)) if (KEYS.some(e => e[0] === k)) QS[k] = v;
-const MADE = tidy({...G.FLOWGROW, ...QS}, G.FLOWGROW), CFG = MADE.cfg, ASKED = Object.keys(QS).filter(k => !MADE.bad.includes(k)), GRID = grid(CFG), W = CFG.map[0].length, H = CFG.map.length;
+const MADE = tidy({...G.FLOWGROW, ...QS}, G.FLOWGROW), CFG = MADE.cfg, ASKED = Object.keys(QS).filter(k => !MADE.bad.includes(k) && JSON.stringify(CFG[k]) !== JSON.stringify(G.FLOWGROW[k])), GRID = grid(CFG), W = CFG.map[0].length, H = CFG.map.length;
 const RK = rulesKey(CFG), BEST = "best." + RK; // the best score is kept per ruleset (every number that changes how a run plays), so scores from different rules never meet
 const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches, now = () => performance.now();
 let S = null, opts = [], landSig = "", wonShown = false, msgT = 0, lockMode = false, lockSel = null, lockList = [];

@@ -795,7 +795,7 @@ function checks() { let n = 0; const fails = [];
   { const t = R.tidy({...REF, marshRiverMultiplier:"maybe"}, REF), u = R.tidy({...REF, marshRiverMultiplier:"on"}, REF);
     ok("a bad marsh multiplier value is refused and the old value stands, and on is read as true", same(t.bad, ["marshRiverMultiplier"]) && t.cfg.marshRiverMultiplier === false && u.bad.length === 0 && u.cfg.marshRiverMultiplier === true) }
   ok("the ruleset key changes with the marsh multiplier", R.rulesKey(cfgWith({marshRiverMultiplier:true})) !== R.rulesKey(REF));
-  ok("the config file has the marsh multiplier off", BASE.marshRiverMultiplier === false);
+  ok("the config file has the marsh multiplier on (Dan: \"Turn it on\")", BASE.marshRiverMultiplier === true);
   for (const [name, mode] of [["refuse", RF], ["downgrade", DG]]) { let ends = 0, replays = 0, sums = 0, mults = 0, big = 0;
     for (const sd of [51, 52, 53, 54, 55, 56]) { const cfg = cfgWith({...mode, ...MM, marshNeedsRiver:true, upgradeLevel:4, marshShare:.5, prairieShare:.2, treeShare:.1, opening:["river", "river", "marsh 1", "marsh 1", "habitat 1"], lockEvery:0, stackSize:40, riverShare:.25}), S = R.fresh(cfg, sd);
       let z = 21 + sd, guard = 0; const rn = () => (z = (z * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
