@@ -47,6 +47,7 @@ window.FLOWGROW = {
   riverMaxLevel: 15,        // the highest level a river tile can reach (Dan, Nov 20: "make rivers also level up, just as points make the "width" max 2"). A river tile put on one of its own level raises it, like habitats; only the first two levels widen it. 2: the first build, where level 2 was the top
   riverScore: "levels",     // what a river tile scores. "levels": raising a river tile a level scores the points for the level it reaches, as for habitats; extending the river scores nothing. "all": every river move scores like a habitat of its level. "none": rivers score nothing (the first build)
   riverMonotone: true,      // rivers rise downstream (Dan, Nov 20): a river tile can't be lower than the one it flows from, so a river is widened from its end back towards the source. false: the first build's rule
+  riverRaiseGuard: true,    // Dan, Nov 21: "fix the opening trap". The pile opens with four river tiles, and raising the source with the first one leaves the other three nowhere to go (a level 1 river tile can't be lower than the source). true: a river tile can't raise a river tile when that would leave a river tile waiting in the pile with no legal move. false: it can
 
   tilesAcross: 5,           // opening zoom: about this many tiles fit across a phone
 

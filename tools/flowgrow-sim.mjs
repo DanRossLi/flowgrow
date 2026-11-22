@@ -23,7 +23,7 @@ const BASE = R.tidy(base).cfg;
 // The rule checks are written for these values, the first build's, so tuning flowgrow.config.js never breaks them (the pilot pile, for one,
 // changes the pile; bare ground takes any level, and the bare ground rule is checked on its own below). The report and the command line use the config file as it is.
 const REF = (() => { const t = R.tidy({...base, map:["_____________", "_BB__________", "__B_______B__", "__________BB_", "______T______", "_____________", "___BB________", "_____________", "_____________"],
-  stackSize:80, queueShown:3, pickFrom:1, riverShare:.1, opening:["habitat 1", "habitat 1", "river"], maxLevel:7, levelOdds:.5, scoreByLevel:[1, 3, 6, 10, 15, 21, 28], riverReach:[1, 2], riverMonotone:false, bareGroundMaxLevel:24, bareGroundMode:"refuse", prairieShare:0, marshShare:0, biomeMatch:true, marshNeedsRiver:false, prairieSpreads:false, treeShare:0, overgrow:true, upgradeLevel:0, riverMaxLevel:2, riverScore:"none",
+  stackSize:80, queueShown:3, pickFrom:1, riverShare:.1, opening:["habitat 1", "habitat 1", "river"], maxLevel:7, levelOdds:.5, scoreByLevel:[1, 3, 6, 10, 15, 21, 28], riverReach:[1, 2], riverMonotone:false, riverRaiseGuard:false, bareGroundMaxLevel:24, bareGroundMode:"refuse", prairieShare:0, marshShare:0, biomeMatch:true, marshNeedsRiver:false, prairieSpreads:false, treeShare:0, overgrow:true, upgradeLevel:0, riverMaxLevel:2, riverScore:"none",
   levelNames:["Sprouts", "Meadow", "Thicket", "Saplings", "Grove", "Forest", "Old forest"], lockEnabled:true, lockLevelCap:true, lockCopiesGo:"back", lockRivers:true, lockEvery:10, lockHold:1}, base);
   if (t.bad.length) throw new Error("bad reference config: " + t.bad); return t.cfg })();
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -149,6 +149,21 @@ function checks() { let n = 0; const fails = [];
     ok("a habitat can't go on the river", R.place(S, 0, E) === null && R.why(S, 0, E) === "That's the river. Plant beside it.") }
   { const S = run(["habitat 1", "river"]); R.place(S, 0, E);
     ok("a river tile can't go on a habitat", R.place(S, 0, E) === null && R.why(S, 0, E) === "A river tile needs empty land.") }
+  // The opening trap (Nov 21; Dan: "fix the opening trap"): four river tiles open a run, and raising the source with the first strands the other three, because a level 1 river tile can't be
+  // lower than the source it would flow from. riverRaiseGuard (on) doesn't offer a raise that would leave a river tile waiting in the pile with no legal move.
+  { const G = {riverRaiseGuard:true, riverMonotone:true, stackSize:5, queueShown:3}, OPEN = ["river", "river", "river", "river", "habitat 1"], S = run(OPEN, G), O = run(OPEN, {...G, riverRaiseGuard:false});
+    ok("trap: with three more river tiles waiting, the first can't raise the source (and the six extends are all there)", !R.options(S, 0).some(o => o.does === "widen") && R.options(S, 0).filter(o => o.does === "extend").length === 6 && does(S, E) === "extend");
+    ok("trap: tapping the source says to extend first", R.place(S, 0, SRC) === null && R.why(S, 0, SRC) === "Extend the river first: raising it now would leave your other river tiles nowhere to go.");
+    ok("trap: with the guard off the raise is offered, and then the next river tile has no move at all", does(O, SRC) === "widen" && R.place(O, 0, SRC).does === "widen" && R.options(O, 0).length === 0 && R.why(O, 0, E) === "A river tile can't be lower than the one it flows from (level 2).");
+    ok("trap: the guard takes nothing but the raise away", same(R.options(S, 0), R.options(run(OPEN, {...G, riverRaiseGuard:false}), 0).filter(o => o.does !== "widen")));
+    for (const p of [[7, 4], [8, 4], [9, 4], [10, 4]]) R.place(S, 0, p);
+    ok("trap: all four river tiles lay a stream of five tiles, with nothing discarded", Object.keys(S.r).length === 5 && S.extended === 4 && S.widened === 0 && S.discarded === 0 && S.q[0].k === "h");
+    const D = run(OPEN, G); R.discard(D, 0); R.discard(D, 0); R.discard(D, 0);
+    ok("trap: a player who wants the raise can still have it, by discarding the others first", does(D, SRC) === "widen" && R.place(D, 0, SRC).pts === 0 && riv(D, SRC).l === 2);
+    const L = run(["river", "habitat 1"], {...G, stackSize:2}); ok("trap: with no other river tile waiting the source can be raised", does(L, SRC) === "widen");
+    const M = run(["river", "river", "river"], {...G, stackSize:3}); R.place(M, 0, E); ok("trap: an end can be raised while the tiles waiting can still extend from the source", does(M, E) === "widen");
+    const N = run(["river", "river", "river"], {...G, stackSize:3}); R.place(N, 0, E); R.place(N, 0, E);
+    ok("trap: raising a tile leaves the river tile waiting a move, so the next one still goes on", riv(N, E).l === 2 && R.options(N, 0).some(o => o.does === "extend") && R.options(N, 0).length > 0) }
   { const S = run(["river", "habitat 1", "river"], {map:["_____", "_TB__", "_____"]}); R.place(S, 0, [1, 1]);
     ok("mountains don't block reach", R.plantable(S).includes("3,1"));
     ok("nothing goes on a mountain", R.place(S, 0, [2, 1]) === null && R.why(S, 0, [2, 1]) === "Nothing grows on a mountain." && R.why(S, 1, [2, 1]) === "The river can't cross a mountain.") }

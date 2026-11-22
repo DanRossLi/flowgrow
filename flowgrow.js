@@ -104,6 +104,7 @@ const KEYS = [
   ["riverMaxLevel", whole(1, 24), "River top level", "the highest a river tile can reach. Only the River reach levels widen it (2 in the first build, which was also its top)", "int"],
   ["riverScore", oneOf("all", "levels", "none"), "River points", "levels: only raising a river tile a level scores. all: every river move scores like a habitat of its level. none: rivers score nothing", "choice"],
   ["riverMonotone", bool, "Rivers rise downstream", "on: a river tile can't be lower than the one it flows from", "bool"],
+  ["riverRaiseGuard", bool, "Don't strand river tiles", "on: a river tile can't raise a river tile when that would leave a river tile waiting in the pile with no legal move (the first of four river tiles on the source, for one). off: it can", "bool"],
   ["tilesAcross", real(2, 16), "Tiles across", "opening zoom on a phone", "num"],
   ["levelNames", listOf(s => { const t = String(s).trim().slice(0, 24); return t ? t : undefined }, 1, 24), "Level names", "level 1 first", "list"],
   ["lockEnabled", bool, "Locking", "off: Flowgrow without locking", "bool"],
@@ -154,7 +155,7 @@ const seedOf = v => { const n = Number(v); if (v !== "" && v != null && Number.i
   let h = 2166136261; for (const ch of String(v)) h = Math.imul(h ^ ch.charCodeAt(0), 16777619); return h >>> 0 };
 // A short name for the rules a run is played under: every config value that changes how a run plays (not names or zoom).
 // The best score is kept per ruleset, so scores from different rules never meet.
-const RULE_KEYS = ["map", "stackSize", "queueShown", "pickFrom", "riverShare", "opening", "prairieShare", "marshShare", "biomeMatch", "marshNeedsRiver", "prairieSpreads", "treeShare", "overgrow", "upgradeLevel", "steppePerLevel", "meadowMax", "rootsPerLevel", "rootsChain", "maxLevel", "bareGroundMaxLevel", "bareGroundMode", "levelOdds", "scoreByLevel", "riverReach", "riverMaxLevel", "riverScore", "riverMonotone", "lockEnabled", "lockLevelCap", "lockCopiesGo", "lockRivers", "lockEvery", "lockHold"];
+const RULE_KEYS = ["map", "stackSize", "queueShown", "pickFrom", "riverShare", "opening", "prairieShare", "marshShare", "biomeMatch", "marshNeedsRiver", "prairieSpreads", "treeShare", "overgrow", "upgradeLevel", "steppePerLevel", "meadowMax", "rootsPerLevel", "rootsChain", "maxLevel", "bareGroundMaxLevel", "bareGroundMode", "levelOdds", "scoreByLevel", "riverReach", "riverMaxLevel", "riverScore", "riverMonotone", "riverRaiseGuard", "lockEnabled", "lockLevelCap", "lockCopiesGo", "lockRivers", "lockEvery", "lockHold"];
 const rulesKey = c => seedOf(JSON.stringify(RULE_KEYS.map(k => c[k]))).toString(36);
 function rand(S) { let t = (S.rs = (S.rs + 0x6D2B79F5) >>> 0); t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296 }
 // One new tile. The first tiles of a run are fixed (cfg.opening). After that a tile is a river tile riverShare of the time;
@@ -289,15 +290,23 @@ function options(S, i = 0) { const c = S.cfg, g = grid(c), t = S.q[i], out = [],
         out.push({p:at(k), does:"combine", l:t.l + 1, pts:scoreOf(c, t.l + 1) * mult, ...(mult > 1 ? {mult} : {})}) } }
     const lp = plantLevel(c, t.l);   // the level it lands as on empty land (0: refused). A tree only plants beside a pine-oneer (plantableFor)
     if (lp) for (const k of plantableFor(S, t)) out.push({p:at(k), does:"plant", l:lp, pts:scoreOf(c, lp)});   // by kind: marsh on the river bank, prairie also next to prairie
-  } else {
-    // Rivers rise downstream (riverMonotone): a new river tile can't be lower than the tile it joins, and a tile can only be widened
-    // once every tile that joins it is already that high, so a river is widened from its end back towards the source.
-    const mono = c.riverMonotone, has = mono ? new Set(Object.values(S.r).map(v => v.from)) : null, kidMin = {};
-    if (mono) for (const k in S.r) { const f = S.r[k].from; if (f != null) kidMin[f] = Math.min(kidMin[f] === undefined ? 99 : kidMin[f], S.r[k].l) }
-    if (t.l < riverTop(c)) for (const k in S.r) if (S.r[k].l === t.l && !(k in S.lk) && (!mono || (kidMin[k] === undefined ? 99 : kidMin[k]) > t.l)) out.push({p:at(k), does:"widen", l:t.l + 1, pts:riverPts(c, t.l + 1, true)});   // "widen" is raising a river tile a level, up to riverTop
-    for (const k of g.land) if (!(k in S.h) && !(k in S.r) && g.nb[k].some(q => q in S.r) && (!mono || S.r[joinTo(S, at(k), has)].l <= t.l)) out.push({p:at(k), does:"extend", l:t.l, pts:riverPts(c, t.l, false)});
-  }
+  } else for (const o of riverMoves(S, t, c.riverRaiseGuard ? i : -1)) out.push(o);
   return out }
+// Where river tile t can go: raise ("widen") a river tile of its own level, or extend the river onto empty land that touches it. skip is the tile's place in the pile when the stranding
+// guard is on (riverRaiseGuard), and -1 for no guard.
+function riverMoves(S, t, skip) { const c = S.cfg, g = grid(c), out = [], at = k => [g.at[k][0], g.at[k][1]];
+  // Rivers rise downstream (riverMonotone): a new river tile can't be lower than the tile it joins, and a tile can only be widened
+  // once every tile that joins it is already that high, so a river is widened from its end back towards the source.
+  const mono = c.riverMonotone, has = mono ? new Set(Object.values(S.r).map(v => v.from)) : null, kidMin = {};
+  if (mono) for (const k in S.r) { const f = S.r[k].from; if (f != null) kidMin[f] = Math.min(kidMin[f] === undefined ? 99 : kidMin[f], S.r[k].l) }
+  if (t.l < riverTop(c)) for (const k in S.r) if (S.r[k].l === t.l && !(k in S.lk) && (!mono || (kidMin[k] === undefined ? 99 : kidMin[k]) > t.l) && (skip < 0 || !strands(S, skip, k, t.l + 1))) out.push({p:at(k), does:"widen", l:t.l + 1, pts:riverPts(c, t.l + 1, true)});   // "widen" is raising a river tile a level, up to riverTop
+  for (const k of g.land) if (!(k in S.h) && !(k in S.r) && g.nb[k].some(q => q in S.r) && (!mono || S.r[joinTo(S, at(k), has)].l <= t.l)) out.push({p:at(k), does:"extend", l:t.l, pts:riverPts(c, t.l, false)});
+  return out }
+// The stranding guard (riverRaiseGuard; Dan, Nov 21: "fix the opening trap"). Would raising river tile k to level nl leave a river tile that is waiting in the pile (not the one being placed, at skip) with no legal move?
+// Four river tiles open a run, so raising the source with the first strands the other three: a level 1 river tile can't be lower than the source it would flow from. The pile that counts is what the player can see.
+function strands(S, skip, k, nl) { const r = S.r[k], old = r.l; r.l = nl; let bad = false;
+  for (let j = 0; j < S.q.length && !bad; j++) if (j !== skip && S.q[j].k === "r" && !riverMoves(S, S.q[j], -1).length) bad = true;
+  r.l = old; return bad }
 // How much land a river move would open: the empty land it newly brings within reach.
 function opens(S, i, o) { const t = S.q[i]; if (!t || t.k !== "r") return 0;
   const before = reachOf(S), k0 = key(o.p); let n = 0;
@@ -323,6 +332,7 @@ function why(S, i, p) { const c = S.cfg, t = S.q[i]; if (S.pend.length) return "
     return "Too far from the river." }
   if (hl) return "A river tile needs empty land.";
   if (rv) { if (rv.l >= riverTop(c)) return riverTop(c) > widthTop(c) ? `River level ${rv.l} is the top level.` : "The river is at its widest here."; if (rv.l !== t.l) return `Only a level ${rv.l} river tile ${rv.l < widthTop(c) ? "widens this" : "levels this up"}.`;
+    if (c.riverRaiseGuard && riverMoves(S, t, -1).some(o => o.does === "widen" && key(o.p) === k)) return "Extend the river first: raising it now would leave your other river tiles nowhere to go.";   // the raise is legal except for the guard
     return c.riverMonotone ? "The river after this tile is lower. Widen downstream first." : "" }
   if (!grid(c).nb[k].some(q => q in S.r)) return "A river tile has to touch the river.";
   const up = S.r[joinTo(S, p)]; return c.riverMonotone && up && up.l > t.l ? `A river tile can't be lower than the one it flows from (level ${up.l}).` : "" }
@@ -417,7 +427,7 @@ const mem = {get(k) { try { return localStorage.getItem("flowgrow." + k) } catch
 // Until Nov 20, 2026 Flowgrow lived inside Flow Tile and saved under "flowtile.flowgrow.". Both sites share one address, so those old
 // keys may still be here: bring the best score and any run in progress across once, then drop them.
 for (const k of ["best", "run.v2"]) try { const old = localStorage.getItem("flowtile.flowgrow." + k); if (old != null) { if (mem.get(k) == null) mem.set(k, old); localStorage.removeItem("flowtile.flowgrow." + k) } } catch (_) {}
-for (const v of ["run.v2", "run.v3", "run.v4", "run.v5", "run.v6", "run.v7"]) mem.set(v, null); // runs are saved as run.v8 since LOU-306 (a rule change can make an older move list illegal, so each one bumps the version): the older keys are dead, drop them
+for (const v of ["run.v2", "run.v3", "run.v4", "run.v5", "run.v6", "run.v7", "run.v8"]) mem.set(v, null); // runs are saved as run.v9 since the stranding guard (Nov 21; before that run.v8 since LOU-306) (a rule change can make an older move list illegal, so each one bumps the version): the older keys are dead, drop them
 const CFG = tidy(G.FLOWGROW).cfg, GRID = grid(CFG), W = CFG.map[0].length, H = CFG.map.length;
 const RK = rulesKey(CFG), BEST = "best." + RK; // the best score is kept per ruleset (every number that changes how a run plays), so scores from different rules never meet
 const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches, now = () => performance.now();
@@ -786,7 +796,7 @@ function sync() { opts = options(S, 0); landSig = [...reachOf(S)].join(";");
   { const lb = $("lockBtn"); lb.hidden = !CFG.lockEnabled; lb.classList.toggle("on", lockMode); lb.classList.toggle("none", !hasLock(S)); tx("lockN", CFG.lockEvery === 0 ? "∞" : S.locks); tx("lockIn", CFG.lockEvery > 0 ? "next in " + (CFG.lockEvery - S.toLock) : "") }
   $("endq").hidden = !waiting || !!lockSel; $("lockq").hidden = !lockSel; if (lockSel) lockCard();
   if (S.over && !wonShown) result(); if (!S.over) wonShown = false; $("win").hidden = !S.over; $("app").classList.toggle("won", S.over);
-  mem.set("run.v8", S.over ? null : JSON.stringify({seed:S.seed, moves:S.moves, at:Date.now(), rules:RK})); draw() }
+  mem.set("run.v9", S.over ? null : JSON.stringify({seed:S.seed, moves:S.moves, at:Date.now(), rules:RK})); draw() }
 // When the tiles run out: the score, the best score on this device, the top level and what was done.
 function result() { wonShown = true; const best = +mem.get(BEST) || 0, low = S.log.filter(e => e.did === "plant" && e.l < e.t.l).length; if (S.score > best) mem.set(BEST, String(S.score));
   $("wScore").innerHTML = `<b>${S.score} points</b> · ${S.score > best ? (best ? `New best (was ${best})` : "New best") : `Best ${best}`}`;
@@ -797,7 +807,7 @@ function result() { wonShown = true; const best = +mem.get(BEST) || 0, low = S.l
 // ---------- a run: new, saved after every move, rebuilt from its seed and moves on reload (a finished or day-old run starts fresh)
 const urlSeed = new URLSearchParams(location.search).get("seed");
 function newRun() { S = fresh(CFG, urlSeed != null && urlSeed !== "" ? urlSeed : Math.floor(Math.random() * 1e9)); for (const k in pops) delete pops[k]; fx.length = 0; lockMode = false; lockSel = null; say(S.q[0] && S.q[0].k === "r" ? "Tap land next to your river to make it longer." : "Tap green land to place the tile in hand."); sync() }
-function load() { try { const d = JSON.parse(mem.get("run.v8") || "null"); if (!d || d.rules !== RK || !Array.isArray(d.moves) || Date.now() - d.at > 12 * 3600e3) return false; S = replay(CFG, d.seed, d.moves); return !S.over } catch (_) { return false } }
+function load() { try { const d = JSON.parse(mem.get("run.v9") || "null"); if (!d || d.rules !== RK || !Array.isArray(d.moves) || Date.now() - d.at > 12 * 3600e3) return false; S = replay(CFG, d.seed, d.moves); return !S.over } catch (_) { return false } }
 function tap(p) { if (!S || S.over || !p) return;
   if (lockMode) { if (!lockable(S, p)) { say(key(p) in S.lk ? "That tile is locked." : "Pick a habitat or a river tile.", true); return } lockSel = p; say(""); sync(); return }
   const had = S.locks, res = place(S, 0, p);
@@ -857,10 +867,11 @@ fillLadder();
   hu.textContent = (reedOn ? `From level ${CFG.upgradeLevel} a marsh habitat is a reed bed, shown by a pale rim and a small reed mark: marsh can be planted on land that touches it, as if it were river bank.` : "")
     + (reedOn && (steppeOn || treesOn) ? " " : "") + (steppeOn ? `A prairie habitat that reaches level ${CFG.upgradeLevel} asks you to choose an upgrade: Steppe plants a free prairie each time it levels up, and Meadow multiplies its level-ups by the marsh and trees next to it.` : "")
     + (treesOn ? ` A tree habitat that reaches level ${CFG.upgradeLevel} asks too: Roots lifts the lower habitats beside it a level each time it levels up, and Pine-oneer lets trees be planted on land next to it.` : "");
-  const hr = $("howRiver"); hr.hidden = CFG.riverMaxLevel <= CFG.riverReach.length && CFG.riverScore === "none";
-  hr.textContent = CFG.riverMaxLevel > CFG.riverReach.length
+  const hr = $("howRiver"); hr.hidden = CFG.riverMaxLevel <= CFG.riverReach.length && CFG.riverScore === "none" && !CFG.riverRaiseGuard;
+  hr.textContent = (CFG.riverMaxLevel > CFG.riverReach.length
     ? `A river tile put on a river tile of its own level raises it a level${CFG.riverScore === "none" ? "" : " and scores the points for the new level"}. Only the first ${CFG.riverReach.length} levels widen the river and reach more land. After that the level just counts.`
-    : `A river tile put on a river tile of its own level widens it${CFG.riverScore === "none" ? "" : " and scores points"}.` }
+    : `A river tile put on a river tile of its own level widens it${CFG.riverScore === "none" ? "" : " and scores points"}.`)
+    + (CFG.riverRaiseGuard ? " A river tile can't raise a river tile if that would leave another river tile in your pile with nowhere to go, so extend the river first." : "") }
 // Switch the look and remember it. The camera starts again on the source, since the two looks have different bounds.
 function setSkin(v) { if (!LOOKS.includes(v) || v === skin) return; skin = v; mem.set("look", v); $("app").classList.toggle("simple", flat());
   B = bounds(); resort(); landKey = ""; lastSize = ""; view.z = null; fillLadder(); resize(); sync() }

@@ -1,6 +1,6 @@
 // Flowgrow service worker: lets the game load offline after the first visit.
 // Bump VERSION whenever cached files change so old caches are dropped.
-const VERSION = "v16";
+const VERSION = "v17";
 const CACHE = `flowgrow-${VERSION}`;
 const LOCAL = ["./", "./flowgrow.config.js", "./flowgrow.js", "./flowgrow.css", "./play.css", "./fonts/fonts.css", "./fonts/mplus-rounded-500.woff2", "./fonts/mplus-rounded-700.woff2", "./fonts/mplus-rounded-800.woff2", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png"];
 
