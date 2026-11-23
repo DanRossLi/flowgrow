@@ -21,7 +21,7 @@ const G = window, T = G.THREE;
 
 // ---------- the look's numbers: flowgrow.config.js look3d, with these as the fallback if a value is missing
 const DEFAULTS = {quality:"auto", dayNight:"cycle", dayLength:240, startPhase:.2, azimuth:.62, polar:.98, fov:30, nearTilesAcross:4,
-  budget:{triangles:250000, drawCalls:150, fps:30}, shadowMap:{low:0, med:1024, high:2048}, pixelRatio:{touch:1.5, other:2}};
+  budget:{triangles:250000, drawCalls:150, fps:30}, budgetScale:{low:.5, med:1, high:2.2}, shadowMap:{low:0, med:1024, high:2048}, pixelRatio:{touch:1.5, other:2}};
 const merge = (a, b) => { const o = {...a}; if (b) for (const k in b) o[k] = b[k] && typeof b[k] === "object" && !Array.isArray(b[k]) ? merge(a[k] || {}, b[k]) : b[k]; return o };
 const C3 = merge(DEFAULTS, G.FLOWGROW && G.FLOWGROW.look3d);
 const QS = new URLSearchParams(location.search);
@@ -45,7 +45,7 @@ const pick = (arr, r) => arr[(r() * arr.length) | 0];
 const tpl = g => { const n = g.index ? g.toNonIndexed() : g; return n.attributes.position.array };
 const GT = {ico0:tpl(new T.IcosahedronGeometry(1, 0)), ico1:tpl(new T.IcosahedronGeometry(1, 1)), dod:tpl(new T.DodecahedronGeometry(1, 0)), cyl:tpl(new T.CylinderGeometry(1, 1, 1, 6).translate(0, .5, 0)),
   cone:tpl(new T.ConeGeometry(1, 1, 7).translate(0, .5, 0)), cone2:tpl(new T.ConeGeometry(1, 1, 5).translate(0, .5, 0)), blade:tpl(new T.ConeGeometry(1, 1, 3).translate(0, .5, 0)),
-  trunk:tpl(new T.CylinderGeometry(.6, 1, 1, 8).translate(0, .5, 0)), stem4:tpl(new T.CylinderGeometry(.55, 1, 1, 4).translate(0, .5, 0))};
+  trunk:tpl(new T.CylinderGeometry(.6, 1, 1, 8).translate(0, .5, 0)), stem4:tpl(new T.CylinderGeometry(.55, 1, 1, 4, 1, true).translate(0, .5, 0))};   // stem4 has no end caps (the top is under a head and the foot in the ground): half the triangles
 function Batch(y0) { this.p = []; this.n = []; this.c = []; this.s = []; this.y0 = y0 || 0; this.gl = 0 }   // gl: 10 marks the vertices being added as glowing at night (pond water, mushroom caps, seed heads); it rides in the sway weight
 Batch.prototype.add = function (tp, m, col, amount) {
   const e = m.elements, p = this.p, nn = this.n, cc = this.c, ss = this.s, base = p.length, am = amount == null ? 1 : amount;
@@ -55,7 +55,7 @@ Batch.prototype.add = function (tp, m, col, amount) {
     let nx = ay * bz - az * by, ny = az * bx - ax * bz, nz = ax * by - ay * bx; const l = Math.hypot(nx, ny, nz) || 1; nx /= l; ny /= l; nz /= l; nn.push(nx, ny, nz, nx, ny, nz, nx, ny, nz) }
   for (let i = base; i < p.length; i += 3) { cc.push(col.r, col.g, col.b); ss.push((am ? am * clamp((p[i + 1] - this.y0) / .55, 0, 1) : 0) + this.gl) } };
 // one vertex given outright (the ground's top and the soil walls have their own normals)
-Batch.prototype.vert = function (x, y, z, nx, ny, nz, c) { this.p.push(x, y, z); this.n.push(nx, ny, nz); this.c.push(c[0], c[1], c[2]); this.s.push(this.gl) };
+Batch.prototype.vert = function (x, y, z, nx, ny, nz, c, sw) { this.p.push(x, y, z); this.n.push(nx, ny, nz); this.c.push(c[0], c[1], c[2]); this.s.push((sw || 0) + this.gl) };
 // copy another batch into this one, moved by (ox, oy, oz): a tile's plants are built once around their own origin and copied into each tile that has the same look
 Batch.prototype.append = function (o, ox, oy, oz) { const op = o.p, p = this.p, n = this.n, c = this.c, s = this.s;
   for (let i = 0; i < op.length; i += 3) p.push(op[i] + ox, op[i + 1] + oy, op[i + 2] + oz);
@@ -145,14 +145,28 @@ function mount(B) {
   function riverD2(X, Z) { let m = 1e9; for (const s of riverSegs) { const vx = s.bx - s.ax, vz = s.bz - s.az, l2 = vx * vx + vz * vz || 1, t = clamp(((X - s.ax) * vx + (Z - s.az) * vz) / l2, 0, 1), dx = X - (s.ax + vx * t), dz = Z - (s.az + vz * t), d = dx * dx + dz * dz; if (d < m) m = d } return m }
 
   // ---------- one tile's mesh: the top (sector triangles sampled from the ground, smooth normals), the soil walls on the island's outer edge, and the grass field. Step 3 adds what grows on it.
-  const tileMat = new T.MeshStandardMaterial({vertexColors:true, roughness:.92, metalness:0}), uWind = {value:1}, uGlow = {value:0};   // uWind: how much the foliage sways (calmer at night); uGlow: how much a glowing vertex lights itself
-  tileMat.onBeforeCompile = sh => { sh.uniforms.uTime = uTime; sh.uniforms.uWind = uWind; sh.uniforms.uGlow = uGlow;
-    sh.vertexShader = "uniform float uTime;\nuniform float uWind;\nattribute float aSway;\nvarying float vGlow;\n" + sh.vertexShader.replace("#include <begin_vertex>", "#include <begin_vertex>\n float glw_=step(5.,aSway); vGlow=glw_; float sw_=(aSway-10.*glw_)*uWind;\n transformed.x += sin(uTime*1.7 + position.x*4. + position.z*3.)*.018*sw_;\n transformed.z += cos(uTime*1.4 + position.z*4. + position.x*2.)*.014*sw_;");
-    sh.fragmentShader = "uniform float uGlow;\nvarying float vGlow;\n" + sh.fragmentShader.replace("#include <emissivemap_fragment>", "#include <emissivemap_fragment>\n totalEmissiveRadiance += vColor.rgb * vGlow * uGlow;") };
+  const tileMat = new T.MeshStandardMaterial({vertexColors:true, roughness:.92, metalness:0}), uWind = {value:1}, uGlow = {value:0}, uAim = {value:new T.Vector4(0, 0, 1, 0)}, uAimW = {value:new T.Vector4(0, 0, Math.sin(C3.azimuth), Math.cos(C3.azimuth))};
+  // uWind: how much the foliage sways (calmer at night); uGlow: how much a glowing vertex lights itself; uAim, uAimW: the tile the player is aiming at (hovering, or has a finger on): its screen position and radius in pixels
+  // and fade (uAim), its place in the world and the direction towards the camera (uAimW). Plants in front of it fade to 45 per cent (screen-door, so nothing is sorted and nothing is rebuilt).
+  tileMat.onBeforeCompile = sh => { sh.uniforms.uTime = uTime; sh.uniforms.uWind = uWind; sh.uniforms.uGlow = uGlow; sh.uniforms.uAim = uAim; sh.uniforms.uAimW = uAimW;
+    sh.vertexShader = "uniform float uTime;\nuniform float uWind;\nattribute float aSway;\nvarying float vGlow;\nvarying float vPlt;\nvarying vec2 vWxz;\n" + sh.vertexShader.replace("#include <begin_vertex>", "#include <begin_vertex>\n float glw_=step(5.,aSway); vGlow=glw_; vPlt=step(.001,aSway); float sw_=(aSway-10.*glw_)*uWind;\n transformed.x += sin(uTime*1.7 + position.x*4. + position.z*3.)*.018*sw_;\n transformed.z += cos(uTime*1.4 + position.z*4. + position.x*2.)*.014*sw_;\n vWxz = (modelMatrix * vec4(transformed, 1.)).xz;");
+    sh.fragmentShader = "uniform float uGlow;\nuniform vec4 uAim;\nuniform vec4 uAimW;\nvarying float vGlow;\nvarying float vPlt;\nvarying vec2 vWxz;\n" + sh.fragmentShader.replace("#include <clipping_planes_fragment>", "#include <clipping_planes_fragment>\n if (uAim.w > .01 && vPlt > .5) { float inC_ = 1. - smoothstep(uAim.z * .75, uAim.z, length(gl_FragCoord.xy - uAim.xy)); float fr_ = smoothstep(1., 1.5, dot(vWxz - uAimW.xy, uAimW.zw)); float a_ = 1. - .55 * uAim.w * inC_ * fr_; if (fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(.06711056, .00583715)))) > a_) discard; }").replace("#include <emissivemap_fragment>", "#include <emissivemap_fragment>\n totalEmissiveRadiance += vColor.rgb * vGlow * uGlow;") };
   const islandGroup = new T.Group(); scene.add(islandGroup);
   const GRN = ["#3f9a3a", "#4fae40", "#68bb45", "#5aa83e"].map(lin), GRD = ["#9bc653", "#b3c968"].map(lin), DRIFT = ["#ffffff", "#ffd84a", "#ff9ec4", "#b98cf0"].map(lin), STEM = lin("#4f9a44");
   const shade = (c, k) => ({r:c.r * k, g:c.g * k, b:c.b * k});
-  function buildTile(cl, d) { const q = TIER[quality], N = q.n, b = new Batch(0), cx = cl.x, cz = cl.z;
+  // level of detail by zoom: with the whole island in view a tile is a few dozen pixels across, so its plants and grass are drawn thinner (the tiles are rebuilt a few at a time when the zoom crosses the line)
+  // [far, near]: n the change in the rows of a tile's top, grass the share of the grass, dens the share of the plants
+  const LOD = [{n:-1, grass:.28, dens:.42}, {n:0, grass:1, dens:1}]; let lod = 0;
+  // a blade of grass and a flower head, each turned to face the camera: a triangle (base corners of half-width w, apex h above, leaning la) and a diamond of two. cb is the colour of the base, ct of the tip.
+  const camDir = new T.Vector3(Math.sin(C3.polar) * Math.sin(C3.azimuth), Math.cos(C3.polar), Math.sin(C3.polar) * Math.cos(C3.azimuth));
+  function faceTri(b, p0, p1, p2, c0, c1, c2) { const ux = p1[0] - p0[0], uy = p1[1] - p0[1], uz = p1[2] - p0[2], vx = p2[0] - p0[0], vy = p2[1] - p0[1], vz = p2[2] - p0[2];
+    let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx; if (nx * camDir.x + ny * camDir.y + nz * camDir.z < 0) { const t = p1, tc = c1; p1 = p2; c1 = c2; p2 = t; c2 = tc }   // wind it so its front is towards the camera
+    for (const [p, c] of [[p0, c0], [p1, c1], [p2, c2]]) b.vert(p[0], p[1], p[2], camDir.x * .3, .95, camDir.z * .3, c, p[3] || 0) }
+  function blade(b, x, y, z, w, hh, lean, la, jy, cb, ct) { const a = C3.azimuth + jy, ex = Math.cos(a) * w, ez = -Math.sin(a) * w, cbA = [cb.r, cb.g, cb.b], ctA = [ct.r, ct.g, ct.b];
+    faceTri(b, [x + ex, y, z + ez, 0], [x - ex, y, z - ez, 0], [x + Math.cos(la) * lean * hh, y + hh, z + Math.sin(la) * lean * hh, 1], cbA, cbA, ctA) }
+  function diamond(b, x, y, z, s, col, jy) { const a = C3.azimuth + jy, ex = Math.cos(a) * s, ez = -Math.sin(a) * s, c = [col.r, col.g, col.b], dk = [col.r * .7, col.g * .7, col.b * .7];
+    const L = [x - ex, y, z - ez, 1], R = [x + ex, y, z + ez, 1], Tp = [x, y + s * 1.1, z, 1], Bt = [x, y - s * .9, z, 1]; faceTri(b, L, Tp, R, dk, c, dk); faceTri(b, L, R, Bt, dk, dk, c) }
+  function buildTile(cl, d) { const q = TIER[quality], lk = LOD[lod], N = Math.max(3, q.n + lk.n), b = new Batch(0), cx = cl.x, cz = cl.z; cl.lod = lod;
     // a vertex of the ground at (cx + x, cz + z): the world position (with the wobble), the normal from finite differences of the surface, and the colour
     const memo = new Map(), V = (x, z) => { const mk = Math.round(x * 1000) + "," + Math.round(z * 1000); let v = memo.get(mk); if (v) return v;
       const X = cx + x, Z = cz + z, s = surf(X, Z), hgt = s[0], e = .012, hx = (heightAt(X + e, Z) - heightAt(X - e, Z)) / (2 * e), hz = (heightAt(X, Z + e) - heightAt(X, Z - e)) / (2 * e), nl = Math.hypot(hx, 1, hz);
@@ -175,25 +189,29 @@ function mount(B) {
         quad(pt(A, A.y, col(A, .55)), pt(Bn, Bn.y, col(Bn, .55)), pt(Bn, E, SOIL), pt(A, E, SOIL), onx, onz);   // the sod: grass colour into dark soil, down to the strata
         let yTop = E; for (let j = L.length - 1; j >= 0; j--) { const hh = E * L[j][1], lc = cc(L[j][0]), f = .93 + rr() * .14, c3 = [lc.r * f, lc.g * f, lc.b * f];   // then the layers, the top of the strata down to 0
           quad(pt(A, yTop, c3), pt(Bn, yTop, c3), pt(Bn, yTop - hh, c3), pt(A, yTop - hh, c3), onx, onz); yTop -= hh } } }
-    // the grass field: a world-aligned jittered grid, so it carries on across tile borders. A grid point belongs to the cell it falls in. It keeps off the river and off rock.
-    if (d.code !== "B" && d.kind !== "m") { const sp = .165 / Math.sqrt(q.grass), r = rng(cl.i * 131 + 7), near = d.river || cl.nbc.some(n => n && n.d && (n.d.river || n.d.code === "T")), per = quality === "low" ? 2 : 3;
+    // the grass field: a world-aligned jittered grid, so it carries on across tile borders. A grid point belongs to the cell it falls in. It keeps off the river and off rock. A blade is ONE triangle that faces
+    // the camera (the camera's angle never changes, so a blade can always face it, turned a little for variety): a sixth of the triangles of a cone, and the field is most of an empty island.
+    const nG0 = b.p.length / 9;
+    if (d.code !== "B" && d.kind !== "m") { const sp = .165 / Math.sqrt(q.grass * lk.grass * Math.max(.3, detail)), r = rng(cl.i * 131 + 7), near = d.river || cl.nbc.some(n => n && n.d && (n.d.river || n.d.code === "T")), per = quality === "low" ? 2 : quality === "med" ? 3 : 4;
       const gx0 = Math.floor((cx - 1) / sp), gx1 = Math.ceil((cx + 1) / sp), gz0 = Math.floor((cz - 1) / sp), gz1 = Math.ceil((cz + 1) / sp);
       for (let gx = gx0; gx <= gx1; gx++) for (let gz = gz0; gz <= gz1; gz++) {
         const X = (gx + hsh(gx, gz)) * sp, Z = (gz + hsh(gz + 7.3, gx - 3.1)) * sp, lx = X - cx, lz = Z - cz, ax = Math.abs(lx); if (ax > .866 || ax * .5 + .866 * Math.abs(lz) > .866) continue;
         if (hsh(gx + 11.7, gz - 5.3) > greenAt(X, Z) * .92) continue; if (near && riverD2(X, Z) < .36) continue;
         const gh = heightAt(X, Z), nzv = Math.sin(X * 1.3 + Z * .7) * Math.sin(Z * 1.9 - X * .8), dry = hsh(gx * 1.7, gz * 2.3) < .12 && d.kind !== "t";
         const base = dry ? GRD[hsh(gz, gx) < .5 ? 0 : 1] : GRN[Math.min(3, Math.max(0, Math.floor((nzv * .5 + .5) * 4)))], sc = .75 + hsh(gx, gz * 1.3) * .7;
-        for (let k = 0; k < per; k++) { const a = hsh(k, gx + gz) * 6.28, hh = (.08 + hsh(gz, k + gx) * .11) * sc, lean = .2 + hsh(k * 3, gz) * .5; put(b, GT.blade, X + Math.cos(a) * .015, gh, Z + Math.sin(a) * .015, .016, hh, .01, shade(base, .9 + r() * .2), a, lean, 0) }
+        for (let k = 0; k < per; k++) { const a = hsh(k, gx + gz) * 6.28, hh = (.08 + hsh(gz, k + gx) * .11) * sc, lean = .2 + hsh(k * 3, gz) * .5, kk = .9 + r() * .2;
+          blade(b, X + Math.cos(a) * .015, gh, Z + Math.sin(a) * .015, .022, hh, lean, a, (hsh(k + 5, gx * 3 + gz) - .5) * 1.2, shade(base, .62 * kk), shade(base, 1.1 * kk)) }
         const dn = Math.sin(X * .9 + 1.3) * Math.sin(Z * 1.1 - .4); if (dn > .35 && hsh(gx + 3.1, gz + 9.7) < .35) { const hh2 = .06 + hsh(gx, gz) * .08;
-          put(b, GT.blade, X, gh, Z, .006, hh2, .006, STEM, 0, 0, 0); put(b, GT.ico0, X, gh + hh2, Z, .016, .012, .016, DRIFT[Math.floor((Math.sin(X * .7 + Z * .5) * .5 + .5) * 3.99)], hsh(gx, gz) * 6) } } }
+          blade(b, X, gh, Z, .005, hh2, 0, 0, 0, shade(STEM, .8), STEM); diamond(b, X, gh + hh2, Z, .02, DRIFT[Math.floor((Math.sin(X * .7 + Z * .5) * .5 + .5) * 3.99)], (hsh(gx, gz) - .5) * 1.2) } } }
+    cl.tg = nG0; cl.tr = b.p.length / 9 - nG0;   // the triangles of the ground (top and soil) and of the grass, for the stats
     // what grows on the tile (flowgrow.look3d.art.js): built once for each look of a tile and copied in, so a tile that looks like another one costs only the copy
-    const art = G.Flowgrow3D && G.Flowgrow3D.art, pb = art && art.content ? art.content(cl, d, {quality, detail}) : null; cl.info = pb ? pb.info : null;
+    const art = G.Flowgrow3D && G.Flowgrow3D.art, pb = art && art.content ? art.content(cl, d, {quality, detail:detail * lk.dens}) : null; cl.info = pb ? pb.info : null; cl.tp = pb ? pb.p.length / 9 : 0;
     return {b, pb} }
   // a tile's mesh: its ground and its plants merged into one. A tile that has just grown keeps its plants as a mesh of their own for a moment (they spring up out of the ground, see popTick) and is merged
   // when the spring is over, so a tile is one draw call except while it is being celebrated.
   const pops = [], POPLEN = .9;
   function dropPop(cl) { const p = cl.pop; if (!p) return; islandGroup.remove(p.mesh); p.mesh.geometry.dispose(); const i = pops.indexOf(p); if (i >= 0) pops.splice(i, 1); cl.pop = null }
-  function refreshTile(cl, anim) { if (cl.mesh) { islandGroup.remove(cl.mesh); cl.mesh.geometry.dispose(); cl.mesh = null }
+  function refreshTile(cl, anim) { shadowDirty = true; if (cl.mesh) { islandGroup.remove(cl.mesh); cl.mesh.geometry.dispose(); cl.mesh = null }
     if (anim || !cl.pop) dropPop(cl);   // a tile that is still springing up keeps its spring when only its ground is rebuilt (because a neighbour changed)
     const t = buildTile(cl, cl.d), gy = CH[cl.i];
     if (anim && t.pb && t.pb.p.length && !reduced()) { const pm = new T.Mesh(t.pb.geometry(), tileMat); pm.position.set(cl.x, gy, cl.z); pm.scale.set(.01, .01, .01); pm.castShadow = true; pm.receiveShadow = true; islandGroup.add(pm);
@@ -233,7 +251,7 @@ function mount(B) {
   // ---------- the animals. The art module makes each animal's shape (a small merged template), says who lives on what and how each one moves; here every animal on the island is posed by the CPU each frame into
   // ONE dynamic mesh, so any number of them is one draw call. By day each tile's day animal is out and by night its night animal (the swap follows dayState.night). None on the low tier. Cosmetic only.
   const zooMat = new T.MeshStandardMaterial({vertexColors:true, roughness:.82, metalness:0});
-  let zoo = [], zooCap = 0, zPos = null, zNor = null, zCol = null, zGeo = null, zMesh = null, zooNight = -1;
+  let zoo = [], zooStamp = -1, zooCap = 0, zPos = null, zNor = null, zCol = null, zGeo = null, zMesh = null, zooNight = -1;
   function buildZoo() { const art = G.Flowgrow3D && G.Flowgrow3D.art, list = []; let nv = 0;
     if (art && art.animal && quality !== "low") for (const cl of cells) { const d = cl.d; if (!d) continue; const pr = art.pairFor(d); if (!pr) continue;
       for (let s = 0; s < pr.length; s++) { let name = pr[s]; const info = cl.info || {}; if ((name === "owl" || name === "woodpecker") && !info.perch) name = s ? "hedgehog" : "squirrel"; if (name === "duck" && !info.pond) name = "frog";
@@ -243,8 +261,8 @@ function mount(B) {
       zGeo = new T.BufferGeometry(); zGeo.setAttribute("position", new T.BufferAttribute(zPos, 3).setUsage(T.DynamicDrawUsage)); zGeo.setAttribute("normal", new T.BufferAttribute(zNor, 3).setUsage(T.DynamicDrawUsage)); zGeo.setAttribute("color", new T.BufferAttribute(zCol, 3).setUsage(T.DynamicDrawUsage));
       zMesh = new T.Mesh(zGeo, zooMat); zMesh.frustumCulled = false; zMesh.receiveShadow = true; scene.add(zMesh) }
     zoo = list; zooNight = -1; if (zMesh) { zMesh.visible = list.length > 0; if (!list.length) zGeo.setDrawRange(0, 0) } }
-  function poseZoo(t) { if (!zMesh || !zoo.length) return; const night = dayState.night01, still = reduced(); if (still && night === zooNight) return; zooNight = night; if (still) t = 0;
-    let o = 0; for (const a of zoo) { const vis = a.night ? sstep(.3, .7, night) : 1 - sstep(.2, .55, night); if (vis < .02) continue;
+  function poseZoo(t) { if (!zMesh || !zoo.length) return; const night = dayState.night01, still = reduced(); if (still && night === zooNight && zooStamp === viewStamp) return; zooNight = night; zooStamp = viewStamp; if (still) t = 0;
+    let o = 0; for (const a of zoo) { const vis = a.night ? sstep(.3, .7, night) : 1 - sstep(.2, .55, night); if (vis < .02 || a.cl.inView === false) continue;
       const mv = a.mv, info = a.info, gy = CH[a.cl.i], th0 = a.ph; let px, py, pz, hd, fl = 0;
       if (a.name === "owl" && info.perch) { const pc = info.perch; px = a.x0 + pc.x; pz = a.z0 + pc.z; py = gy + pc.top + .01; hd = th0 + Math.sin(t * .35 + th0) * 1.1 }
       else if (a.name === "woodpecker" && info.perch) { const pc = info.perch, ca = Math.cos(th0), sa = Math.sin(th0), rr = pc.tr + .02; px = a.x0 + pc.x + ca * rr; pz = a.z0 + pc.z + sa * rr; py = gy + pc.mid + Math.sin(t * 5 + th0) * .004; hd = Math.atan2(-ca, -sa) }
@@ -415,76 +433,129 @@ function mount(B) {
   function updateFitButton() { const fb = B.fit; if (!fb) return; const zoomed = view.gd < fit.dist * .8;
     fb.innerHTML = zoomed ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>' : '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21M10.5 7.5v6M7.5 10.5h6"/></svg>';
     fb.setAttribute("aria-label", zoomed ? "Show the whole island" : "Zoom in"); fb.style.top = topH + 6 + "px" }
-  function toggleFit() { if (view.gd < fit.dist * .8) { view.gd = fit.dist; view.gx = midX; view.gz = midZ } else { view.gd = clamp(nearDist() * 5 / C3.nearTilesAcross, fit.near, fit.dist); view.gx = srcCell.x; view.gz = srcCell.z } clampView(); updateFitButton() }
+  function toggleFit() { if (view.gd < fit.dist * .8) { view.gd = fit.dist; view.gx = midX; view.gz = midZ } else { view.gd = clamp(nearDist() * 5 / C3.nearTilesAcross, fit.near, fit.dist); view.gx = srcCell.x; view.gz = srcCell.z } clampView(); updateFitButton(); requestRender() }
 
   // ---------- input: a touch that barely moves (under 8 px) is a tap on the ground cell it landed on; a drag pans (the point under the finger stays under it); two fingers pinch to zoom (and pan); the wheel
   // zooms about the pointer. Nothing here can rotate the view. Picking is by the hex ground plane, not by the meshes, so a tap always means the ground cell under the finger.
-  const ptrs = new Map(); let gesture = null, hover = null;
+  const ptrs = new Map(); let gesture = null, hover = null, aimCell = null, aimOn = 0;
+  // the tile the player is aiming at: the one under the mouse, or under a finger that is down. Tall plants in front of it fade to 45 per cent (the tile shader does it; this tells it where the tile is).
+  const aimN = new T.Vector3(), aimB = new T.Vector3(), aimV = new T.Vector2();
+  function updateAim(dt) { const target = aimCell ? 1 : 0; if (aimOn === target && !aimCell) return; aimOn = reduced() ? target : aimOn + (target - aimOn) * Math.min(1, dt * 9); if (Math.abs(aimOn - target) < .01) aimOn = target;
+    if (aimCell) { const dbs = renderer.getDrawingBufferSize(aimV), c = aimCell; aimN.set(c.x, CH[c.i] + .3, c.z).project(camera); aimB.set(c.x + 1.7, CH[c.i] + .3, c.z).project(camera);
+      uAim.value.set((aimN.x * .5 + .5) * dbs.x, (aimN.y * .5 + .5) * dbs.y, Math.abs(aimB.x - aimN.x) * .5 * dbs.x * 1.25 + 12, aimOn); uAimW.value.x = c.x; uAimW.value.y = c.z } else uAim.value.w = aimOn }
+  const setAim = c => { if (c !== aimCell) { aimCell = c; requestRender() } };
   cv3.addEventListener("pointerdown", e => { try { cv3.setPointerCapture(e.pointerId) } catch (_) {} ptrs.set(e.pointerId, {x:e.clientX, y:e.clientY});
-    if (ptrs.size === 1) gesture = {x:e.clientX, y:e.clientY, moved:false, g0:groundAt(e.clientX, e.clientY) ? groundAt(e.clientX, e.clientY).clone() : null, tx:view.gx, tz:view.gz};
+    if (ptrs.size === 1) { gesture = {x:e.clientX, y:e.clientY, moved:false, g0:groundAt(e.clientX, e.clientY) ? groundAt(e.clientX, e.clientY).clone() : null, tx:view.gx, tz:view.gz}; setAim(cellAtScreen(e.clientX, e.clientY)) }
     else if (ptrs.size === 2) { const a = [...ptrs.values()]; gesture = {pinch:Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y) || 1, d0:view.gd, moved:true, cx:(a[0].x + a[1].x) / 2, cy:(a[0].y + a[1].y) / 2, tx:view.gx, tz:view.gz, g0:null} } });
   cv3.addEventListener("pointermove", e => { const p = ptrs.get(e.pointerId);
-    if (!p) { if (e.pointerType === "mouse") { const c = cellAtScreen(e.clientX, e.clientY); if (c !== hover) { hover = c; setHover(c) } } return }
+    if (!p) { if (e.pointerType === "mouse") { const c = cellAtScreen(e.clientX, e.clientY); if (c !== hover) { hover = c; setHover(c); setAim(c) } } return }
     p.x = e.clientX; p.y = e.clientY; if (!gesture) return;
-    if (gesture.pinch && ptrs.size >= 2) { const a = [...ptrs.values()], d = Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y) || 1; view.gd = gesture.d0 * gesture.pinch / d; return }
+    if (gesture.pinch && ptrs.size >= 2) { const a = [...ptrs.values()], d = Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y) || 1; view.gd = gesture.d0 * gesture.pinch / d; requestRender(); return }
     if (gesture.pinch) return;
-    const dx = e.clientX - gesture.x, dy = e.clientY - gesture.y; if (!gesture.moved && Math.hypot(dx, dy) < 8) return; gesture.moved = true;
+    const dx = e.clientX - gesture.x, dy = e.clientY - gesture.y; if (!gesture.moved && Math.hypot(dx, dy) < 8) return; gesture.moved = true; setAim(null);
     // pan: put the ground point that was under the finger when the drag began back under it (the camera follows at once while dragging)
-    const now = groundAt(e.clientX, e.clientY); if (gesture.g0 && now) { view.gx += gesture.g0.x - now.x; view.gz += gesture.g0.z - now.z; clampView(); view.tx = view.gx; view.tz = view.gz; applyCamera(true); dirtyLabels = true } });
+    const now = groundAt(e.clientX, e.clientY); if (gesture.g0 && now) { view.gx += gesture.g0.x - now.x; view.gz += gesture.g0.z - now.z; clampView(); view.tx = view.gx; view.tz = view.gz; applyCamera(true); dirtyLabels = true; requestRender() } });
   const lift = (e, tapOk) => { const had = gesture; ptrs.delete(e.pointerId);
     if (had && !had.pinch && !had.moved && tapOk && ptrs.size === 0) { const c = cellAtScreen(e.clientX, e.clientY); if (c) B.tap([c.c, c.r]) }
-    if (!ptrs.size) gesture = null; else if (had && had.pinch) gesture = null };
+    if (!ptrs.size) { gesture = null; setAim(e.pointerType === "mouse" ? hover : null) } else if (had && had.pinch) { gesture = null; setAim(null) } };
   cv3.addEventListener("pointerup", e => lift(e, true)); cv3.addEventListener("pointercancel", e => lift(e, false));
-  cv3.addEventListener("pointerleave", e => { if (e.pointerType === "mouse" && hover) { hover = null; setHover(null) } });
+  cv3.addEventListener("pointerleave", e => { if (e.pointerType === "mouse" && hover) { hover = null; setHover(null); setAim(null) } });
   cv3.addEventListener("contextmenu", e => e.preventDefault());
   cv3.addEventListener("wheel", e => { e.preventDefault(); const b0 = groundAt(e.clientX, e.clientY), before = b0 ? b0.clone() : null; view.gd = clamp(view.gd * Math.exp(e.deltaY * .0015), fit.near, fit.dist); clampView();
     // zoom about the pointer: put the camera at the new distance, then move the target so the ground point under the pointer stays under it
     view.dist = view.gd; view.tx = view.gx; view.tz = view.gz; applyCamera(true); const after = before ? groundAt(e.clientX, e.clientY) : null;
-    if (before && after) { view.gx += before.x - after.x; view.gz += before.z - after.z; clampView(); view.tx = view.gx; view.tz = view.gz; applyCamera(true) } dirtyLabels = true; updateFitButton() }, {passive:false});
-  function setHover(c) { if (!c) { hoverMesh.visible = false; return } const L = [{x:c.x, z:c.z, kind:"pick"}]; hoverMesh.geometry.dispose(); hoverMesh.geometry = ringGeom(L); hoverMesh.visible = true }
+    if (before && after) { view.gx += before.x - after.x; view.gz += before.z - after.z; clampView(); view.tx = view.gx; view.tz = view.gz; applyCamera(true) } dirtyLabels = true; updateFitButton(); requestRender() }, {passive:false});
+  function setHover(c) { requestRender(); if (!c) { hoverMesh.visible = false; return } const L = [{x:c.x, z:c.z, kind:"pick"}]; hoverMesh.geometry.dispose(); hoverMesh.geometry = ringGeom(L); hoverMesh.visible = true }
 
   // ---------- the game's state, into the scene: find the cells that changed (and their neighbours, for the ground), rebuild only those; the river and the rings are cheap and rebuilt when they change
   let riverSig = null, lastSeed = null, firstSync = true;
   function syncState() { S = B.state(); const seedChanged = lastSeed !== S.seed; lastSeed = S.seed; reach = rules.reachOf(S); elev = cfg.elevation ? rules.elevOf(cfg, S.seed) : null;
-    const dirty = new Set(), changed = [], born = new Map(), frozen = [], animate = !firstSync && !seedChanged; firstSync = false;
+    const first = firstSync, dirty = new Set(), changed = [], born = new Map(), frozen = [], animate = !first && !seedChanged; firstSync = false;
     for (const cl of cells) { const old = cl.d, d = describe(cl), sg = sigOf(d); cl.d = d;
       if (sg !== cl.sig || seedChanged) { cl.sig = sg; changed.push(cl);   // a tile that grew (a plant, a level, a river tile) springs up, a tile that was locked gets a frost ring; undo and a new island just rebuild
         if (animate && old) { if (d.level > old.level || d.river > old.river) born.set(cl, !old.level && d.level ? 2 : 1); else if (d.locked && !old.locked) frozen.push(cl) } }
       groundOf(cl, d) }
     for (const cl of changed) { dirty.add(cl); for (const n of cl.nbc) if (n) dirty.add(n) }
     const rs = Object.keys(S.r).sort().map(k => k + ":" + S.r[k].l + ":" + S.r[k].from).join(";") + "|" + (elev ? S.seed : ""); if (rs !== riverSig) { riverSig = rs; buildRiver() }
-    for (const cl of dirty) refreshTile(cl, born.get(cl) || 0);
+    // a few tiles are built at once; the first build is all at once too (nothing is on screen yet); a bulk change (a new island, undo through many tiles, a new quality) goes through the queue, the middle of the view first
+    const t0 = performance.now(), list = [...dirty], now = first ? list : changed.length <= 14 ? changed : [...born.keys()];   // the tiles that changed are built at once (and so is the first build); their neighbours, whose ground only blends with them, a frame or two later
+    for (const cl of now) refreshTile(cl, born.get(cl) || 0); if (!first) { enqueue(list.filter(c => !now.includes(c))); pumpHold = queue.length > 0 }
+    syncMs = performance.now() - t0;
     for (const cl of born.keys()) celebrate(cl, "grow"); for (const cl of frozen) celebrate(cl, "frost");
-    if (changed.length) { buildZoo(); if (skyCtl) skyCtl.setSpots(fireSpots()) }
-    buildRings(); dirtyLabels = true }
+    if (changed.length && !queue.length) settle(true);
+    buildRings(); dirtyLabels = true; requestRender() }
   let dirtyLabels = true, skyCtl = null;
   // where the fireflies live: over the springs and the wet, wooded and grown tiles (a tile with a higher level has more)
   function fireSpots() { const out = []; for (const cl of cells) { const d = cl.d; if (!d) continue;
       if (d.code === "T") out.push({x:cl.x, y:CH[cl.i], z:cl.z, n:3}); else if (d.level && (d.kind === "m" || d.kind === "t" || (d.kind === "g" && d.level >= 3) || (d.kind === "p" && d.level >= 4))) out.push({x:cl.x, y:CH[cl.i], z:cl.z, n:Math.min(9, 1 + d.level)}) } return out }
 
+  // ---------- keeping to the budget (LOU-311 section 3). Bulk changes (a new island, undo through many tiles, a change of tier or of level of detail, thinning) rebuild tiles a few at a time, the ones nearest the
+  // middle of the view first, so no frame is long.
+  const queue = [], MS_PER_FRAME = 7;
+  function enqueue(list) { const seen = new Set(queue); for (const cl of list) if (!seen.has(cl)) queue.push(cl); queue.sort((a, b) => ((a.x - view.gx) ** 2 + (a.z - view.gz) ** 2) - ((b.x - view.gx) ** 2 + (b.z - view.gz) ** 2)) }
+  function pump() { if (!queue.length) return false; const t0 = performance.now(); while (queue.length && performance.now() - t0 < MS_PER_FRAME) refreshTile(queue.shift(), 0); dirtyLabels = true; if (!queue.length) settle(false); return true }
+  // When a build is complete the animals and fireflies are placed from the finished tiles, and the island is checked against the triangle budget: over it, the plants and grass are thinned (detail goes down by
+  // what is needed, never below .3) and everything is rebuilt once; well under it and thinned, detail comes back. The tiles' triangles are counted at the level of detail they are built at: with the whole island in
+  // view all of them are on screen, zoomed in at most about 40 per cent are. With shadows on, a tile is drawn twice (the shadow pass), so it counts twice.
+  let passes = 0;
+  function settle(fresh) { if (fresh) passes = 0; buildZoo(); if (skyCtl) skyCtl.setSpots(fireSpots());
+    let fixed = 0, thin = 0; for (const cl of cells) { fixed += cl.tg || 0; thin += (cl.tr || 0) + (cl.tp || 0) }
+    const limit = (C3.budget.triangles * (C3.budgetScale[quality] || 1) - 30000) / (renderer.shadowMap.enabled ? 2 : 1) * (lod ? 2.5 : 1), k = thin > 0 ? (limit - fixed) / thin : 1; let want = detail;
+    if (k < 1) want = clamp(detail * k * .95, .3, 1); else if (detail < 1 && k > 1.5) want = Math.min(1, detail * Math.min(k * .8, 1.6));
+    if (Math.abs(want - detail) > .04 && passes < 3) { passes++; detail = want; enqueue(cells.filter(c => c.mesh)) } }
+  // the level of detail follows the zoom, with a gap so it doesn't flicker: thin when the goal distance is past .62 of the whole-island distance, full when it comes back inside .5
+  function checkLod() { const want = view.gd > fit.dist * (lod === 0 ? .5 : .62) ? 0 : 1; if (want === lod) return; lod = want; updateShadowCasters() }
+  // A shadow pass draws every tile that casts a shadow whether or not it is on screen (the stats of the main pass don't count it), so when zoomed in only the tiles on screen, and two tiles beyond them
+  // (which can shade them), cast shadows. With the whole island in view they all do.
+  const pvB = new T.Vector3(); let shadowDirty = true;
+  let viewStamp = 0;   // counts the times the set of tiles on screen was worked out (reduced motion poses the animals again when it changes)
+  function updateShadowCasters() { shadowDirty = false; viewStamp++; const sh = renderer.shadowMap.enabled, stale = [];
+    for (const cl of cells) { pv.set(cl.x, CH[cl.i] + 1, cl.z).project(camera); pvB.set(cl.x + 1.6, CH[cl.i] + 1, cl.z).project(camera); const mg = Math.abs(pvB.x - pv.x) + .05, d = cl.d;
+      cl.inView = pv.z < 1 && Math.abs(pv.x) < 1 + mg && pv.y > -1 - mg && pv.y < 1 + mg + .35;   // on screen, with a tile's margin (a tall plant above a tile just off the top still shows)
+      if (sh && cl.mesh) cl.mesh.castShadow = cl.inView && !!d && (d.level > 0 || d.code === "B" || d.code === "T" || d.elev > 0);   // bare, flat ground casts nothing (it still receives shadows)
+      if (cl.mesh && cl.lod !== lod && (lod === 0 || cl.inView)) stale.push(cl) }   // full detail is only built for the tiles on screen, and as the view moves, for the ones that come into it
+    if (stale.length) enqueue(stale) }
+  // ?q= picks a tier. Otherwise (the config's "auto") a frame-time probe at the start: once the first builds are done, 45 frames are timed; over 34 ms a frame (under 30 fps) is the low tier, under 14 ms on a device
+  // with a mouse is high, anything else med. It decides once.
+  const autoQ = !QS.get("q") && C3.quality === "auto"; let probe = autoQ ? {skip:40, n:0, sum:0, last:0} : null, probeMs = 0;
+  function probeTick(T0) { if (!probe) return; if (queue.length) { probe.last = 0; return } if (probe.skip > 0) { probe.skip--; probe.last = T0; return }
+    if (probe.last) { probe.sum += T0 - probe.last; probe.n++ } probe.last = T0;
+    if (probe.n >= 45) { probeMs = probe.sum / probe.n; probe = null; const q = probeMs > 34 ? "low" : probeMs < 14 && !coarse ? "high" : "med"; if (q !== quality) setQuality(q) } }
+  function setQuality(q) { if (!TIERS.includes(q) || q === quality) return; quality = q; applyQuality(); for (const cl of cells) cl.sig = ""; syncState(); if (skyCtl) skyCtl.setQuality() }
+
   function resize() { if (!alive) return; w = board.clientWidth; h = board.clientHeight; if (!w || !h) return;
-    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, coarse ? C3.pixelRatio.touch : C3.pixelRatio.other)); renderer.setSize(w, h, false); pU.scale.value = renderer.getPixelRatio() * h / (2 * Math.tan(C3.fov * Math.PI / 360)); camera.aspect = w / h; computeFit(); camera.updateProjectionMatrix(); applyCamera(true); updateFitButton(); dirtyLabels = true }
-  let frames = 0, fpsT = performance.now(), fps = 0, lastT = 0, lastCam = "";
-  function draw(T0) { if (!alive || !w) return; const dt = lastT ? Math.min(.05, (T0 - lastT) / 1000) : 0; lastT = T0; dtLast = dt; uTime.value += dt; if (skyCtl) skyCtl.update(dt);   // the day's clock and colours (step 4)
+    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, coarse ? C3.pixelRatio.touch : C3.pixelRatio.other)); renderer.setSize(w, h, false); pU.scale.value = renderer.getPixelRatio() * h / (2 * Math.tan(C3.fov * Math.PI / 360)); camera.aspect = w / h; computeFit(); camera.updateProjectionMatrix(); applyCamera(true); updateFitButton(); dirtyLabels = true; requestRender() }
+  let frames = 0, fpsT = performance.now(), fps = 0, lastT = 0, lastCam = "", dirtyRender = true, idleFlip = false, rafPending = false, throttle = true, cpuMs = 0, frameTotal = 0, drawTotal = 0, pumpHold = false, busyWhy = "", syncMs = 0;
+  // With reduced motion the page doesn't run its frame loop (it draws when something happens), so the look asks for the frames it needs itself.
+  function requestRender() { dirtyRender = true; if (reduced() && !rafPending && alive) { rafPending = true; requestAnimationFrame(t => { rafPending = false; draw(t) }) } }
+  function draw(T0) { if (!alive || !w || document.hidden) return; drawTotal++; const still = reduced(), c0 = performance.now(), pumped = pumpHold ? (pumpHold = false, false) : pump(); checkLod();   // a tile built because of a move is on its own frame: its neighbours wait for the next
+    const moving = gesture || Math.abs(view.gd - view.dist) > .02 || Math.abs(view.gx - view.tx) > .01 || Math.abs(view.gz - view.tz) > .01;
+    busyWhy = pumped ? "queue" : moving ? "moving" : dirtyRender ? "dirty" : aimOn !== (aimCell ? 1 : 0) ? "aim" : pops.length ? "pops" : sparks.length ? "sparks" : B.fx.length ? "points" : queue.length ? "queued" : probe ? "probe" : pulses.some(p => p.on) ? "pulse" : ""; const busy = !!busyWhy;
+    // nothing but ambient motion (the water, the wind, the animals): every other frame, 30 fps, half the power. Reduced motion: nothing changed, nothing is drawn, and the water, wind and light stand still.
+    if (!busy) { if (still) return; if (throttle) { idleFlip = !idleFlip; if (idleFlip) return } }
+    const dt = lastT ? Math.min(.05, (T0 - lastT) / 1000) : 0; lastT = T0; dtLast = dt; if (!still) uTime.value += dt; if (skyCtl && skyCtl.update(dt)) dirtyRender = true;   // the day's clock and colours (step 4)
     for (const c of clouds) { c.position.x += c.userData.sp * dt; if (c.position.x > 120) c.position.x = -120 }
-    applyCamera(false); const cs = view.tx.toFixed(3) + view.tz.toFixed(3) + view.dist.toFixed(2); if (cs !== lastCam) { lastCam = cs; dirtyLabels = true }
+    applyCamera(false); const cs = view.tx.toFixed(3) + view.tz.toFixed(3) + view.dist.toFixed(2); if (cs !== lastCam) { lastCam = cs; dirtyLabels = true; shadowDirty = true } if (shadowDirty) updateShadowCasters(); updateAim(dt);
     popTick(); sparkTick(dt); pulseTick(); poseZoo(uTime.value);
-    ringMat.opacity = reduced() ? .9 : .72 + .26 * Math.sin(uTime.value * 3);
-    renderer.render(scene, camera); if (dirtyLabels || B.fx.length || Object.keys(B.pops).length) { updateLabels(T0); dirtyLabels = false }
-    frames++; const n = performance.now(); if (n - fpsT >= 1000) { fps = frames * 1000 / (n - fpsT); frames = 0; fpsT = n } }
-  const stats = () => { const i = renderer.info; return {quality, detail, triangles:i.render.triangles, calls:i.render.calls, fps:Math.round(fps * 10) / 10, geometries:i.memory.geometries, textures:i.memory.textures, animals:zoo.length, animalTriangles:Math.round(zooVerts / 3), popping:pops.length, sparks:sparks.length, width:w, height:h} };
+    ringMat.opacity = still ? .9 : .72 + .26 * Math.sin(uTime.value * 3);
+    renderer.render(scene, camera); dirtyRender = false; probeTick(T0); if (dirtyLabels || B.fx.length || Object.keys(B.pops).length) { updateLabels(T0); dirtyLabels = false }
+    cpuMs += (performance.now() - c0 - cpuMs) * .1; frames++; frameTotal++; const n = performance.now(); if (n - fpsT >= 1000) { fps = frames * 1000 / (n - fpsT); frames = 0; fpsT = n } }
+  const stats = () => { const i = renderer.info; let g = 0, gr = 0, pl = 0; for (const cl of cells) { g += cl.tg || 0; gr += cl.tr || 0; pl += cl.tp || 0 }
+    let st = 0, sc = 0; if (renderer.shadowMap.enabled) for (const cl of cells) if (cl.mesh && cl.mesh.castShadow) { sc++; st += cl.mesh.geometry.attributes.position.count / 3 }
+    return {quality, lod:lod ? "near" : "far", detail:Math.round(detail * 100) / 100, triangles:i.render.triangles, calls:i.render.calls, shadowTriangles:Math.round(st), shadowCalls:sc, gpuTriangles:i.render.triangles + Math.round(st), gpuCalls:i.render.calls + sc, fps:Math.round(fps * 10) / 10, cpuMs:Math.round(cpuMs * 10) / 10, geometries:i.memory.geometries, textures:i.memory.textures,
+      parts:{ground:g, grass:gr, plants:pl}, animals:zoo.length, animalTriangles:Math.round(zooVerts / 3), popping:pops.length, sparks:sparks.length, queued:queue.length, frameTotal, drawTotal, busy:busyWhy, syncMs:Math.round(syncMs * 10) / 10, probeMs:Math.round(probeMs * 10) / 10, width:w, height:h} };
   const sample = (n = 12) => { renderer.render(scene, camera); const gl = renderer.getContext(), px = new Uint8Array(4), out = [], Wd = gl.drawingBufferWidth, Hd = gl.drawingBufferHeight;   // read an n by n grid of pixels back, for the smoke test
     for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) { gl.readPixels(Math.floor((i + .5) * Wd / n), Math.floor((j + .5) * Hd / n), 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); out.push([px[0], px[1], px[2]]) } return out };
   // the page coordinates of a cell's top (for tests and for the page's own helpers)
   function scr(p) { const c = cellAt(p[0], p[1]); if (!c) return [0, 0]; const r = cv3.getBoundingClientRect(); pv.set(c.x, CH[c.i] + .1, c.z).project(camera); return [r.left + (pv.x * .5 + .5) * w, r.top + (-pv.y * .5 + .5) * h] }
-  function look(p, z) { const c = cellAt(p[0], p[1]); if (!c) return; view.gx = c.x; view.gz = c.z; if (z) view.gd = clamp(fit.dist / (z || 1), fit.near, fit.dist); clampView(); updateFitButton() }
+  function look(p, z) { const c = cellAt(p[0], p[1]); if (!c) return; view.gx = c.x; view.gz = c.z; if (z) view.gd = clamp(fit.dist / (z || 1), fit.near, fit.dist); clampView(); updateFitButton(); requestRender() }
   // ---------- the day and night (flowgrow.look3d.sky.js, step 4): the clock, the light, the colours, the stars and the fireflies. If the file isn't there the island stays in daylight.
   const skyMod = G.Flowgrow3D.sky;
   if (skyMod) skyCtl = skyMod.mount({scene, renderer, C3, QS, dayState, seaU, riverMat, sky, cloudMat, clouds, sun, hemi, lab, midX, midZ, uWind, uGlow, uTime, pointScale:pU.scale, reduced, quality:() => quality, mem:B.mem,
     progress:() => cfg.stackSize ? 1 - rules.left(S) / cfg.stackSize : null});   // "progress" mode: how far through the pile the run is (nothing for an endless pile)
   const ctl = {draw, resize, sync: syncState, scr, look, toggleFit, cycleTime: () => skyCtl ? skyCtl.cycle() : "", timeNote: () => skyCtl ? skyCtl.note() : "",
     unmount() { alive = false; delete G.__flowgrow3d; for (const c of cells) { dropPop(c); if (c.mesh) c.mesh.geometry.dispose() } if (zGeo) zGeo.dispose(); if (skyCtl) skyCtl.dispose(); pGeo.dispose(); renderer.dispose(); cv3.remove(); lab.remove(); B.fit && (B.fit.style.top = "") }};
-  G.__flowgrow3d = {setTime: v => skyCtl ? skyCtl.setTime(v) : null, getTime: () => skyCtl ? skyCtl.getTime() : null, setQuality(q) { if (TIERS.includes(q) && q !== quality) { quality = q; applyQuality(); for (const cl of cells) cl.sig = ""; syncState(); if (skyCtl) skyCtl.setQuality() } }, stats, sample, renderer, scene, camera, view, dayState};
+  G.__flowgrow3d = {setTime: v => skyCtl ? skyCtl.setTime(v) : null, getTime: () => skyCtl ? skyCtl.getTime() : null, setQuality, setThrottle(v) { throttle = !!v }, stats, sample, renderer, scene, camera, view, dayState};
   syncState(); resize();
   return ctl;
 }

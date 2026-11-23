@@ -102,7 +102,7 @@ function mount(X) {
     if (mode === "cycle") t = (t + dt / dayLength) % 1;
     else if (mode === "progress") { const g = progressT(); let d = g - t; if (Math.abs(d) < 1e-4) t = g; else t += Math.sign(d) * Math.min(Math.abs(d), (still ? 9 : .03) * dt) }
     else if (goal != null) { let d = ((goal - t) % 1 + 1) % 1; if (still || d < 1e-4) { t = goal; goal = null } else { const step = Math.min(d, .22 * dt); t = (t + step) % 1; if (step >= d) goal = null } }   // forwards through the day, like a time-lapse
-    if (applied !== t.toFixed(4) + "|" + X.quality()) apply(); ffU.uNight.value = dayState.night01 }
+    let ch = false; if (applied !== t.toFixed(4) + "|" + X.quality()) { apply(); ch = true } ffU.uNight.value = dayState.night01; return ch }   // true when the colours changed (a frame is needed)
 
   function setSpots(list) { spots = list; buildFireflies() }
   function setQuality() { applied = ""; buildFireflies() }

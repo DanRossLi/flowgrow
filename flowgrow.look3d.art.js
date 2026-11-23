@@ -12,7 +12,7 @@ const F = window.Flowgrow3D, T = window.THREE, U = F.util, {Batch, GT, put, rng,
 GT.disc = U.tpl(new T.CircleGeometry(1, 14).rotateX(-Math.PI / 2));   // a flat disc facing up: water, lily pads
 
 // ---------- state of the tile being built (the builders below draw into CB, around the tile's own centre)
-let CB = null, DET = 1, CG = GT.ico1, LK = false, SZ = 1, SW = 1, R = null, INFO = null, LOWPOLY = false;
+let CB = null, DET = 1, CG = GT.ico1, PT = GT.cone2, LK = false, SZ = 1, SW = 1, R = null, INFO = null, LOWPOLY = false;
 const cnt = n => Math.max(1, Math.round(n * DET));
 const glow = f => { CB.gl = 10; f(); CB.gl = 0 };   // what is drawn in f lights itself a little at night (pond water, mushroom caps, seed heads): the core's tile shader reads the flag
 const ccache = {}, cl = hex => ccache[hex] || (ccache[hex] = lin(hex));
@@ -31,28 +31,28 @@ function scatter(n, Rr, minD) { const a = [], N = cnt(n); let tries = 0; while (
 const GREENS = ["#3da648", "#2f9640", "#52b94e", "#278a3a"], PINES = ["#1d6b43", "#27794e", "#165a39"], GRN = ["#3f9a3a", "#4cab40", "#348a33"], GOLD = ["#c9b24a", "#d8c25a", "#b8a23e", "#e0cf70"];
 function sprout(x, y, z) { const h = .07 + R() * .07; P(GT.cyl, x, y, z, .012, h, .012, jit("#6fae52", R)); P(GT.ico0, x - .03, y + h, z, .05, .016, .03, jit("#a6e47f", R), R() * 3, 0, .5); P(GT.ico0, x + .03, y + h * .95, z, .05, .016, .03, jit("#8fd470", R), R() * 3, 0, -.5); P(GT.ico0, x, y + .012, z, .06, .02, .06, jit("#7a5a3a", R), 0, 0, 0, 0) }
 function tuft(x, y, z, s, pal, bend) { s = s || 1; const n = cnt(8), P2 = pal || ["#5cc23c", "#48b034", "#78d04a"];
-  for (let k = 0; k < n; k++) { const a = R() * 6.28, h = (.14 + R() * .2) * s, l = (.18 + R() * .3) * (bend || 1); P(GT.cone, x + Math.cos(a) * .03, y, z + Math.sin(a) * .03, .028 * s, h, .028 * s, jit(pick(P2, R), R), 0, Math.cos(a) * l, Math.sin(a) * l) } }
+  for (let k = 0; k < n; k++) { const a = R() * 6.28, h = (.14 + R() * .2) * s, l = (.18 + R() * .3) * (bend || 1); P(GT.blade, x + Math.cos(a) * .03, y, z + Math.sin(a) * .03, .028 * s, h, .028 * s, jit(pick(P2, R), R), 0, Math.cos(a) * l, Math.sin(a) * l) } }
 function fstem(x, y, z, h, th) { const lx = (R() - .5) * .22, lz = (R() - .5) * .22, c = jit(pick(GRN, R), R), mx = x + lx * h * .3, mz = z + lz * h * .3, tx = x + lx * h, tz = z + lz * h;
   limb(x, y, z, mx, y + h * .5, mz, th || .0085, c, GT.stem4); limb(mx, y + h * .5, mz, tx, y + h, tz, (th || .0085) * .75, c, GT.stem4); return {x:tx, y:y + h, z:tz} }
-function fleaf(x, y, z, h, n, len, w) { for (let i = 0; i < n; i++) { const f = .08 + R() * .4, a = R() * 6.28; P(GT.cone2, x, y + h * f, z, w, len * (.7 + R() * .6), w * .3, jit(pick(GRN, R), R), a, 1.05 + R() * .3, 0) } }
-function petals(cx, cy, cz, n, len, w, pal, lean) { for (let k = 0; k < n; k++) { const a = k * 6.283 / n + (R() - .5) * .2; P(GT.cone2, cx, cy, cz, w, len * (.88 + R() * .24), w * .28, jit(pick(pal, R), R, .06), a, lean + (R() - .5) * .14, 0) } }
+function fleaf(x, y, z, h, n, len, w) { for (let i = 0; i < n; i++) { const f = .08 + R() * .4, a = R() * 6.28; P(PT, x, y + h * f, z, w, len * (.7 + R() * .6), w * .3, jit(pick(GRN, R), R), a, 1.05 + R() * .3, 0) } }
+function petals(cx, cy, cz, n, len, w, pal, lean) { for (let k = 0; k < n; k++) { const a = k * 6.283 / n + (R() - .5) * .2; P(PT, cx, cy, cz, w, len * (.88 + R() * .24), w * .28, jit(pick(pal, R), R, .06), a, lean + (R() - .5) * .14, 0) } }
 const FLORA = ["daisy", "daisy", "poppy", "tulip", "spike", "spike", "cosmos", "corn", "dandelion", "buttercup", "aster"];
 function flower(x, y, z, tall) { const hs = (tall || 1) * (.75 + R() * .55), sp = pick(FLORA, R); let h, t;
-  if (tall > 1.3 && R() < .22) { h = (.45 + R() * .22) * hs * .9; t = fstem(x, y, z, h, .014); fleaf(x, y, z, h, 3, .14, .045); P(GT.ico1, t.x, t.y, t.z, .052, .016, .052, cl("#47290f"), 0, .45, 0); petals(t.x, t.y - .004, t.z, 14, .065, .017, ["#ffc61a", "#ffb300", "#ffd23a"], 1.25); return }
+  if (tall > 1.3 && R() < .22) { h = (.45 + R() * .22) * hs * .9; t = fstem(x, y, z, h, .014); fleaf(x, y, z, h, 3, .14, .045); P(CG, t.x, t.y, t.z, .052, .016, .052, cl("#47290f"), 0, .45, 0); petals(t.x, t.y - .004, t.z, 14, .065, .017, ["#ffc61a", "#ffb300", "#ffd23a"], 1.25); return }
   if (sp === "poppy") { h = (.28 + R() * .16) * hs; t = fstem(x, y, z, h, .007); fleaf(x, y, z, h, 2, .1, .018); petals(t.x, t.y, t.z, 5, .055, .032, ["#e8392b", "#f0503a", "#d92a22"], .8); P(GT.ico0, t.x, t.y + .012, t.z, .014, .012, .014, cl("#2b1a1a")) }
-  else if (sp === "tulip") { h = (.22 + R() * .13) * hs; t = fstem(x, y, z, h, .01); const c = jit(pick(["#ff7aa8", "#ffd23a", "#ef4e5c", "#ff9a4a"], R), R); for (let k = 0; k < 3; k++) { const a = k * 2.094 + R(); P(GT.ico1, t.x + Math.cos(a) * .011, t.y + .026, t.z + Math.sin(a) * .011, .017, .04, .011, c, a, .22, 0) } fleaf(x, y, z, h, 2, .16, .02) }
+  else if (sp === "tulip") { h = (.22 + R() * .13) * hs; t = fstem(x, y, z, h, .01); const c = jit(pick(["#ff7aa8", "#ffd23a", "#ef4e5c", "#ff9a4a"], R), R); for (let k = 0; k < 3; k++) { const a = k * 2.094 + R(); P(CG, t.x + Math.cos(a) * .011, t.y + .026, t.z + Math.sin(a) * .011, .017, .04, .011, c, a, .22, 0) } fleaf(x, y, z, h, 2, .16, .02) }
   else if (sp === "spike") { h = (.3 + R() * .26) * hs; t = fstem(x, y, z, h, .008); const pal = pick([["#9b6ee0", "#b58cf0", "#7a5bd0"], ["#5f7be8", "#7d96f2", "#4a64d0"], ["#ee79b8", "#f79bcb", "#d85ca2"]], R); fleaf(x, y, z, h, 3, .1, .016);
     const nb = cnt(8); for (let k = 0; k < nb; k++) { const f = .58 + .42 * k / nb, a = k * 2.4 + R(), sz = .022 * (1 - .55 * k / nb) + .006, px = x + (t.x - x) * f, pz = z + (t.z - z) * f; P(GT.ico0, px + Math.cos(a) * .016 * (1 - .4 * k / nb), y + h * f, pz + Math.sin(a) * .016 * (1 - .4 * k / nb), sz, sz * 1.2, sz, jit(pick(pal, R), R, .06), R() * 6) } }
   else if (sp === "corn") { h = (.24 + R() * .16) * hs; t = fstem(x, y, z, h, .007); fleaf(x, y, z, h, 2, .1, .012); petals(t.x, t.y, t.z, 8, .04, .012, ["#5b7fe8", "#7a98f0", "#4a6cd8"], 1.2); P(GT.ico0, t.x, t.y + .006, t.z, .012, .008, .012, cl("#2a2f6a")) }
-  else if (sp === "dandelion") { h = (.1 + R() * .1) * hs; t = fstem(x, y, z, h, .007); fleaf(x, y, z, h * .4, 3, .08, .018); if (R() < .55) { P(GT.ico0, t.x, t.y + .005, t.z, .026, .012, .026, cl("#ffd21e")); petals(t.x, t.y + .004, t.z, 8, .03, .007, ["#ffd21e", "#ffc400"], 1.35) } else glow(() => P(GT.ico1, t.x, t.y + .02, t.z, .032, .032, .032, cl("#f1f1ea"), R() * 6)) }
+  else if (sp === "dandelion") { h = (.1 + R() * .1) * hs; t = fstem(x, y, z, h, .007); fleaf(x, y, z, h * .4, 3, .08, .018); if (R() < .55) { P(GT.ico0, t.x, t.y + .005, t.z, .026, .012, .026, cl("#ffd21e")); petals(t.x, t.y + .004, t.z, 8, .03, .007, ["#ffd21e", "#ffc400"], 1.35) } else glow(() => P(CG, t.x, t.y + .02, t.z, .032, .032, .032, cl("#f1f1ea"), R() * 6)) }
   else if (sp === "buttercup") { h = (.1 + R() * .08) * hs; t = fstem(x, y, z, h, .006); fleaf(x, y, z, h, 2, .05, .012); petals(t.x, t.y, t.z, 5, .026, .016, ["#ffd83a"], .9) }
   else { h = (.14 + R() * .16) * hs; t = fstem(x, y, z, h); fleaf(x, y, z, h, 2, .08, .016); const aster = sp === "aster"; petals(t.x, t.y, t.z, aster ? 11 : sp === "cosmos" ? 8 : 10, .052 * (sp === "cosmos" ? 1.2 : 1), .013, aster ? ["#b48cf0", "#cfa8ff", "#9d72e6"] : sp === "cosmos" ? ["#ff8fb8", "#ffb3d1", "#e866a0"] : ["#ffffff", "#fff4dc"], 1.3); P(GT.ico0, t.x, t.y + .004, t.z, .02, .011, .02, cl("#f2bd1f")) } }
 function shrub(x, y, z, rad) { const c = jit(pick(GREENS, R), R, .12); P(CG, x, y + rad * .55, z, rad, rad * .72, rad, c, R() * 6); P(CG, x + rad * .55, y + rad * .35, z + rad * .2, rad * .6, rad * .5, rad * .6, jit(pick(GREENS, R), R, .12), R() * 6); P(CG, x - rad * .4, y + rad * .3, z - rad * .4, rad * .55, rad * .45, rad * .55, jit(pick(GREENS, R), R, .12), R() * 6) }
 function berryShrub(x, y, z, rad, pink) { shrub(x, y, z, rad); for (let i = 0; i < cnt(7); i++) { const a = R() * 6.28, e = R() * .9; P(GT.ico0, x + Math.cos(a) * rad * .9, y + rad * .55 + Math.sin(e) * rad * .45, z + Math.sin(a) * rad * .9, .03, .03, .03, cl(pink ? pick(["#ff9fc0", "#ffffff", "#ffd0e0"], R) : "#d8344a")) } }
 function rock(x, y, z, s, c) { P(GT.dod, x, y + s * .35, z, s, s * .7, s * .85, jit(c || pick(["#8d9aa0", "#a2adaf", "#7f8b90", "#b1b6aa"], R), R, .1), R() * 6, R() * .4, R() * .4, 0) }
-function mushroom(x, y, z, s) { P(GT.cyl, x, y, z, .02 * s, .07 * s, .02 * s, cl("#efe6d2"), 0, 0, 0, 0); glow(() => { P(GT.ico1, x, y + .07 * s, z, .055 * s, .035 * s, .055 * s, cl(pick(["#e0564a", "#f2a03d", "#d9684f"], R)), 0, 0, 0, 0); P(GT.ico0, x + .02 * s, y + .095 * s, z, .009 * s, .006 * s, .009 * s, cl("#ffffff"), 0, 0, 0, 0) }) }
-function fern(x, y, z, s) { s = s || 1; for (let i = 0; i < cnt(8); i++) { const a = i * .8 + R() * .3, c = jit(pick(["#3f9e3c", "#318f36", "#55b447"], R), R), l1 = .15 * s, l2 = .12 * s, ln = .8; P(GT.cone2, x, y + .01, z, .04 * s, l1, .012 * s, c, a, ln, 0);
-    const ex = x + Math.sin(a) * Math.sin(ln) * l1, ey = y + .01 + Math.cos(ln) * l1, ez = z + Math.cos(a) * Math.sin(ln) * l1; P(GT.cone2, ex, ey, ez, .034 * s, l2, .01 * s, c, a, 1.45, 0) } }
+function mushroom(x, y, z, s) { P(GT.cyl, x, y, z, .02 * s, .07 * s, .02 * s, cl("#efe6d2"), 0, 0, 0, 0); glow(() => { P(CG, x, y + .07 * s, z, .055 * s, .035 * s, .055 * s, cl(pick(["#e0564a", "#f2a03d", "#d9684f"], R)), 0, 0, 0, 0); P(GT.ico0, x + .02 * s, y + .095 * s, z, .009 * s, .006 * s, .009 * s, cl("#ffffff"), 0, 0, 0, 0) }) }
+function fern(x, y, z, s) { s = s || 1; for (let i = 0; i < cnt(8); i++) { const a = i * .8 + R() * .3, c = jit(pick(["#3f9e3c", "#318f36", "#55b447"], R), R), l1 = .15 * s, l2 = .12 * s, ln = .8; P(PT, x, y + .01, z, .04 * s, l1, .012 * s, c, a, ln, 0);
+    const ex = x + Math.sin(a) * Math.sin(ln) * l1, ey = y + .01 + Math.cos(ln) * l1, ez = z + Math.cos(a) * Math.sin(ln) * l1; P(PT, ex, ey, ez, .034 * s, l2, .01 * s, c, a, 1.45, 0) } }
 function logPile(x, y, z, len, rad, ang) { P(GT.cyl, x, y + rad, z, rad, len, rad, jit("#6d5036", R, .06), ang, 0, Math.PI / 2); P(CG, x, y + rad * 1.8, z, len * .28, rad * .35, rad * .7, jit("#4e9a3a", R), ang) }
 
 // ---------- trees: limbs and crowns of blobs, seeded; species are the reference's
@@ -72,12 +72,12 @@ function birch(x, y, z, h, rad) { const lean = (R() - .5) * .14, tr = .02 + h * 
   crown(tx, y + h * .76, tz, rad * .55, h * .24, rad * .55, 12, BIRCHP, rad * .3) }
 function spruce(x, y, z, h, rad, pal) { limb(x, y, z, x, y + h * .4, z, rad * .1, jit("#5e4330", R, .06)); const tiers = quality3() === "low" ? 4 : 7;
   for (let t = 0; t < tiers; t++) { const f = t / tiers, yy = y + h * (.1 + f * .66), rr = rad * (1 - f * .85) * (.9 + R() * .2), nbr = Math.max(4, 7 - ((t / 2) | 0));
-    for (let j = 0; j < Math.max(3, cnt(nbr)); j++) { const a = j * 6.283 / nbr + t * .6 + R() * .25, ln = rr * (.85 + R() * .3); P(GT.cone2, x, yy + (R() - .5) * .03, z, ln * .3, ln, ln * .12, jit(pick(pal, R), R, .12), a, 1.5 + R() * .25, 0) }
-    P(GT.cone, x, yy, z, rr * .35, h * .11, rr * .35, jit(pick(pal, R), R, .1), R() * 3) }
-  P(GT.cone, x, y + h * .84, z, rad * .1, h * .18, rad * .1, jit("#3f9a58", R, .06), 0) }
+    for (let j = 0; j < Math.max(3, cnt(nbr)); j++) { const a = j * 6.283 / nbr + t * .6 + R() * .25, ln = rr * (.85 + R() * .3); P(PT, x, yy + (R() - .5) * .03, z, ln * .3, ln, ln * .12, jit(pick(pal, R), R, .12), a, 1.5 + R() * .25, 0) }
+    P(GT.blade, x, yy, z, rr * .35, h * .11, rr * .35, jit(pick(pal, R), R, .1), R() * 3) }
+  P(GT.blade, x, y + h * .84, z, rad * .1, h * .18, rad * .1, jit("#3f9a58", R, .06), 0) }
 function poplar(x, y, z, h, rad) { limb(x, y, z, x, y + h * .3, z, rad * .1, jit("#7b6448", R, .06)); crown(x, y + h * .6, z, rad * .42, h * .36, rad * .42, 16, POPLARP, rad * .3) }
 function willow(x, y, z, h, rad) { const lean = (R() - .5) * .2, th = h * .45, tx = x + lean * th, tz = z + lean * th, yc = y + th + rad * .35; limb(x, y, z, tx, y + th, tz, rad * .15, jit("#6a5a40", R, .06)); crown(tx, yc, tz, rad * .7, rad * .3, rad * .7, 10, WILLOWP, rad * .36);
-  for (let i = 0; i < cnt(22); i++) { const a = i * .21 + R() * .15, rr = rad * (.5 + R() * .55), ln = h * (.28 + R() * .24); P(GT.cone2, tx + Math.cos(a) * rr, yc, tz + Math.sin(a) * rr, .026 + R() * .014, ln, .026 + R() * .014, jit(pick(WILLOWP, R), R, .1), 0, Math.PI) } }
+  for (let i = 0; i < cnt(22); i++) { const a = i * .21 + R() * .15, rr = rad * (.5 + R() * .55), ln = h * (.28 + R() * .24); P(PT, tx + Math.cos(a) * rr, yc, tz + Math.sin(a) * rr, .026 + R() * .014, ln, .026 + R() * .014, jit(pick(WILLOWP, R), R, .1), 0, Math.PI) } }
 function snag(x, y, z, h) { const bark = jit("#8a7b69", R, .06); limb(x, y, z, x + .03, y + h, z, h * .05, bark); for (let i = 0; i < 4; i++) { const a = i * 1.3 + R(), f = .4 + R() * .45; limb(x, y + h * f, z, x + Math.cos(a) * h * .28, y + h * (f + .18), z + Math.sin(a) * h * .28, h * .02, bark) } }
 function tree(sp, x, y, z, h, rad, k) { h *= SZ; rad *= SZ;
   if (INFO) { const top = y + (sp === "spruce" ? h * 1.15 : sp === "fir" ? h * 1.0 : sp === "birch" ? h * .96 : sp === "poplar" ? h * 1.02 : sp === "snag" ? h : sp === "willow" ? h * .62 : h * .4 + rad * 1.1);   // the tallest tree: where an owl or a woodpecker sits
@@ -91,8 +91,8 @@ let quality3 = () => "med";
 const REEDC = ["#5fa63a", "#74b345", "#4d9633", "#8cbd4a", "#68a83e", "#a7b954"];
 function reedStem(x, y, z, h, kind) { const lx = (R() - .5) * .2, lz = (R() - .5) * .2, c = jit(pick(REEDC, R), R, .1), tx = x + lx * h, tz = z + lz * h, ty = y + h;
   limb(x, y, z, x + lx * h * .35, y + h * .55, z + lz * h * .35, .0085, c, GT.stem4); limb(x + lx * h * .35, y + h * .55, z + lz * h * .35, tx, ty, tz, .0055, c, GT.stem4);
-  if (kind === "cat") { P(GT.cyl, tx, ty - .07, tz, .016, .085, .016, jit("#5c3a21", R, .08), 0, lz * 1.2, lx * 1.2); P(GT.cone2, tx, ty + .012, tz, .004, .05, .004, jit("#c9b078", R, .06), 0, lz * 1.2, lx * 1.2) }
-  else if (kind === "plume") glow(() => P(GT.ico1, tx, ty + .01, tz, .016, .055, .016, jit(pick(["#cbb581", "#b39f84", "#d8c79a"], R), R, .08), R() * 6, lz * 1.3, lx * 1.3));
+  if (kind === "cat") { P(GT.cyl, tx, ty - .07, tz, .016, .085, .016, jit("#5c3a21", R, .08), 0, lz * 1.2, lx * 1.2); P(PT, tx, ty + .012, tz, .004, .05, .004, jit("#c9b078", R, .06), 0, lz * 1.2, lx * 1.2) }
+  else if (kind === "plume") glow(() => P(CG, tx, ty + .01, tz, .016, .055, .016, jit(pick(["#cbb581", "#b39f84", "#d8c79a"], R), R, .08), R() * 6, lz * 1.3, lx * 1.3));
   else if (kind === "iris") { petals(tx, ty, tz, 3, .045, .024, ["#ffd01f", "#f7bd10"], 1.95); petals(tx, ty + .004, tz, 3, .03, .016, ["#f2b30d"], .55) } }
 function reedBed(n, Rr, hMax, ex) { const s = scatter(n, Rr, .064); for (const p of s) { if (ex && (p.x - ex.x) * (p.x - ex.x) + (p.z - ex.z) * (p.z - ex.z) < ex.r * ex.r) continue; const d = Math.hypot(p.x, p.z) / Rr, base = hMax * (1 - .5 * d * d), ns = 2 + ((R() * 3) | 0) * (DET > .6 ? 1 : 0);
     for (let k = 0; k < ns; k++) { const q = R(), kind = q < .34 ? "cat" : q < .58 ? "plume" : q < .66 ? "iris" : "blade"; reedStem(p.x + (R() - .5) * .045, 0, p.z + (R() - .5) * .045, base * (.55 + R() * .55), kind) } } }
@@ -108,10 +108,10 @@ function pond(x, y, z, rx, rz) { const n = 16, p1 = R() * 6.28, p2 = R() * 6.28,
 function pad(x, y, z, s) { P(GT.disc, x, y, z, s, 1, s, jit("#5cae5a", R, .05), R() * 6, 0, 0, 0) }
 function heron(x, y, z, ang, sc) { const fx = Math.sin(ang), fz = Math.cos(ang), leg = cl("#c9a05a"), gr = jit("#8fa3b5", R, .04), wh = cl("#eef0f0");
   limb(x + fz * .018, y, z - fx * .018, x + fz * .012, y + .2 * sc, z - fx * .012, .007 * sc, leg, GT.stem4); limb(x - fz * .018, y, z + fx * .018, x - fz * .012, y + .2 * sc, z + fx * .012, .007 * sc, leg, GT.stem4);
-  P(GT.ico1, x, y + .26 * sc, z, .05 * sc, .048 * sc, .095 * sc, gr, ang); P(GT.ico1, x + fx * .03 * sc, y + .255 * sc, z + fz * .03 * sc, .042 * sc, .04 * sc, .06 * sc, wh, ang);
+  P(CG, x, y + .26 * sc, z, .05 * sc, .048 * sc, .095 * sc, gr, ang); P(CG, x + fx * .03 * sc, y + .255 * sc, z + fz * .03 * sc, .042 * sc, .04 * sc, .06 * sc, wh, ang);
   const n0 = [x + fx * .07 * sc, y + .285 * sc, z + fz * .07 * sc], n1 = [x + fx * .1 * sc, y + .36 * sc, z + fz * .1 * sc], n2 = [x + fx * .05 * sc, y + .43 * sc, z + fz * .05 * sc], n3 = [x + fx * .075 * sc, y + .5 * sc, z + fz * .075 * sc];
   limb(n0[0], n0[1], n0[2], n1[0], n1[1], n1[2], .012 * sc, wh); limb(n1[0], n1[1], n1[2], n2[0], n2[1], n2[2], .011 * sc, wh); limb(n2[0], n2[1], n2[2], n3[0], n3[1], n3[2], .011 * sc, wh);
-  P(GT.ico1, n3[0], n3[1] + .01 * sc, n3[2], .017 * sc, .014 * sc, .024 * sc, wh, ang); P(GT.cone2, n3[0] + fx * .014 * sc, n3[1] + .008 * sc, n3[2] + fz * .014 * sc, .007 * sc, .075 * sc, .007 * sc, cl("#e8a23a"), ang, 1.5, 0) }
+  P(CG, n3[0], n3[1] + .01 * sc, n3[2], .017 * sc, .014 * sc, .024 * sc, wh, ang); P(PT, n3[0] + fx * .014 * sc, n3[1] + .008 * sc, n3[2] + fz * .014 * sc, .007 * sc, .075 * sc, .007 * sc, cl("#e8a23a"), ang, 1.5, 0) }
 
 // ---------- what each kind of tile is made of
 const GD = {pebble:6};   // ground detail counts (placeholder, see Linear)
@@ -129,12 +129,12 @@ function fillGreen(L) { const y = 0; let i, s;
   else { tree("oak", 0, y, 0, 2.5, .85, 1.8); const sp7 = ["oak", "spruce", "maple", "fir", "oak", "spruce", "birch", "oak"]; for (i = 0; i < cnt(8); i++) { const a = i * .785 + R() * .3, rr = .6 + R() * .05; tree(sp7[i % 8], Math.cos(a) * rr, y, Math.sin(a) * rr, 1.4 + R() * .6, .34 + R() * .08) }
     for (i = 0; i < cnt(8); i++) { const a5 = R() * 6.28, r5 = .3 + R() * .3; fern(Math.cos(a5) * r5, y, Math.sin(a5) * r5, 1.1) } for (i = 0; i < cnt(6); i++) { const a3 = R() * 6.28, r3 = .3 + R() * .25; mushroom(Math.cos(a3) * r3, y, Math.sin(a3) * r3, .9 + R() * .7) }
     for (i = 0; i < 3; i++) { const a4 = R() * 6.28; rock(Math.cos(a4) * .45, y, Math.sin(a4) * .45, .1 + R() * .06, "#7d8f78") } logPile(.1, y, -.45, .45, .05, 2.2);
-    const bk = jit("#6d5036", R, .05), hd = Math.sin(.6), hz = Math.cos(.6); P(GT.ico1, hd * .105, y + .3, hz * .105, .075, .118, .03, bk, .6); P(GT.ico1, hd * .118, y + .3, hz * .118, .058, .098, .03, cl("#120c06"), .6);   // the hollow in the old oak
+    const bk = jit("#6d5036", R, .05), hd = Math.sin(.6), hz = Math.cos(.6); P(CG, hd * .105, y + .3, hz * .105, .075, .118, .03, bk, .6); P(CG, hd * .118, y + .3, hz * .118, .058, .098, .03, cl("#120c06"), .6);   // the hollow in the old oak
     for (i = 0; i < 4; i++) { const ra = i * 1.5 + .3; limb(Math.cos(ra) * .34, y + .01, Math.sin(ra) * .34, Math.cos(ra) * .08, y + .32, Math.sin(ra) * .08, .055, bk) } } }
 // prairie: open grass (placeholder, see Linear). Warm yellow-green, golden higher up; tall grass, wildflowers and seed heads. steppe: wind-bent grass and tiny seedlings. meadow: a dense flower carpet (bees come in the animals).
 function fillPrairie(L, up) { const y = 0, t = Math.min(L, 7), bend = up === "steppe" ? 2.2 : 1;
   for (const p of scatter(8 + t * 3, .64, .17)) tuft(p.x, y, p.z, .9 + t * .12, GOLD, bend);
-  for (const p of scatter(3 + t * 2, .62, .2)) { const h = .22 + R() * .18 + t * .03, lx = (R() - .5) * .2 * bend, c = jit(pick(GOLD, R), R, .1); limb(p.x, y, p.z, p.x + lx * h, y + h, p.z, .006, c, GT.stem4); P(GT.ico1, p.x + lx * h, y + h + .012, p.z, .012, .045, .012, jit("#c7a63a", R, .08), R() * 6) }   // seed heads
+  for (const p of scatter(3 + t * 2, .62, .2)) { const h = .22 + R() * .18 + t * .03, lx = (R() - .5) * .2 * bend, c = jit(pick(GOLD, R), R, .1); limb(p.x, y, p.z, p.x + lx * h, y + h, p.z, .006, c, GT.stem4); P(CG, p.x + lx * h, y + h + .012, p.z, .012, .045, .012, jit("#c7a63a", R, .08), R() * 6) }   // seed heads
   for (const p of scatter(2 + t * 2, .62, .22)) flower(p.x, y, p.z, 1.1);
   if (t >= 5) for (const p of scatter(3, .6, .3)) shrub(p.x, y, p.z, .1 + R() * .05);
   if (up === "steppe") for (const p of scatter(7, .6, .15)) sprout(p.x, y, p.z);
@@ -167,7 +167,7 @@ const pillH = d => d.level ? .12 : .3;
 // the cache: a tile's plants only depend on what it is, so identical tiles share one local batch (a few variants for variety), copied into the tile's mesh around its centre
 const CACHE = new Map();
 function build(d, variant, quality, dens) { const key = [d.code, d.kind, Math.min(d.level, 15), d.up, d.locked ? 1 : 0, d.river, d.reach, d.fall ? 1 : 0, variant, quality, dens.toFixed(2)].join("|"); let b = CACHE.get(key); if (b) return b;
-  b = new Batch(0); INFO = b.info = {perch:null, pond:null}; CB = b; DET = dens; CG = quality === "high" ? GT.ico1 : GT.ico0; LK = !!d.locked; SW = LK ? 0 : 1; SZ = d.level > 7 ? 1 + .25 * Math.min(8, d.level - 7) / 8 : 1;
+  b = new Batch(0); INFO = b.info = {perch:null, pond:null}; CB = b; DET = dens; CG = quality === "high" ? GT.ico1 : GT.ico0; PT = quality === "high" ? GT.cone2 : GT.blade; LK = !!d.locked; SW = LK ? 0 : 1; SZ = d.level > 7 ? 1 + .25 * Math.min(8, d.level - 7) / 8 : 1;
   let seed = 1337 + variant * 977; for (let i = 0; i < key.length; i++) seed = (Math.imul(seed, 31) + key.charCodeAt(i)) | 0; R = rng(seed);
   quality3 = () => quality;
   if (d.code === "B") mountain(); else if (d.code === "T") spring();

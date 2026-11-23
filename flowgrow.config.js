@@ -84,7 +84,8 @@ window.FLOWGROW = {
     polar: 0.98,
     fov: 30,
     nearTilesAcross: 4,     // the closest zoom shows about this many tiles across; the farthest shows the whole island (the opening view, Dan: "Follow the spec")
-    budget: {triangles: 250000, drawCalls: 150, fps: 30},   // what the build aims for at 390x844 on q=med
+    budget: {triangles: 250000, drawCalls: 150, fps: 30},   // what the build aims for at 390x844 on q=med: the triangles drawn (the main pass plus the shadow pass) with the whole island in view. If a late game would pass it, the plants and grass are thinned (never below 30 per cent)
+    budgetScale: {low: 0.5, med: 1, high: 2.2},             // the budget's multiple for each tier (the high tier is for a desktop)
     shadowMap: {low: 0, med: 1024, high: 2048},             // shadow map size by quality (0: no shadows)
     pixelRatio: {touch: 1.5, other: 2}                       // the highest pixel ratio drawn
   },
