@@ -53,7 +53,7 @@
 .fg[data-look="simple"] .fgt.dk:not(.art) canvas{transform:scale(.8);transform-origin:50% 96%}   /* the plain look's flat tiles are a full square: a little smaller, so the name above the hand is clear of them */
 .fgt.dk.copy::before{left:13%;top:30%;z-index:1}
 /* what the tile in hand is: a small name above it ("Sprouts · level 1"), and a grab area over the picture that takes the drag */
-.fgname{left:calc(155 * var(--u));bottom:calc(186 * var(--u));transform:translateX(-50%);max-width:calc(230 * var(--u));overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:4px 11px;border-radius:12px;background:rgba(255,255,255,.9);color:#1d4a3c;font:800 12.5px/1.2 var(--hand);box-shadow:0 2px 8px rgba(20,60,40,.18);transition:opacity .2s}
+.fgname{left:calc(155 * var(--u));bottom:calc(186 * var(--u));z-index:4;transform:translateX(-50%);max-width:calc(230 * var(--u));overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:4px 11px;border-radius:12px;background:rgba(255,255,255,.9);color:#1d4a3c;font:800 12.5px/1.2 var(--hand);box-shadow:0 2px 8px rgba(20,60,40,.18);transition:opacity .2s}
 .carrying .fgname{opacity:0}
 .fggrab{left:calc(78 * var(--u));bottom:calc(49 * var(--u));width:calc(153 * var(--u));height:calc(139 * var(--u));pointer-events:auto;touch-action:none;cursor:grab;-webkit-tap-highlight-color:transparent}
 .carrying .fggrab{cursor:grabbing}
