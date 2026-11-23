@@ -1,14 +1,18 @@
 #!/usr/bin/env node
-// Bakes the five tile sprites of the pile holder (LOU-312, LOU-313): art/pile/river.webp, green.webp, prairie.webp, marsh.webp and trees.webp. A developer tool: not part of the game, and nothing here is loaded by a page.
+// Bakes the tile sprites of the pile holder. A developer tool: not part of the game, and nothing here is loaded by a page.
+//   the habitats (LOU-312, LOU-313): art/pile/green.webp, prairie.webp, marsh.webp and trees.webp (and, as a measure for their common scale, the level 1 river tile, which is drawn but no longer written: the river has
+//   its own set)
+//   --set river (LOU-313): art/pile/river-1.webp to river-7.webp, one for each of the river's seven stages, from tools/river-tiles.html, with no number in them (the page draws the level on the sprite)
 //
 //   node --experimental-websocket tools/bake-pile-sprites.mjs
 //   node --experimental-websocket tools/bake-pile-sprites.mjs --out art/pile --frames shots --time prairie=14.2
 //   node --experimental-websocket tools/bake-pile-sprites.mjs --numeral 2 --out shots/level2
 //
 //   --out DIR       where the sprites go (default art/pile, made if it is missing)
+//   --set NAME      habitats (the default) or river
 //   --size N        the size in pixels of each 3D picture before it is scaled down (default 2048)
 //   --frames DIR    also save the five full-size 3D pictures there (river.png ... trees.png), to look at what was baked
-//   --time NAME=S   draw that tile at S seconds of animation time instead of its default (repeatable; see TIMES below)
+//   --time NAME=S   draw that tile at S seconds of animation time instead of its default (repeatable; see TIMES below; the river's are river-1 to river-7)
 //   --numeral N     the level number pressed into the ground at the front of every tile (default 1; 0 for none, which gives the plain tiles with all their plants)
 //   --query Q       more parameters for the bake page, to try the numeral out: numx and numz (where it lies, tile-local; the default is 0.02 and 0.74), numshadow (the shadow's opacity, 0.6) and
 //                   numspread (how far the shadow spreads round the digits, in canvas pixels, 1.5); the spec's shadow is numshadow=0.42&numspread=0. For example --query "numx=0.33&numz=0.6"
@@ -26,17 +30,22 @@
 import fs from "fs"; import path from "path"; import os from "os"; import http from "http"; import {fileURLToPath} from "url"; import {spawn, execSync} from "child_process";
 const die = msg => { console.error(msg); process.exit(1) }, fail = msg => { throw new Error(msg) }, sleep = ms => new Promise(r => setTimeout(r, ms));
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const NAMES = ["river", "green", "prairie", "marsh", "trees"];
+const SETS = {habitats: {page: "pile-tiles.html", names: ["river", "green", "prairie", "marsh", "trees"], write: ["green", "prairie", "marsh", "trees"], totalLimit: 250000},
+  river: {page: "river-tiles.html", names: ["river-1", "river-2", "river-3", "river-4", "river-5", "river-6", "river-7"], totalLimit: 280000}};
+SETS.river.write = SETS.river.names;
+let SET = "habitats"; for (let i = 2; i < process.argv.length - 1; i++) if (process.argv[i] === "--set") SET = process.argv[i + 1];
+if (!SETS[SET]) { console.error("--set needs habitats or river"); process.exit(1) }
+const NAMES = SETS[SET].names, WRITE = SETS[SET].write;
 // the moment (seconds of animation time) each tile is drawn at: the animals are a function of time alone, so this fixes where they are. Each was picked by looking, from times where the animals are in the front half of the
 // tile and clear of the tall plants: the ladybug on open soil (green), the rabbit sitting in a gap with a butterfly beside it (prairie), the frog and the dragonfly over the reeds (marsh), the squirrel upright beside its
 // sapling (trees), both dragonflies and the butterfly over the grass and the stream (river). To pick again, open tools/pile-tiles.html?bake=1&size=1024 and try __bake.shot(i, t) (i = 0 to 4 in the order of NAMES)
 // with __bake.animals(i, t), which says where each animal is at t; the canvas shows the picture.
-const TIMES = {river: 71.035, green: 76.6, prairie: 87.7, marsh: 193.7, trees: 285.62};
-const LIMIT_EACH = 40000, LIMIT_TOTAL = 250000;   // bytes (1 KB = 1000 bytes)
+const TIMES = SET === "river" ? {"river-1": 71.0, "river-2": 71.0, "river-3": 71.0, "river-4": 71.0, "river-5": 71.0, "river-6": 71.0, "river-7": 71.0} : {river: 71.035, green: 76.6, prairie: 87.7, marsh: 193.7, trees: 285.62};   // the river's: to be picked by looking (--frames, then __bake.animals)
+const LIMIT_EACH = 40000, LIMIT_TOTAL = SETS[SET].totalLimit;   // bytes (1 KB = 1000 bytes)
 const SPRITE = 256, PAD = 10;                     // the image size and the margin kept round the five tiles together, in pixels of the sprite
 let outDir = path.join(root, "art", "pile"), framesDir = null, size = 2048, numeral = "1", query = ""; const argv = process.argv.slice(2), times = {...TIMES};
 for (let i = 0; i < argv.length; i++) {
-  if (argv[i] === "--out") outDir = path.resolve(argv[++i]); else if (argv[i] === "--frames") framesDir = path.resolve(argv[++i]); else if (argv[i] === "--size") size = +argv[++i] || die("--size needs a number");
+  if (argv[i] === "--set") i++; else if (argv[i] === "--out") outDir = path.resolve(argv[++i]); else if (argv[i] === "--frames") framesDir = path.resolve(argv[++i]); else if (argv[i] === "--size") size = +argv[++i] || die("--size needs a number");
   else if (argv[i] === "--query") query = String(argv[++i] ?? "").replace(/^[?&]+/, "");
   else if (argv[i] === "--numeral") { numeral = String(argv[++i] ?? ""); if (!/^\d{1,3}$/.test(numeral)) die("--numeral needs a number of one to three digits (0 for none)") }
   else if (argv[i] === "--time") { const m = /^(\w+)=([\d.]+)$/.exec(argv[++i] || ""); if (!m || !NAMES.includes(m[1])) die("--time needs NAME=SECONDS, NAME one of " + NAMES.join(", ")); times[m[1]] = +m[2] }
@@ -119,7 +128,7 @@ const server = await serve(), b = await launch(1024, 1024); let bad = 0;
 const rel = f => { const r = path.relative(root, f); return r.startsWith("..") ? f : r }, ok = (what, cond, extra = "") => { if (!cond) bad++; console.log((cond ? "ok    " : "FAIL  ") + what + (extra ? "  (" + extra + ")" : "")) };
 setTimeout(() => { console.error("Timed out"); b.stop().then(() => process.exit(1)) }, 10 * 60 * 1000).unref();
 try {
-  const origin = "http://127.0.0.1:" + server.address().port; await b.goto(`${origin}/tools/pile-tiles.html?bake=1&size=${size}&numeral=${numeral}${query ? "&" + query : ""}`);
+  const origin = "http://127.0.0.1:" + server.address().port; await b.goto(`${origin}/tools/${SETS[SET].page}?bake=1&size=${size}${SET === "river" ? "" : `&numeral=${numeral}`}${query ? "&" + query : ""}`);
   let up = false; for (let i = 0; i < 240 && !up; i++) { up = await b.ev("!!(window.__bake && window.__bake.shot && window.__bake.ready)"); if (!up && await b.ev("!!(window.__bake && window.__bake.fontError)")) break; if (!up) await sleep(250) }
   if (!up) { const fe = await b.ev("window.__bake ? window.__bake.fontError : ''").catch(() => "");
     fail("The bake page did not start" + (fe ? ": " + fe : "") + (b.errors.length ? " (" + b.errors.join(" | ").slice(0, 600) + ")" : "")) }
@@ -133,17 +142,19 @@ try {
     console.log(`  the river's ribbon comes no nearer than ${nm.gap.toFixed(3)} to the numeral's centre`) }
   if (framesDir) { fs.mkdirSync(framesDir, {recursive: true}); for (let i = 0; i < NAMES.length; i++) fs.writeFileSync(path.join(framesDir, NAMES[i] + ".png"), Buffer.from((await b.ev(`__sprites.png(${i})`)).split(",")[1], "base64")) }
   const lay = await b.ev("__sprites.layout()");
-  console.log(`one scale for all five: x${lay.scale.toFixed(4)}  ground contact point at ${lay.base.map(v => v.toFixed(1)).join(", ")}  union (from the contact point, in 3D-picture pixels) ${lay.union.map(Math.round).join(", ")}`);
+  if (SET === "river") { const spots = []; for (let i = 0; i < NAMES.length; i++) { const q = JSON.parse(await b.ev(`(() => { __bake.aim(${i}); return JSON.stringify(__bake.project(${i}, ${nm.num.x}, ${nm.num.y}, ${nm.num.z})) })()`)); spots.push([lay.base[0] + (q[0] - grabbed[i].base[0]) * lay.scale, lay.base[1] + (q[1] - grabbed[i].base[1]) * lay.scale]) }
+    console.log("the level goes (left, top, as a share of the sprite): " + spots.map(s => `${(s[0] / SPRITE * 100).toFixed(1)}% ${(s[1] / SPRITE * 100).toFixed(1)}%`).join(" · ")) }
+  console.log(`one scale for all ${NAMES.length}: x${lay.scale.toFixed(4)}  ground contact point at ${lay.base.map(v => v.toFixed(1)).join(", ")}  union (from the contact point, in 3D-picture pixels) ${lay.union.map(Math.round).join(", ")}`);
   if (nm.on) { ok("the river's ribbon stays out of the numeral's patch", nm.gap >= nm.num.r, `${nm.gap.toFixed(3)} from the centre, the patch is ${nm.num.r}`);
     for (let i = 0; i < NAMES.length; i++) { const v = await b.ev(`window.__bake.numeralVisibility(${i}, ${times[NAMES[i]]})`); ok(`${NAMES[i]}: the numeral shows in full (nothing in front of it)`, v.mask > 1000 && v.frac >= .9, `${(v.frac * 100).toFixed(1)}% of its ${v.mask} pixels`) } }
   fs.mkdirSync(outDir, {recursive: true}); const rows = []; let total = 0;
-  for (let i = 0; i < NAMES.length; i++) { const r = await b.ev(`__sprites.encode(${i}, ${LIMIT_EACH})`), file = path.join(outDir, NAMES[i] + ".webp"); fs.writeFileSync(file, Buffer.from(r.b64, "base64"));
+  for (let i = 0; i < NAMES.length; i++) { if (!WRITE.includes(NAMES[i])) continue; const r = await b.ev(`__sprites.encode(${i}, ${LIMIT_EACH})`), file = path.join(outDir, NAMES[i] + ".webp"); fs.writeFileSync(file, Buffer.from(r.b64, "base64"));
     const info = await b.ev(`__sprites.inspect(${JSON.stringify(r.b64)})`); total += r.bytes; rows.push({name: NAMES[i], file, ...r, info}) }
   console.log("");
   for (const r of rows) { console.log(`${rel(r.file).replace(/\\/g, "/").padEnd(24)} ${String(r.bytes).padStart(6)} bytes  ${(r.bytes / 1000).toFixed(1).padStart(5)} KB  quality ${r.q}`);
     ok(`${r.name}: ${r.bytes} bytes, at most ${LIMIT_EACH}`, r.bytes <= LIMIT_EACH);
     ok(`${r.name}: ${r.info.w}x${r.info.h}, the four corners are transparent, nothing touches the edge`, r.info.w === SPRITE && r.info.h === SPRITE && r.info.corners.every(a => a === 0) && r.info.edge === 0, `corners ${r.info.corners.join("/")}, ${r.info.edge} px on the edge, shows ${r.info.box.join(", ")}`) }
-  console.log(`total ${total} bytes (${(total / 1000).toFixed(1)} KB)`); ok(`the five together are ${total} bytes, at most ${LIMIT_TOTAL}`, total <= LIMIT_TOTAL);
+  console.log(`total ${total} bytes (${(total / 1000).toFixed(1)} KB)`); ok(`the ${WRITE.length} together are ${total} bytes, at most ${LIMIT_TOTAL}`, total <= LIMIT_TOTAL);
   ok("nothing was loaded from another site", b.requested.every(u => u.startsWith(origin) || u.startsWith("data:") || u.startsWith("blob:") || u.startsWith("about:")), b.requested.filter(u => !u.startsWith(origin) && !u.startsWith("data:") && !u.startsWith("blob:") && !u.startsWith("about:")).join(", "));
   ok("no page errors", b.errors.length === 0, b.errors.join(" | ").slice(0, 400));
 } catch (e) { bad++; console.error("FAIL  " + (e && e.message || e)) } finally { await b.stop(); server.close() }

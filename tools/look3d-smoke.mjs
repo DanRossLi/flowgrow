@@ -86,4 +86,15 @@ for (const look of ["simple", "3d"]) { b = await launch(); try { await b.goto(`$
       ok("each tile with a level has its number on the ground, and a hidden list names the tiles", nm.want > 0 && nm.got === nm.want && nm.list >= nm.want, JSON.stringify(nm)) }
     if (b.errors.length) { bad++; console.log("FAIL  page errors in the " + look + " look: " + b.errors.join(" | ").slice(0, 300)) } } finally { await b.stop() } }
 ok("the simple look and the 3D look play the same moves and score the same", JSON.stringify(results.simple) === JSON.stringify(results["3d"]) && results.simple.moves.length > 0, `${results.simple.moves.length} moves, score ${results.simple.score} and ${results["3d"].score}`);
+// the river's seven stages on the board (LOU-313): a river that rises downstream widens, and what grows and lives along it is built; a branch has its round basin
+{ b = await launch(); try { await b.goto(`${url}play/?dev=1&look=3d&q=med&time=day&seed=3`); await ready(b); await sleep(1500);
+    const r = {}; [1, 2, 3, 4, 6, 9, 15].forEach((l, i) => { r[`${6 + i},4`] = {l, from: i ? `${6 + i - 1},4` : null, n: i + 1} });
+    await b.ev(`(() => { Flowgrow.show({}, ${JSON.stringify(r)}); return true })()`); await sleep(1800);
+    const rv = JSON.parse(await b.ev("JSON.stringify(window.__flowgrow3d.river())")), an = JSON.parse(await b.ev("JSON.stringify(window.__flowgrow3d.stats())"));
+    ok("a river of levels 1, 2, 3, 4, 6, 9 and 15 widens at every stretch, through the seven stages", rv.segments === 6 && rv.widths.every((w, i) => i === 0 || w > rv.widths[i - 1]) && rv.stages.map(s => s[1]).join() === "2,3,4,5,6,7", JSON.stringify(rv));
+    ok("what grows along it is built (stones, banks, trees, a heron) and there are animals on the island (ducks, a gull)", rv.props > 500 && an.animals > 0, `${rv.props} triangles, ${an.animals} animals`);
+    const rb = {"6,4": {l: 1, from: null, n: 1}, "7,4": {l: 2, from: "6,4", n: 2}, "8,4": {l: 3, from: "7,4", n: 3}, "9,4": {l: 4, from: "8,4", n: 4}, "8,5": {l: 4, from: "8,4", n: 5}};
+    await b.ev(`(() => { Flowgrow.show({}, ${JSON.stringify(rb)}); return true })()`); await sleep(1500);
+    const rw = JSON.parse(await b.ev("JSON.stringify(window.__flowgrow3d.river())")); ok("a tile with three river neighbours has a round basin where the ribbons meet", rw.basins === 1 && rw.segments === 4, JSON.stringify(rw));
+    ok("no page errors", b.errors.length === 0, b.errors.join(" | ").slice(0, 300)) } finally { await b.stop() } }
 console.log(bad ? `${bad} check(s) FAILED` : "all checks passed"); process.exit(bad ? 1 : 0);

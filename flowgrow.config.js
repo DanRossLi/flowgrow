@@ -93,6 +93,24 @@ window.FLOWGROW = {
     // is drawn on the ground (1 is square; the camera looks down at the ground from about 34 degrees, so a stretch above 1 makes the number read as upright); lift: how far above the ground; clear: the radius round
     // it where no plant, stone or grass grows; grow: how many times larger it is drawn with the whole island in view (1 is its true size, the size it has zoomed in); glow: how much it lights itself at night.
     // Placeholders, see Linear: CANON.md wins wherever it disagrees.
-    numeral: {x: 0.02, z: 0.74, width: 0.62, stretch: 1.5, lift: 0.034, clear: 0.36, grow: 2, glow: 0.5}
+    numeral: {x: 0.02, z: 0.74, width: 0.62, stretch: 1.5, lift: 0.034, clear: 0.36, grow: 2, glow: 0.5},
+    // The river's seven looks (LOU-313; Dan, Nov 22: "adjust the design of the river and show progression of the river as it levels up", then "looks good, make it a ticket with these designs"). A river tile is level 1 to 15
+    // in the game and looks its level: wider, deeper and calmer as it rises, with the banks and wildlife filling in. This is how it looks, never how it plays (no rule reads any of it). riverStageOf: the stage (1 to 7) of
+    // each level, level 1 first; riverStage() in flowgrow.js reads it. The names are placeholders, see Linear; CANON.md wins wherever it disagrees. In the tile's own units (its circumradius is 1, so it is about 1.73 across):
+    // width: the water's width; amp: how far the water wiggles; flow: how fast it runs (a multiple); foam: how much foam it carries (1 is a lot); stones: stones in the water; tufts, flowers, reeds: how many along the banks
+    // (reeds and cattails from stage 3); lilies: lily pads on the water (from stage 3); willow, birch, willow2: the height of the trees at the back of the bank (0 for none; the stage 4 willow is the first); ferns: ferns on
+    // the bank (stage 7); sandbars: sandbars in the water (stage 5 has one, stage 7 two); ducks: ducks swimming (from stage 4); heron: a heron on a sandbar (stage 6 and 7); gull: a gull overhead (stage 7); mist: a little
+    // mist on the water (stage 6 and 7). The water's two colours run from colorA[0] and colorB[0] at stage 1 to colorA[1] and colorB[1] at stage 7, blended evenly across the seven.
+    riverStageOf: [1, 2, 3, 4, 4, 5, 5, 5, 6, 6, 6, 6, 6, 6, 7],
+    riverColor: {a: ["#78e6d2", "#2fa6b2"], b: ["#3fb3b6", "#0f5f7c"]},
+    riverStages: [
+      {name: "Trickle",     width: 0.24, amp: 0.16, flow: 1.50, foam: 1.00, stones: 9, tufts: 14, flowers: 0,  reeds: 0,  lilies: 0, willow: 0,    birch: 0,    willow2: 0,    ferns: 0, sandbars: 0, ducks: 0, heron: 0, gull: 0, mist: 0},
+      {name: "Brook",       width: 0.34, amp: 0.15, flow: 1.25, foam: 0.90, stones: 7, tufts: 17, flowers: 5,  reeds: 0,  lilies: 0, willow: 0,    birch: 0,    willow2: 0,    ferns: 0, sandbars: 0, ducks: 0, heron: 0, gull: 0, mist: 0},
+      {name: "Stream",      width: 0.44, amp: 0.14, flow: 1.05, foam: 0.80, stones: 5, tufts: 20, flowers: 7,  reeds: 6,  lilies: 3, willow: 0,    birch: 0,    willow2: 0,    ferns: 0, sandbars: 0, ducks: 0, heron: 0, gull: 0, mist: 0},
+      {name: "Creek",       width: 0.54, amp: 0.13, flow: 0.88, foam: 0.62, stones: 3, tufts: 23, flowers: 9,  reeds: 8,  lilies: 3, willow: 0.42, birch: 0,    willow2: 0,    ferns: 0, sandbars: 0, ducks: 1, heron: 0, gull: 0, mist: 0},
+      {name: "River",       width: 0.70, amp: 0.11, flow: 0.70, foam: 0.45, stones: 2, tufts: 26, flowers: 11, reeds: 10, lilies: 6, willow: 0.62, birch: 0.50, willow2: 0,    ferns: 3, sandbars: 1, ducks: 2, heron: 0, gull: 0, mist: 0},
+      {name: "Broad river", width: 0.86, amp: 0.09, flow: 0.55, foam: 0.30, stones: 1, tufts: 29, flowers: 13, reeds: 12, lilies: 6, willow: 0.80, birch: 0.65, willow2: 0.70, ferns: 4, sandbars: 1, ducks: 2, heron: 1, gull: 0, mist: 1},
+      {name: "Great river", width: 1.04, amp: 0.07, flow: 0.40, foam: 0.20, stones: 0, tufts: 32, flowers: 15, reeds: 14, lilies: 6, willow: 0.98, birch: 0.80, willow2: 0.85, ferns: 5, sandbars: 2, ducks: 3, heron: 1, gull: 1, mist: 1}
+    ]
   },
 };

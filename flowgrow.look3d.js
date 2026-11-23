@@ -120,7 +120,7 @@ function mount(B) {
   const EXN = QS.get("example"); let EXS = null, EXM = false;
   function stateNow() { const s = B.state(); if (!EXN) return s; const m = G.Flowgrow3D.example; if (!EXS && m && m[EXN]) EXS = m[EXN]({cfg, W, H, step}); if (!EXS) return s; EXM = true; return Object.assign({}, s, EXS, {over:true, pend:[]}) }
   function describe(cl) { const k = cl.k, rv = S.r[k], hl = S.h[k] || 0, hb = S.hb[k] || "";
-    return {code:cl.code, river:rv ? rv.l : 0, from:rv ? rv.from : null, level:hl, kind:hl ? (hb || "g") : "", up:hl ? (B.upgradeOf(cfg, {k:"h", b:hb || undefined, l:hl, f:S.hf[k]}) || "") : "", locked:k in S.lk, reach:reach.has(k) ? 1 : 0, elev:elev ? elev[k] : 0,
+    return {code:cl.code, river:rv ? rv.l : 0, rstage:rv ? stageOf(rv.l) : 0, from:rv ? rv.from : null, level:hl, kind:hl ? (hb || "g") : "", up:hl ? (B.upgradeOf(cfg, {k:"h", b:hb || undefined, l:hl, f:S.hf[k]}) || "") : "", locked:k in S.lk, reach:reach.has(k) ? 1 : 0, elev:elev ? elev[k] : 0,
       fall:rv && rv.from != null && elev && elev[rv.from] > elev[k] ? 1 : 0} }   // fall: a river tile that steps down from the one it flows from (the elevation rule)
   const sigOf = d => d.code + "|" + d.river + "|" + d.level + "|" + d.kind + "|" + d.up + "|" + (d.locked ? 1 : 0) + "|" + d.reach + "|" + d.elev + "|" + d.fall;
 
@@ -150,7 +150,7 @@ function mount(B) {
 
   // the river's path as segments between tile centres (see buildRiver), so the grass can keep off it
   let riverSegs = [];
-  function riverD2(X, Z) { let m = 1e9; for (const s of riverSegs) { const vx = s.bx - s.ax, vz = s.bz - s.az, l2 = vx * vx + vz * vz || 1, t = clamp(((X - s.ax) * vx + (Z - s.az) * vz) / l2, 0, 1), dx = X - (s.ax + vx * t), dz = Z - (s.az + vz * t), d = dx * dx + dz * dz; if (d < m) m = d } return m }
+  function riverEdge(X, Z) { let m = 1e9; for (const s of riverSegs) { const vx = s.bx - s.ax, vz = s.bz - s.az, l2 = vx * vx + vz * vz || 1, t = clamp(((X - s.ax) * vx + (Z - s.az) * vz) / l2, 0, 1), dx = X - (s.ax + vx * t), dz = Z - (s.az + vz * t), d = Math.sqrt(dx * dx + dz * dz) - (s.hwA + (s.hwB - s.hwA) * t); if (d < m) m = d } return m }   // how far a point is outside the water's edge (negative: in it)
 
   // ---------- one tile's mesh: the top (sector triangles sampled from the ground, smooth normals), the soil walls on the island's outer edge, and the grass field. Step 3 adds what grows on it.
   const tileMat = new T.MeshStandardMaterial({vertexColors:true, roughness:.92, metalness:0}), uWind = {value:1}, uGlow = {value:0}, uAim = {value:new T.Vector4(0, 0, 1, 0)}, uAimW = {value:new T.Vector4(0, 0, Math.sin(C3.azimuth), Math.cos(C3.azimuth))};
@@ -206,7 +206,7 @@ function mount(B) {
       for (let gx = gx0; gx <= gx1; gx++) for (let gz = gz0; gz <= gz1; gz++) {
         const X = (gx + hsh(gx, gz)) * sp, Z = (gz + hsh(gz + 7.3, gx - 3.1)) * sp, lx = X - cx, lz = Z - cz, ax = Math.abs(lx); if (ax > .866 || ax * .5 + .866 * Math.abs(lz) > .866) continue;
         if (nsp.length && nsp.some(s => (X - s[0]) * (X - s[0]) + (Z - s[1]) * (Z - s[1]) < NUM.clear * NUM.clear)) continue;   // the clear patch of a level number: no grass on it
-        if (hsh(gx + 11.7, gz - 5.3) > greenAt(X, Z) * .92) continue; if (near && riverD2(X, Z) < .36) continue;
+        if (hsh(gx + 11.7, gz - 5.3) > greenAt(X, Z) * .92) continue; if (near && riverEdge(X, Z) < .1) continue;
         const gh = heightAt(X, Z), nzv = Math.sin(X * 1.3 + Z * .7) * Math.sin(Z * 1.9 - X * .8), dry = hsh(gx * 1.7, gz * 2.3) < .12 && d.kind !== "t";
         const base = dry ? GRD[hsh(gz, gx) < .5 ? 0 : 1] : GRN[Math.min(3, Math.max(0, Math.floor((nzv * .5 + .5) * 4)))], sc = .75 + hsh(gx, gz * 1.3) * .7;
         for (let k = 0; k < per; k++) { const a = hsh(k, gx + gz) * 6.28, hh = (.08 + hsh(gz, k + gx) * .11) * sc, lean = .2 + hsh(k * 3, gz) * .5, kk = .9 + r() * .2;
@@ -267,21 +267,25 @@ function mount(B) {
       for (let s = 0; s < pr.length; s++) { let name = pr[s]; const info = cl.info || {}; if ((name === "owl" || name === "woodpecker") && !info.perch) name = s ? "hedgehog" : "squirrel"; if (name === "duck" && !info.pond) name = "frog";
         const tp = art.animal(name, quality === "high" ? 1 : 0); if (!tp) continue; const rr = rng(cl.i * 53 + s * 7 + 3);
         list.push({cl, name, tp, mv:art.MOVE[name] || {r:.3, s:.1}, night:s >= 1, ph:rr() * 6.28, dir:rr() < .5 ? -1 : 1, x0:cl.x, z0:cl.z, info}); nv += tp.p.length / 3 } }
+if (art && art.animal && quality !== "low") for (const s of riverSegs) { const st = clamp(Math.round(s.pts[4].st), 1, RSTG.length), nd = Math.round((RSTG[st - 1].ducks || 0) * .7 + hsh(s.cB.i, 3) * .6);   // ducks on the water: a few on each stretch from stage 4
+      for (let j = 0; j < nd; j++) { const tp = art.animal("duck", quality === "high" ? 1 : 0); if (!tp) continue; const rr = rng(s.cB.i * 91 + j * 13 + 5); list.push({cl:s.cB, name:"duck", tp, mv:{}, night:false, ph:rr() * 6.28, dir:rr() < .5 ? -1 : 1, x0:s.cB.x, z0:s.cB.z, info:{}, river:s}); nv += tp.p.length / 3 } }
     if (nv > zooCap) { zooCap = Math.ceil(nv * 1.2); zPos = new Float32Array(zooCap * 3); zNor = new Float32Array(zooCap * 3); zCol = new Float32Array(zooCap * 3); if (zMesh) { scene.remove(zMesh); zGeo.dispose() }
       zGeo = new T.BufferGeometry(); zGeo.setAttribute("position", new T.BufferAttribute(zPos, 3).setUsage(T.DynamicDrawUsage)); zGeo.setAttribute("normal", new T.BufferAttribute(zNor, 3).setUsage(T.DynamicDrawUsage)); zGeo.setAttribute("color", new T.BufferAttribute(zCol, 3).setUsage(T.DynamicDrawUsage));
       zMesh = new T.Mesh(zGeo, zooMat); zMesh.frustumCulled = false; zMesh.receiveShadow = true; scene.add(zMesh) }
     zoo = list; zooNight = -1; if (zMesh) { zMesh.visible = list.length > 0; if (!list.length) zGeo.setDrawRange(0, 0) } }
   function poseZoo(t) { if (!zMesh || !zoo.length) return; const night = dayState.night01, still = reduced(); if (still && night === zooNight && zooStamp === viewStamp) return; zooNight = night; zooStamp = viewStamp; if (still) t = 0;
     let o = 0; for (const a of zoo) { const vis = a.night ? sstep(.3, .7, night) : 1 - sstep(.2, .55, night); if (vis < .02 || a.cl.inView === false) continue;
-      const mv = a.mv, info = a.info, gy = CH[a.cl.i], th0 = a.ph; let px, py, pz, hd, fl = 0;
-      if (a.name === "owl" && info.perch) { const pc = info.perch; px = a.x0 + pc.x; pz = a.z0 + pc.z; py = gy + pc.top + .01; hd = th0 + Math.sin(t * .35 + th0) * 1.1 }
+      const mv = a.mv, info = a.info, gy = CH[a.cl.i], th0 = a.ph; let px, py, pz, hd, fl = 0, fade = 1;
+      if (a.river) { const pts = a.river.pts, u = (th0 / 6.2832 + t * .018 * a.dir) % 1, uu = u < 0 ? u + 1 : u, f = uu * (pts.length - 1), i = Math.min(pts.length - 2, Math.floor(f)), w = f - i, p0 = pts[i], p1 = pts[i + 1], off = Math.sin(t * .8 + th0) * (p0.hw + (p1.hw - p0.hw) * w) * .35;   // a duck swims along its stretch of water, a little to one side and the other, and shrinks out of sight at its ends
+        px = p0.x + (p1.x - p0.x) * w + p0.nx * off; pz = p0.z + (p1.z - p0.z) * w + p0.nz * off; py = p0.y + (p1.y - p0.y) * w + .008 + Math.sin(t * 1.9 + th0) * .004; hd = Math.atan2((p1.x - p0.x) * a.dir, (p1.z - p0.z) * a.dir); fade = Math.min(1, uu * 12, (1 - uu) * 12) }
+      else if (a.name === "owl" && info.perch) { const pc = info.perch; px = a.x0 + pc.x; pz = a.z0 + pc.z; py = gy + pc.top + .01; hd = th0 + Math.sin(t * .35 + th0) * 1.1 }
       else if (a.name === "woodpecker" && info.perch) { const pc = info.perch, ca = Math.cos(th0), sa = Math.sin(th0), rr = pc.tr + .02; px = a.x0 + pc.x + ca * rr; pz = a.z0 + pc.z + sa * rr; py = gy + pc.mid + Math.sin(t * 5 + th0) * .004; hd = Math.atan2(-ca, -sa) }
       else if (a.name === "duck" && info.pond) { const pd = info.pond, ra = Math.min(pd.rx, pd.rz) * .55, th = th0 + t * .13 * a.dir, x = Math.cos(th) * ra, z = Math.sin(th) * ra * .8; px = a.x0 + pd.x + x; pz = a.z0 + pd.z + z; py = gy + pd.y + .004 + Math.sin(t * 1.6 + th0) * .004; hd = Math.atan2(-Math.sin(th) * a.dir, Math.cos(th) * .8 * a.dir) }
       else if (a.name === "frog" && info.pond) { const pd = info.pond, ra = Math.max(pd.rx, pd.rz) * 1.12, th = th0 + Math.sin(t * .17 + th0) * .5, cyc = (t * .7 + th0) % 4.5, jump = cyc < .5 ? Math.sin(cyc / .5 * Math.PI) * .07 : 0; px = a.x0 + pd.x + Math.cos(th) * ra; pz = a.z0 + pd.z + Math.sin(th) * ra; py = gy + .006 + jump; hd = Math.atan2(-Math.cos(th), -Math.sin(th)) }
       else { const r = mv.r, om = mv.s / Math.max(r, .15) * a.dir, th = th0 + t * om + (mv.hop ? Math.sin(t * mv.hf * .2 + th0) * .5 : 0), x = Math.cos(th) * r, z = Math.sin(th) * r * .85 + Math.sin(th * 2.3 + th0) * .05 * r;
         px = a.x0 + x; pz = a.z0 + z; const th2 = th + .04 * a.dir, dx = Math.cos(th2) * r - x, dz = Math.sin(th2) * r * .85 + Math.sin(th2 * 2.3 + th0) * .05 * r - z; hd = Math.atan2(dx, dz); py = gy;
         if (mv.fly) { py += mv.fly + Math.sin(t * 1.3 + th0) * .05; fl = Math.sin(t * mv.ff + th0) * 1.1 } else if (mv.hop) py += Math.abs(Math.sin(t * mv.hf + th0)) * mv.hop }
-      const tp = a.tp, sc = tp.scale * vis, c = Math.cos(hd), s = Math.sin(hd), pa = tp.p, na = tp.n, wg = tp.wing, nv = pa.length / 3;
+      const tp = a.tp, sc = tp.scale * vis * fade, c = Math.cos(hd), s = Math.sin(hd), pa = tp.p, na = tp.n, wg = tp.wing, nv = pa.length / 3;
       zCol.set(tp.c, o * 3);
       for (let i = 0, j = o * 3; i < nv; i++, j += 3) { const x = pa[i * 3], z = pa[i * 3 + 2]; let y = pa[i * 3 + 1]; if (wg && wg[i]) y += Math.abs(x) * fl;
         zPos[j] = (x * c + z * s) * sc + px; zPos[j + 1] = y * sc + py; zPos[j + 2] = (-x * s + z * c) * sc + pz;
@@ -335,37 +339,64 @@ function mount(B) {
   function applyQuality() { const s = C3.shadowMap[quality] || 0; renderer.shadowMap.enabled = s > 0; sun.castShadow = s > 0; if (s > 0) { sun.shadow.mapSize.set(s, s); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null } } tileMat.needsUpdate = true }
   applyQuality();
 
-  // ---------- the river: a ribbon along the tile centres in flow order (each tile joins the one it flows from), turned smooth with Catmull-Rom. Its width follows the river's level (1 to 15: width and
-  // foam only, never a different shape); where a tile steps down from the one it flows from (the elevation rule) the ribbon drops steeply and the shader whitens it: a waterfall.
-  const riverMat = new T.ShaderMaterial({transparent:true, depthWrite:false, side:T.DoubleSide, uniforms:{t:uTime, night:{value:0}, cA:{value:new T.Color("#52d3c6")}, cB:{value:new T.Color("#2a97a3")}},
-    vertexShader:"attribute float lvl;attribute float fall;attribute float fade;varying vec2 vUv;varying float vL;varying float vFall;varying float vFade;void main(){vUv=uv;vL=lvl;vFall=fall;vFade=fade;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}",
-    fragmentShader:"uniform float t;uniform float night;uniform vec3 cA;uniform vec3 cB;varying vec2 vUv;varying float vL;varying float vFall;varying float vFade;" +
-      "void main(){float e=abs(vUv.x-.5)*2.;float deep=clamp((vL-1.)/6.,0.,1.);vec3 a=mix(cA,vec3(.16,.62,.66),deep*.7);vec3 bb=mix(cB,vec3(.1,.46,.58),deep*.7);vec3 col=mix(a,bb,smoothstep(0.,1.,e));" +
-      "float calm=1.-deep*.5;float s=sin(vUv.y*7.-t*2.4*calm+sin(vUv.x*9.+t*.8)*1.4)*.5+.5;col+=smoothstep(.78,1.,s)*.16*calm;float s2=sin(vUv.y*17.-t*3.6*calm+vUv.x*5.)*.5+.5;col+=smoothstep(.9,1.,s2)*.09*calm;" +
-      "float f=smoothstep(.80-deep*.08,.97,e+.035*sin(vUv.y*34.+t*2.5));col=mix(col,vec3(.94,1.,.98),f*(.85+deep*.1));" +
+  // ---------- the river: a ribbon along the tile centres in flow order (each tile joins the one it flows from), turned smooth with Catmull-Rom. It looks its level (LOU-313; Dan, Nov 22: "adjust the design of the
+  // river and show progression of the river as it levels up"): each river tile has one of seven stages (flowgrow.config.js, look3d.riverStages: the water's width, colour, speed and foam, how much it wiggles, and what
+  // grows and lives along it), and the water's width, colour, speed and foam blend smoothly from one tile's stage to the next (the stage is a number from 1 to 7 along the ribbon), so a river that rises downstream widens,
+  // deepens and calms with no seam. A source starts the water; a tile with only one river neighbour ends it in a small round pool and a tile with three joins them in a small round basin. Where a tile steps down from
+  // the one it flows from (the elevation rule) the ribbon drops steeply and the shader whitens it: a waterfall. The stones, the banks and the life along it are the art module's (riverSeg), drawn as one mesh (buildRiverLife).
+  const RSTG = C3.riverStages && C3.riverStages.length ? C3.riverStages : [{name:"River", width:.9, amp:0, flow:1, foam:.5, stones:0}], RCOL = C3.riverColor || {a:["#52d3c6", "#52d3c6"], b:["#2a97a3", "#2a97a3"]};
+  const stageOf = l => B.rules.riverStage ? B.rules.riverStage(l) : 1;
+  const tab = (key, s) => { const i = clamp(Math.floor(s - 1), 0, RSTG.length - 1), j = Math.min(RSTG.length - 1, i + 1), f = clamp(s - 1 - i, 0, 1); return RSTG[i][key] + (RSTG[j][key] - RSTG[i][key]) * f };   // a number of the stage table, at a stage between two
+  // the pattern runs along the ribbon by a phase that is added up from tile to tile (not by the distance), and its frequency is lower for fast water and higher for slow: the clock is the same everywhere, so the ripples
+  // run slower the calmer the water is and the pattern never shears
+  const kf = s => Math.min(3, 1.5 / Math.max(.1, tab("flow", s)));
+  const riverMat = new T.ShaderMaterial({transparent:true, depthWrite:false, side:T.DoubleSide, uniforms:{t:uTime, night:{value:0}, cA0:{value:new T.Color(RCOL.a[0])}, cA1:{value:new T.Color(RCOL.a[1])}, cB0:{value:new T.Color(RCOL.b[0])}, cB1:{value:new T.Color(RCOL.b[1])}},
+    vertexShader:"attribute float stg;attribute float fm;attribute float fall;attribute float fade;varying vec2 vUv;varying float vK;varying float vFm;varying float vFall;varying float vFade;void main(){vUv=uv;vK=clamp((stg-1.)/" + Math.max(1, RSTG.length - 1).toFixed(1) + ",0.,1.);vFm=fm;vFall=fall;vFade=fade;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}",
+    fragmentShader:"uniform float t;uniform float night;uniform vec3 cA0;uniform vec3 cA1;uniform vec3 cB0;uniform vec3 cB1;varying vec2 vUv;varying float vK;varying float vFm;varying float vFall;varying float vFade;" +
+      "void main(){float e=abs(vUv.x-.5)*2.;vec3 col=mix(mix(cA0,cA1,vK),mix(cB0,cB1,vK),smoothstep(0.,1.,e));" +
+      "float s=sin(vUv.y*7.-t*2.4+sin(vUv.x*9.+t*.8)*1.4)*.5+.5;col+=smoothstep(.78,1.,s)*.16*vFm;float s2=sin(vUv.y*17.-t*3.6+vUv.x*5.)*.5+.5;col+=smoothstep(.9,1.,s2)*.09*vFm;" +
+      "float f=smoothstep(.80,.97,e+.035*sin(vUv.y*34.+t*2.5));col=mix(col,vec3(.94,1.,.98),f*.85*(.35+.65*vFm));" +
       "float fl=vFall*(.55+.45*sin(vUv.y*46.-t*9.+vUv.x*7.));col=mix(col,vec3(.97,1.,1.),clamp(fl,0.,1.)*.85);col=mix(col,col*vec3(.62,.8,1.04),night);gl_FragColor=vec4(col,.96*vFade);}"});   // at night the river is cooler and dimmer but stays the clearest thing on the board
   const riverMesh = new T.Mesh(new T.BufferGeometry(), riverMat); riverMesh.renderOrder = 2; riverMesh.frustumCulled = false; riverMesh.visible = false; scene.add(riverMesh);
-  const rwid = l => clamp(.9 + .25 * Math.min(l - 1, 1) + .02 * Math.max(0, l - 2), .9, 1.4), riverY = cl => RIVER_Y + ESTEP * (cl.d ? cl.d.elev : 0);
+  const riverY = cl => RIVER_Y + ESTEP * (cl.d ? cl.d.elev : 0);
   function buildRiver() { const keys = Object.keys(S.r), kids = {}, segs = [];
     for (const k of keys) { const f = S.r[k].from; if (f != null) (kids[f] = kids[f] || []).push(k) }
-    const pos = [], uv = [], lv = [], fl = [], fd = [], ind = [], dist = {}, ctr = k => { const c = cells[idx[unkey(k)[1] * W + unkey(k)[0]]]; return [c.x, c.z, c] };
-    const order = keys.filter(k => S.r[k].from == null); const stack = [...order]; while (stack.length) { const k = stack.shift(); if (!(k in dist)) dist[k] = 0; for (const c of kids[k] || []) { const a = ctr(k), b = ctr(c); dist[c] = dist[k] + Math.hypot(b[0] - a[0], b[1] - a[1]); stack.push(c) } }
-    for (const k of keys) { const f = S.r[k].from; if (f == null) continue;
+    const pos = [], uv = [], sg = [], fm = [], fl = [], fd = [], ind = [], dist = {}, phaseAt = {}, ctr = k => { const c = cells[idx[unkey(k)[1] * W + unkey(k)[0]]]; return [c.x, c.z, c] };
+    const order = []; { const queue = keys.filter(k => S.r[k].from == null); for (const q of queue) { dist[q] = 0; phaseAt[q] = 0 }
+      while (queue.length) { const k = queue.shift(); order.push(k); for (const c of kids[k] || []) { const a = ctr(k), b = ctr(c); dist[c] = dist[k] + Math.hypot(b[0] - a[0], b[1] - a[1]); queue.push(c) } } }
+    const vert = (x, y, z, u, v, s, fall, fade) => { pos.push(x, y, z); uv.push(u, v); sg.push(s); fm.push(tab("foam", s)); fl.push(fall); fd.push(fade) };
+    for (const k of order) { const f = S.r[k].from; if (f == null) continue;
       const A = ctr(f), Bc = ctr(k), gp = S.r[f].from, P0 = gp != null ? ctr(gp) : [2 * A[0] - Bc[0], 2 * A[1] - Bc[1]], ch = kids[k] || [], P3 = ch.length === 1 ? ctr(ch[0]) : [2 * Bc[0] - A[0], 2 * Bc[1] - A[1]];
-      segs.push({ax:A[0], az:A[1], bx:Bc[0], bz:Bc[1]});
-      const m = 8, base = pos.length / 3, yA = riverY(A[2]), yB = riverY(Bc[2]), lA = S.r[f].l, lB = S.r[k].l, isEnd = ch.length === 0, isStart = gp == null;
+      const m = 8, base = pos.length / 3, yA = riverY(A[2]), yB = riverY(Bc[2]), sA = stageOf(S.r[f].l), sB = stageOf(S.r[k].l), isEnd = ch.length === 0, isStart = gp == null, segLen = Math.hypot(Bc[0] - A[0], Bc[1] - A[1]);
       const cr = (p0, p1, p2, p3, t) => .5 * ((2 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t + (-p0 + 3 * p1 - 3 * p2 + p3) * t * t * t);
-      let prev = null, run = dist[f];
+      let prev = null, phase = phaseAt[f]; const pts = [];
       for (let i = 0; i <= m; i++) { const t = i / m, x = cr(P0[0], A[0], Bc[0], P3[0], t), z = cr(P0[1], A[1], Bc[1], P3[1], t), t2 = Math.min(1, t + .02), x2 = cr(P0[0], A[0], Bc[0], P3[0], t2), z2 = cr(P0[1], A[1], Bc[1], P3[1], t2), t1 = Math.max(0, t - .02), x1 = cr(P0[0], A[0], Bc[0], P3[0], t1), z1 = cr(P0[1], A[1], Bc[1], P3[1], t1);
         let tx = x2 - x1, tz = z2 - z1; const tl = Math.hypot(tx, tz) || 1; tx /= tl; tz /= tl; const nx = -tz, nz = tx;
-        let wd = (rwid(lA) * (1 - t) + rwid(lB) * t) / 2; if (isEnd) wd *= 1 - .3 * sstep(.6, 1, t);
+        const st = sA + (sB - sA) * sstep(0, 1, t), amp = tab("amp", st), run = dist[f] + t * segLen;
+        const me = amp * Math.sin(run * 3.8) * (isStart ? sstep(0, .5, t) : 1) * (isEnd ? 1 - sstep(.6, 1, t) : 1), cx = x + nx * me, cz = z + nz * me;   // the water wiggles the more the narrower it is
+        let wd = tab("width", st) / 2; if (isEnd) wd *= (1 + .22 * sstep(.45, .75, t)) * (t < .78 ? 1 : Math.sqrt(Math.max(0, 1 - Math.pow((t - .78) / .22, 2))));   // the end of the river swells and closes round: a small pool
         const y = yA + (yB - yA) * sstep(.4, .6, t), fall = yA - yB > .01 ? Math.max(0, sstep(.34, .46, t) * (1 - sstep(.54, .66, t))) : 0, fade = isStart ? sstep(0, .35, t) : 1;
-        if (prev) run += Math.hypot(x - prev[0], z - prev[1]); prev = [x, z];
-        pos.push(x + nx * wd, y, z + nz * wd, x - nx * wd, y, z - nz * wd); uv.push(0, run, 1, run); const lvv = lA + (lB - lA) * t; lv.push(lvv, lvv); fl.push(fall, fall); fd.push(fade, fade);
-        if (i < m) { const a = base + i * 2; ind.push(a, a + 2, a + 1, a + 1, a + 2, a + 3) } } }
+        if (prev) phase += Math.hypot(cx - prev[0], cz - prev[1]) * kf(st); prev = [cx, cz];
+        vert(cx + nx * wd, y, cz + nz * wd, 0, phase, st, fall, fade); vert(cx - nx * wd, y, cz - nz * wd, 1, phase, st, fall, fade); pts.push({x:cx, z:cz, nx, nz, y, hw:wd, st});
+        if (i < m) { const a = base + i * 2; ind.push(a, a + 2, a + 1, a + 1, a + 2, a + 3) } }
+      phaseAt[k] = phase; const mc = Bc[2];
+      segs.push({ax:A[0], az:A[1], bx:Bc[0], bz:Bc[1], hwA:tab("width", sA) / 2, hwB:tab("width", sB) / 2, pts, k, cA:A[2], cB:mc, seed:mc.i * 977 + 13, h:mc.i % 3, sig:[sA, sB, numberOf(A[2].d || {}) > 0 ? 1 : 0, numberOf(mc.d || {}) > 0 ? 1 : 0, isEnd ? 1 : 0].join(",")}) }
+    // a tile that joins three river tiles (a branch) has a small round basin where the ribbons meet
+    riverBasins = 0; for (const k of keys) { const nk = (kids[k] || []).length + (S.r[k].from == null ? 0 : 1); if (nk < 3) continue; riverBasins++; const c = ctr(k), s = stageOf(S.r[k].l), rr = tab("width", s) * .62, y = riverY(c[2]) + .002, base = pos.length / 3;
+      vert(c[0], y, c[1], .5, phaseAt[k], s, 0, 1); for (let q = 0; q < 16; q++) { const a = q / 16 * Math.PI * 2; vert(c[0] + Math.cos(a) * rr, y, c[1] + Math.sin(a) * rr, 1, phaseAt[k] + 1, s, 0, 1) } for (let q = 0; q < 16; q++) ind.push(base, base + 1 + q, base + 1 + (q + 1) % 16) }
     riverSegs = segs; riverMesh.visible = pos.length > 0; const g = new T.BufferGeometry();
-    g.setAttribute("position", new T.Float32BufferAttribute(pos, 3)); g.setAttribute("uv", new T.Float32BufferAttribute(uv, 2)); g.setAttribute("lvl", new T.Float32BufferAttribute(lv, 1)); g.setAttribute("fall", new T.Float32BufferAttribute(fl, 1)); g.setAttribute("fade", new T.Float32BufferAttribute(fd, 1)); g.setIndex(ind);
+    g.setAttribute("position", new T.Float32BufferAttribute(pos, 3)); g.setAttribute("uv", new T.Float32BufferAttribute(uv, 2)); g.setAttribute("stg", new T.Float32BufferAttribute(sg, 1)); g.setAttribute("fm", new T.Float32BufferAttribute(fm, 1)); g.setAttribute("fall", new T.Float32BufferAttribute(fl, 1)); g.setAttribute("fade", new T.Float32BufferAttribute(fd, 1)); g.setIndex(ind);
     riverMesh.geometry.dispose(); riverMesh.geometry = g }
+  // the life along the water (LOU-313): what grows and lives at each stretch of river, by its stage, from the art module (riverSeg): one merged mesh for the whole river, built again when the river, the quality or the
+  // level of detail changes. A stretch is cached by what makes it look different, so only a changed stretch is built again.
+  let lifeMesh = null, lifeTris = 0, riverBasins = 0;
+  function buildRiverLife() { if (lifeMesh) { islandGroup.remove(lifeMesh); lifeMesh.geometry.dispose(); lifeMesh = null } lifeTris = 0;
+    const art = G.Flowgrow3D && G.Flowgrow3D.art; if (!art || !art.riverSeg || !riverSegs.length) return;
+    const acc = new Batch(0), ctx = {quality, detail:detail * LOD[lod].dens, gy:heightAt}, away = [-Math.sin(C3.azimuth), -Math.cos(C3.azimuth)];   // away: the way the back of the island lies from the camera
+    for (const s of riverSegs) { const mx = (s.ax + s.bx) / 2, mz = (s.az + s.bz) / 2, oy = heightAt(mx, mz), keep = [];
+      for (const c of [s.cA, s.cB]) if (c && c.d && numberOf(c.d)) keep.push([c.x + NUM.x, c.z + NUM.z, NUM.clear]);   // the clear patch of a level number
+      acc.append(art.riverSeg({key:s.k, sig:s.sig, seed:s.seed, ox:mx, oz:mz, oy, pts:s.pts, stages:RSTG, keep, away, h:s.h}, ctx), mx, oy, mz) }
+    lifeTris = acc.p.length / 9; if (!lifeTris) return; const m = new T.Mesh(acc.geometry(), tileMat); m.castShadow = true; m.receiveShadow = true; islandGroup.add(m); lifeMesh = m; shadowDirty = true }
 
   // ---------- rings (ground decals): the same rings the other looks draw, as thin hex outlines hugging the ground (gold combine, teal river raise, dashed-blue extend, green plant), and a faint fill. One
   // dynamic mesh with a vertex colour and alpha for each, rebuilt when the game changes. Their tags are labels (below).
@@ -538,7 +569,7 @@ function mount(B) {
         if (animate && old) { if (d.level > old.level || d.river > old.river) born.set(cl, !old.level && d.level ? 2 : 1); else if (d.locked && !old.locked) frozen.push(cl) } }
       groundOf(cl, d) }
     for (const cl of changed) { dirty.add(cl); for (const n of cl.nbc) if (n) dirty.add(n) }
-    const rs = Object.keys(S.r).sort().map(k => k + ":" + S.r[k].l + ":" + S.r[k].from).join(";") + "|" + (elev ? S.seed : ""); if (rs !== riverSig) { riverSig = rs; buildRiver() }
+    const rs = Object.keys(S.r).sort().map(k => k + ":" + S.r[k].l + ":" + S.r[k].from).join(";") + "|" + (elev ? S.seed : ""); if (rs !== riverSig) { riverSig = rs; buildRiver(); buildRiverLife() }
     // a few tiles are built at once; the first build is all at once too (nothing is on screen yet); a bulk change (a new island, undo through many tiles, a new quality) goes through the queue, the middle of the view first
     const t0 = performance.now(), list = [...dirty], now = first ? list : changed.length <= 14 ? changed : [...born.keys()];   // the tiles that changed are built at once (and so is the first build); their neighbours, whose ground only blends with them, a frame or two later
     for (const cl of now) refreshTile(cl, born.get(cl) || 0); if (!first) { enqueue(list.filter(c => !now.includes(c))); pumpHold = queue.length > 0 }
@@ -562,12 +593,12 @@ function mount(B) {
   // view all of them are on screen, zoomed in at most about 40 per cent are. With shadows on, a tile is drawn twice (the shadow pass), so it counts twice.
   let passes = 0;
   function settle(fresh) { if (fresh) passes = 0; buildZoo(); if (skyCtl) skyCtl.setSpots(fireSpots());
-    let fixed = 0, thin = 0; for (const cl of cells) { fixed += cl.tg || 0; thin += (cl.tr || 0) + (cl.tp || 0) }
+    let fixed = 0, thin = 0; for (const cl of cells) { fixed += cl.tg || 0; thin += (cl.tr || 0) + (cl.tp || 0) } thin += lifeTris
     const limit = (C3.budget.triangles * (C3.budgetScale[quality] || 1) - 30000) / (renderer.shadowMap.enabled ? 2 : 1) * (lod ? 2.5 : 1), k = thin > 0 ? (limit - fixed) / thin : 1; let want = detail;
     if (k < 1) want = clamp(detail * k * .95, .3, 1); else if (detail < 1 && k > 1.5) want = Math.min(1, detail * Math.min(k * .8, 1.6));
-    if (Math.abs(want - detail) > .04 && passes < 3) { passes++; detail = want; enqueue(cells.filter(c => c.mesh)) } }
+    if (Math.abs(want - detail) > .04 && passes < 3) { passes++; detail = want; enqueue(cells.filter(c => c.mesh)); buildRiverLife() } }
   // the level of detail follows the zoom, with a gap so it doesn't flicker: thin when the goal distance is past .62 of the whole-island distance, full when it comes back inside .5
-  function checkLod() { const want = view.gd > fit.dist * (lod === 0 ? .5 : .62) ? 0 : 1; if (want === lod) return; lod = want; updateShadowCasters() }
+  function checkLod() { const want = view.gd > fit.dist * (lod === 0 ? .5 : .62) ? 0 : 1; if (want === lod) return; lod = want; updateShadowCasters(); buildRiverLife() }
   // A shadow pass draws every tile that casts a shadow whether or not it is on screen (the stats of the main pass don't count it), so when zoomed in only the tiles on screen, and two tiles beyond them
   // (which can shade them), cast shadows. With the whole island in view they all do.
   const pvB = new T.Vector3(); let shadowDirty = true;
@@ -584,7 +615,7 @@ function mount(B) {
   function probeTick(T0) { if (!probe) return; if (queue.length) { probe.last = 0; return } if (probe.skip > 0) { probe.skip--; probe.last = T0; return }
     if (probe.last) { probe.sum += T0 - probe.last; probe.n++ } probe.last = T0;
     if (probe.n >= 45) { probeMs = probe.sum / probe.n; probe = null; const q = probeMs > 34 ? "low" : probeMs < 14 && !coarse ? "high" : "med"; if (q !== quality) setQuality(q) } }
-  function setQuality(q) { if (!TIERS.includes(q) || q === quality) return; quality = q; applyQuality(); for (const cl of cells) cl.sig = ""; syncState(); if (skyCtl) skyCtl.setQuality() }
+  function setQuality(q) { if (!TIERS.includes(q) || q === quality) return; quality = q; applyQuality(); for (const cl of cells) cl.sig = ""; syncState(); buildRiverLife(); if (skyCtl) skyCtl.setQuality() }
 
   function resize() { if (!alive) return; w = board.clientWidth; h = board.clientHeight; if (!w || !h) return;
     renderer.setPixelRatio(Math.min(devicePixelRatio || 1, coarse ? C3.pixelRatio.touch : C3.pixelRatio.other)); renderer.setSize(w, h, false); pU.scale.value = renderer.getPixelRatio() * h / (2 * Math.tan(C3.fov * Math.PI / 360)); camera.aspect = w / h; computeFit(); camera.updateProjectionMatrix(); applyCamera(true); updateFitButton(); dirtyLabels = true; requestRender() }
@@ -617,8 +648,8 @@ function mount(B) {
   if (skyMod) skyCtl = skyMod.mount({scene, renderer, C3, QS, dayState, seaU, riverMat, sky, cloudMat, clouds, sun, hemi, lab, midX, midZ, uWind, uGlow, uTime, pointScale:pU.scale, reduced, quality:() => quality, mem:B.mem,
     progress:() => cfg.stackSize ? 1 - rules.left(S) / cfg.stackSize : null});   // "progress" mode: how far through the pile the run is (nothing for an endless pile)
   const ctl = {draw, resize, sync: syncState, scr, look, toggleFit, cellAt: (x, y) => { const c = cellAtScreen(x, y); return c ? [c.c, c.r] : null }, hover: p => { hover = null; setHover(p ? cellAt(p[0], p[1]) : null) }, cycleTime: () => skyCtl ? skyCtl.cycle() : "", timeNote: () => skyCtl ? skyCtl.note() : "",
-    unmount() { alive = false; delete G.__flowgrow3d; for (const c of cells) { dropPop(c); if (c.mesh) c.mesh.geometry.dispose() } if (zGeo) zGeo.dispose(); if (skyCtl) skyCtl.dispose(); pGeo.dispose(); numMesh.geometry.dispose(); numMat.dispose(); numTex.dispose(); renderer.dispose(); cv3.remove(); { const root = lab.closest(".app"); if (root) root.classList.remove("night") } lab.remove(); sr.remove(); B.fit && (B.fit.style.top = "") }};
-  G.__flowgrow3d = {setTime: v => skyCtl ? skyCtl.setTime(v) : null, getTime: () => skyCtl ? skyCtl.getTime() : null, setQuality, setThrottle(v) { throttle = !!v }, stats, sample, renderer, scene, camera, view, dayState};
+    unmount() { alive = false; delete G.__flowgrow3d; for (const c of cells) { dropPop(c); if (c.mesh) c.mesh.geometry.dispose() } if (lifeMesh) lifeMesh.geometry.dispose(); if (zGeo) zGeo.dispose(); if (skyCtl) skyCtl.dispose(); pGeo.dispose(); numMesh.geometry.dispose(); numMat.dispose(); numTex.dispose(); renderer.dispose(); cv3.remove(); { const root = lab.closest(".app"); if (root) root.classList.remove("night") } lab.remove(); sr.remove(); B.fit && (B.fit.style.top = "") }};
+  G.__flowgrow3d = {river: () => ({segments:riverSegs.length, basins:riverBasins, props:lifeTris, widths:riverSegs.map(s => +(s.hwB * 2).toFixed(3)), stages:riverSegs.map(s => s.sig.split(",").slice(0, 2).map(Number))}), setTime: v => skyCtl ? skyCtl.setTime(v) : null, getTime: () => skyCtl ? skyCtl.getTime() : null, setQuality, setThrottle(v) { throttle = !!v }, stats, sample, renderer, scene, camera, view, dayState};
   syncState(); resize(); if (EXM) B.say("An example island: pan, zoom, and try Time of day in the Menu.");
   return ctl;
 }

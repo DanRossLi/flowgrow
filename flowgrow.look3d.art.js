@@ -166,6 +166,43 @@ function emptyLand(d) { pebbles(d.reach ? 4 : 8, .7); if (!d.reach) { rock(-.3, 
 function riverBank(d) { pebbles(5, .7); for (let i = 0; i < cnt(3); i++) { const a = R() * 6.28, r = .62 + R() * .1, kx = Math.cos(a) * r, kz = Math.sin(a) * r, kc = pick(["#bfae86", "#a89a7a", "#c9b88c"], R); if (clearAt(kx, kz, .06)) rock(kx, 0, kz, .03 + R() * .03, kc) }
   if (d.fall) for (let i = 0; i < cnt(6); i++) { const a = R() * 6.28, r = .3 + R() * .3, fx = Math.cos(a) * r, fz = Math.sin(a) * r; if (clearAt(fx, fz, .05)) P(GT.ico0, fx, .1, fz, .035, .03, .035, cl("#f4fffb"), R() * 6, 0, 0, 0) } }
 
+// ---------- the river's life (LOU-313; Dan, Nov 22: "show progression of the river as it levels up"; the stage table is flowgrow.config.js look3d.riverStages). What grows and lives along one stretch of river (from one river
+// tile's centre to the next), by the stage the water is at there: stones in the water, grass tufts and flowers along the banks, reeds and cattails from stage 3, ferns, lily pads on the water, sandbars with a heron in
+// the broad river, and willows and birch on the BACK bank (the far side from the camera) so the big trees never hide the water. The core draws the water; this is the rest. One batch for each stretch, cached by what
+// makes it look different, in the stretch's own coordinates (the ground at its middle is y = 0); the core copies them into one mesh. sg: {key, sig, seed, ox, oz, oy, pts, stages, keep, away, h}: pts are samples of the
+// water's centre (world x, z, the unit normal, the water's level y, its half width hw and the stage st); keep are the level numbers' clear patches; away is the way the back of the island lies; h is 0, 1 or 2 (which of
+// the trees this stretch gets, so a long river isn't a wall of them). ctx: {quality, detail, gy} with gy the ground's height at a world point. Placeholders, see Linear: the counts are the table's and the art is the reference's.
+const RCACHE = new Map();
+function riverSeg(sg, ctx) { const dens = (ctx.quality === "high" ? 1 : ctx.quality === "med" ? .65 : .35) * (ctx.detail || 1), key = [sg.key, sg.sig, ctx.quality, dens.toFixed(2)].join("|"); let b = RCACHE.get(key); if (b) return b; if (RCACHE.size > 600) RCACHE.clear();
+  b = new Batch(0); INFO = b.info = {perch:null, pond:null}; CB = b; DET = dens; CG = ctx.quality === "high" ? GT.ico1 : GT.ico0; PT = ctx.quality === "high" ? GT.cone2 : GT.blade; LK = false; SW = 1; SZ = 1; KEEP = null; R = rng(sg.seed); quality3 = () => ctx.quality;
+  const pts = sg.pts, n = pts.length - 1, ST = sg.stages;
+  // a point on the water's centre line (t from 0 to 1 along the stretch) moved off it sideways by off (to the side the normal points to), in the stretch's own coordinates, with the ground under it and the water's level
+  const at = (t, off) => { const f = clamp(t, 0, 1) * n, i = Math.min(n - 1, Math.floor(f)), u = f - i, a = pts[i], c = pts[i + 1], nx = a.nx + (c.nx - a.nx) * u, nz = a.nz + (c.nz - a.nz) * u, l = Math.hypot(nx, nz) || 1,
+    wx = a.x + (c.x - a.x) * u + nx / l * off, wz = a.z + (c.z - a.z) * u + nz / l * off, hw = a.hw + (c.hw - a.hw) * u, wy = a.y + (c.y - a.y) * u, st = a.st + (c.st - a.st) * u;
+    return {wx, wz, hw, st, x:wx - sg.ox, z:wz - sg.oz, y:ctx.gy(wx, wz) - sg.oy, wy:wy - sg.oy, nx:nx / l, nz:nz / l} };
+  const sm = clamp(Math.round(at(.5, 0).st), 1, ST.length), S = ST[sm - 1], lim = o => Math.sign(o) * Math.min(Math.abs(o), .84);   // nothing is put further from the water than the tile's own edge
+  const free = (p, pad) => !sg.keep.some(k => { const dx = p.wx - k[0], dz = p.wz - k[1], r = k[2] + (pad || 0); return dx * dx + dz * dz < r * r });
+  const bank = (t, lo, hi) => { const p0 = at(t, 0), side = R() < .5 ? -1 : 1; return at(t, lim(side * (p0.hw + lo + R() * (hi - lo)))) };
+  const back = (t, lo, hi) => { const p0 = at(t, 0), side = (p0.nx * sg.away[0] + p0.nz * sg.away[1]) >= 0 ? 1 : -1; return at(t, lim(side * (p0.hw + lo + R() * (hi - lo)))) };
+  // stones in the water: many pebbles in a trickle, none in a great river
+  for (let i = 0; i < cnt(S.stones); i++) { const t = .1 + R() * .8, w0 = at(t, 0).hw, p = at(t, (R() - .5) * w0 * 1.6); if (free(p)) rock(p.x, p.wy - .015, p.z, (sm < 4 ? .03 : .045) + R() * .04, pick(["#9aa0a0", "#b3b0a0", "#8d9aa0"], R)) }
+  // grass tufts and flowers on the banks, and reeds and cattails from stage 3
+  for (let i = 0; i < cnt(S.tufts * .5); i++) { const p = bank(R(), .06, .5); if (free(p, .05)) tuft(p.x, p.y, p.z, .9 + sm * .05) }
+  for (let i = 0; i < cnt(S.flowers * .6); i++) { const p = bank(R(), .1, .5); if (free(p, .05)) flower(p.x, p.y, p.z, .6 + sm * .04) }
+  for (let i = 0; i < cnt(S.reeds * .7); i++) { const p = bank(.08 + R() * .84, .06, .16); if (free(p, .05)) reedStem(p.x, p.y, p.z, .28 + R() * .3 + sm * .02, pick(["blade", "cat", "iris", "blade"], R)) }
+  for (let i = 0; i < cnt(S.ferns); i++) { const p = bank(R(), .15, .5); if (free(p, .1)) fern(p.x, p.y, p.z, .7) }
+  // lily pads on the water from stage 3
+  if (S.lilies && at(.5, 0).hw > .12) for (let i = 0; i < cnt(S.lilies); i++) { const t = .15 + R() * .7, w0 = at(t, 0).hw, p = at(t, (R() - .5) * w0 * 1.4); if (free(p)) pad(p.x, p.wy + .004, p.z, .05 + R() * .02) }
+  // sandbars from stage 5, on about every other stretch (a broad river always has some), with a heron on one in the broad river
+  if (S.sandbars && (sg.h !== 1 || sm >= 6)) for (let k = 0; k < S.sandbars; k++) { const sb = at(k ? .72 : .3, k ? .04 : 0); if (!free(sb, .2)) continue; const ang = Math.atan2(-sb.nx, -sb.nz) + (k ? -.2 : .3);
+    P(CG, sb.x, sb.wy + .026, sb.z, k ? .26 : .2, .022, k ? .1 : .085, cl(k ? "#e6d9a8" : "#e3d6a4"), ang, 0, 0, 0); for (let i = 0; i < cnt(4); i++) rock(sb.x + (R() - .5) * .3, sb.wy + .032, sb.z + (R() - .5) * .1, .02 + R() * .015, "#b9ae88");
+    if (sm >= 6 && k === (sm >= 7 ? 1 : 0) && S.heron) heron(sb.x - (k ? 0 : .04), sb.wy + .04, sb.z, k ? 2.2 : 1.1, k ? 1.05 : .9) }
+  // the trees at the back of the bank: a willow from stage 4, birch from stage 5, a second willow from stage 6; each stretch gets some of them
+  if (S.willow && sg.h !== 1) { const p = back(.3, .3, .5); if (free(p, .3)) tree("willow", p.x, p.y, p.z, S.willow, S.willow * .45) }
+  if (S.birch && sg.h !== 2) { const p = back(.7, .3, .5); if (free(p, .2)) tree("birch", p.x, p.y, p.z, S.birch, S.birch * .28) }
+  if (S.willow2 && sg.h === 0) { const p = back(.5, .35, .55); if (free(p, .3)) tree("willow", p.x, p.y, p.z, S.willow2, S.willow2 * .43) }
+  CB = null; INFO = null; b.p = Float32Array.from(b.p); b.n = Float32Array.from(b.n); b.c = Float32Array.from(b.c); b.s = Float32Array.from(b.s); RCACHE.set(key, b); return b }
+
 // where a lock badge sits above the tile's ground (it took the level pill's place, LOU-313): low, at the foot of the tile (the core puts it to the right and in front), so it stays with its tile whatever grows on it
 const pillH = d => d.level ? .12 : .3;
 // the cache: a tile's plants only depend on what it is, so identical tiles share one local batch (a few variants for variety), copied into the tile's mesh around its centre
@@ -211,11 +248,14 @@ const ANI = {
   moth() { A("cyl", "#6a5a48", 0, 0, -.01, .003, .026, .003, Math.PI / 2, 0, 0); W("ico0", "#d8cdb8", -.022, .004, 0, .024, .004, .018, 0, 0, .3); W("ico0", "#d8cdb8", .022, .004, 0, .024, .004, .018, 0, 0, -.3) },
   dragonfly() { A("cyl", "#2f9ae8", 0, 0, 0, .006, .11, .006, Math.PI / 2, 0, 0); A("ico0", "#2f9ae8", 0, 0, .06, .011, .011, .011); for (const z of [.02, .0]) { W("ico0", "#e9fbff", -.034, .004, z, .036, .002, .01); W("ico0", "#e9fbff", .034, .004, z, .036, .002, .01) } },
   bat() { A("ico1", "#2a2630", 0, 0, 0, .012, .01, .02); W("ico0", "#2a2630", -.03, 0, 0, .034, .002, .016, 0, 0, .25); W("ico0", "#2a2630", .03, 0, 0, .034, .002, .016, 0, 0, -.25) },
+  gull() { A("ico1", "#f4f4f2", 0, 0, 0, .026, .02, .06); A("ico1", "#f4f4f2", 0, .004, .05, .016, .015, .018); A("cone2", "#f2b030", 0, .002, .07, .005, .02, .004, Math.PI / 2, 0, 0); A("cone2", "#e8e8e6", 0, 0, -.06, .014, .04, .004, -Math.PI / 2, 0, 0);
+    W("ico1", "#d7dbe0", -.045, .01, 0, .045, .005, .022, 0, 0, .1); W("ico0", "#3a3f46", -.09, .01, 0, .015, .004, .02, 0, 0, .1); W("ico1", "#d7dbe0", .045, .01, 0, .045, .005, .022, 0, 0, -.1); W("ico0", "#3a3f46", .09, .01, 0, .015, .004, .02, 0, 0, -.1) },
   woodpecker() { A("ico1", "#1d1d1f", 0, .03, 0, .011, .028, .011); A("ico1", "#efe9d8", 0, .03, .008, .008, .02, .006); A("ico0", "#1d1d1f", 0, .06, .002, .011, .011, .011); A("ico0", "#d62a2a", 0, .066, 0, .009, .006, .009); A("cone2", "#555", 0, .06, .011, .003, .022, .003, Math.PI / 2, 0, 0) }
 };
 const SCALE = {};   // a scale for one kind of animal, if it needs one (all are drawn at ANIMAL_SCALE)
 // who lives on what: [by day, by night] (placeholders, see Linear)
-function pairFor(d) { if (d.code === "B" || d.code === "T") return null; if (d.river) return null;
+function pairFor(d) { if (d.code === "B" || d.code === "T") return null;
+  if (d.river) { const a = ["dragonfly", "butterfly", "dragonfly", "butterfly", "butterfly", "dragonfly", "gull"][(d.rstage || 1) - 1]; return a ? [a] : null }   // the river's life by day (LOU-313): a dragonfly, a butterfly, and a gull over the great river; the ducks swim on the water itself (the core)
   if (!d.level) return d.reach ? ["butterfly", "moth"] : ["lizard", "hedgehog"];
   const L = d.level, ll = Math.min(L, 7);
   if (d.kind === "g") return ll >= 6 ? [["woodpecker", "squirrel"][ll - 6], "owl", "bat"] : [["ladybug", "rabbit", "butterfly", "deer", "squirrel"][ll - 1], ["moth", "hedgehog", "hedgehog", "fox", "owl"][ll - 1]];
@@ -227,7 +267,7 @@ function animal(name, lod) { if (!ANI[name]) return null; return mk(name, lod ? 
 // how each kind moves (the core reads it each frame): r the radius of its walk round the tile's middle and s its speed along it, hop the height and hf the rate of its hops, fly the height of its flight and ff the
 // rate of its wing beats. An owl, a woodpecker, a duck and a frog don't walk: they sit in a tree or on the pond. A proposal, see Linear.
 const MOVE = {ladybug:{r:.4, s:.12}, rabbit:{r:.38, s:.3, hop:.05, hf:6}, hedgehog:{r:.42, s:.14}, deer:{r:.42, s:.13}, squirrel:{r:.45, s:.35, hop:.022, hf:9}, owl:{}, fox:{r:.4, s:.2}, frog:{}, duck:{},
-  lizard:{r:.38, s:.2}, snail:{r:.35, s:.05}, butterfly:{r:.45, s:.8, fly:.28, ff:14}, bee:{r:.4, s:1.7, fly:.18, ff:60}, moth:{r:.45, s:.7, fly:.25, ff:16}, dragonfly:{r:.45, s:.9, fly:.35, ff:70}, woodpecker:{}, bat:{r:.9, s:1.1, fly:1.5, ff:22}};
+  lizard:{r:.38, s:.2}, snail:{r:.35, s:.05}, butterfly:{r:.45, s:.8, fly:.28, ff:14}, bee:{r:.4, s:1.7, fly:.18, ff:60}, moth:{r:.45, s:.7, fly:.25, ff:16}, dragonfly:{r:.45, s:.9, fly:.35, ff:70}, woodpecker:{}, bat:{r:.9, s:1.1, fly:1.5, ff:22}, gull:{r:.7, s:.5, fly:.95, ff:9}};
 
-F.art = {content, pillH, pairFor, animal, MOVE};
+F.art = {content, pillH, pairFor, animal, MOVE, riverSeg};
 })();

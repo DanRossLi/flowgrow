@@ -139,6 +139,12 @@ function grid(c) { let g = GRIDS.get(c); if (g) return g; g = {land:[], bare:new
 // empty land: bare ground with no habitat and no river on it
 const openKey = (S, k) => grid(S.cfg).bare.has(k) && !(k in S.h) && !(k in S.r), isOpen = (S, p) => openKey(S, key(p));
 
+// ---------- the river's seven looks (LOU-313). A river tile is level 1 to 15 in the game and looks its level: each level has the nearest of seven stages (flowgrow.config.js, look3d.riverStageOf and riverStages). The names are
+// placeholders, see Linear. This is how a river tile looks and never how it plays: no rule reads it. The 3D look draws the water from the stage (its width, colour, speed, foam, stones, banks and wildlife) and the
+// pile's holder shows the stage's picture (art/pile/river-1 to river-7).
+//   level 1: stage 1 Trickle · level 2: 2 Brook · level 3: 3 Stream · levels 4 to 5: 4 Creek · levels 6 to 8: 5 River · levels 9 to 14: 6 Broad river · level 15: 7 Great river
+const riverStage = l => { const m = (G.FLOWGROW.look3d || {}).riverStageOf || [1]; return m[Math.min(Math.max(1, Math.round(l) || 1), m.length) - 1] || 1 };
+
 // ---------- levels and points
 const levelName = (c, l) => c.levelNames[l - 1] || "Level " + l;
 // Points for leaving a habitat of this level on the map. Past the end of the table the pattern carries on (36, 45 …).
@@ -451,7 +457,7 @@ function logText(S) { const c = S.cfg, lines = [`Flowgrow run log · seed ${S.se
   return lines.join("\n") }
 const settingsText = c => ["Flowgrow settings", ...KEYS.map(([k, , label]) => `${label}: ${k === "map" ? "\n  " + c.map.join("\n  ") : Array.isArray(c[k]) ? c[k].join(", ") : c[k]}`)].join("\n");
 
-const rules = {HEX, step, hexDist, key, unkey, KEYS, tidy, mapOf, parseTile, tileWord, inside, codeAt, nbrs, isOpen, levelName, scoreOf, riverTop, reachAt, plantLevel, seedOf, rulesKey,
+const rules = {HEX, step, hexDist, key, unkey, KEYS, tidy, mapOf, parseTile, tileWord, inside, codeAt, nbrs, isOpen, levelName, riverStage, scoreOf, riverTop, reachAt, plantLevel, seedOf, rulesKey,
   roll, fill, left, fresh, reachOf, plantable, options, opens, why, place, discard, replay, tileText, logText, settingsText, upgradeOf, UPGRADE, PICKS, reedBedAt, pick, needPick, undoCount, meadowMult, marshMult, freeSpots, makeElevation, elevOf, fallAt, across,
   hasLock, lockable, copiesOf, lockWouldCopy, lock, end};
 G.Flowgrow = {rules};
@@ -841,15 +847,18 @@ function say(t, warn) { const m = $("msg"); m.textContent = t || ""; m.classList
 // simply not used: the flat tile is drawn, so the holder is never empty. A sprite has its level number baked into the picture (Dan, Nov 22: "the level numbers 'blend in' rather than stick out with the pill"), so it carries no
 // pill, and its level is in the tile's accessible label instead. A copy's gold dot and the hand's ring are the same HTML as before, over the picture.
 // placeholder: art for levels 2+ is not made yet
-const PILE_KINDS = ["river", "green", "prairie", "marsh", "trees"], PILE_ART = {};
-const pileKind = t => t.k === "r" ? (t.l === 1 ? "river" : "") : t.k === "h" && t.l === 1 && !upgradeOf(CFG, t) ? ({p:"prairie", m:"marsh", t:"trees"}[t.b || ""] || "green") : "";
-function loadPileArt() { for (const k of PILE_KINDS) { const a = PILE_ART[k] = {img:new Image(), ok:false}; a.img.onload = () => { a.ok = true; if (S) drawPile() }; a.img.onerror = () => { a.ok = false }; a.img.src = new URL("art/pile/" + k + ".webp", SRC_URL).href } }
+const PILE_ART = {};   // kind: {img, ok}. A river tile has a picture for each of the river's seven stages (LOU-313: river-1 to river-7, see riverStage), whatever its level; its level is drawn on it (.fgnum).
+const pileKind = t => t.k === "r" ? "river-" + riverStage(t.l) : t.k === "h" && t.l === 1 && !upgradeOf(CFG, t) ? ({p:"prairie", m:"marsh", t:"trees"}[t.b || ""] || "green") : "";
+function pileArt(k) { let a = PILE_ART[k]; if (a || TEST) return a || null; a = PILE_ART[k] = {img:new Image(), ok:false}; a.img.onload = () => { a.ok = true; if (S) drawPile() }; a.img.onerror = () => { a.ok = false }; a.img.src = new URL("art/pile/" + k + ".webp", SRC_URL).href; return a }
+function loadPileArt() { for (const k of ["river-1", "green", "prairie", "marsh", "trees"]) pileArt(k) }   // the kinds the pile deals; a higher river stage (a copy from a lock) is fetched the first time a tile needs it
 function tileEl(t, px, cls, art) { const el = document.createElement("div"); el.className = "fgt " + cls + (t.c ? " copy" : "");
   el.title = tileText(CFG, t) + (upgradeOf(CFG, t) ? ", " + UPGRADE[upgradeOf(CFG, t)].name.toLowerCase() : "") + (t.c ? ", a copy" : "");
   if (art) { el.setAttribute("role", "img"); el.setAttribute("aria-label", (t.k === "r" && t.l === 1 ? "River tile (level 1)" : tileText(CFG, t)) + (upgradeOf(CFG, t) ? ", " + UPGRADE[upgradeOf(CFG, t)].name.toLowerCase() : "") + (t.c ? ", a copy" : "")) }   // the pile's tiles say their level in words (the number is part of a picture)
   const inn = document.createElement("div"); inn.className = "fgin"; el.appendChild(inn);   // the picture and its level badge: this layer is what bobs
-  const pk = art ? pileKind(t) : "", pa = pk && PILE_ART[pk];
-  if (pa && pa.ok) { const im = pa.img.cloneNode(); im.className = "fgart"; im.alt = ""; im.draggable = false; el.classList.add("art"); inn.appendChild(im) } else inn.appendChild(tileIcon(t, px));
+  const pk = art ? pileKind(t) : "", pa = pk && pileArt(pk);
+  if (!/\b(dk|cr)\b/.test(cls)) el.style.setProperty("--px", px + "px");   // the picture's size, for the number drawn on a river tile
+  if (pa && pa.ok) { const im = pa.img.cloneNode(); im.className = "fgart"; im.alt = ""; im.draggable = false; el.classList.add("art"); inn.appendChild(im);
+    if (t.k === "r") { const n = document.createElement("i"); n.className = "fgnum" + (t.l > 9 ? " two" : ""); n.textContent = t.l; inn.appendChild(n) } } else inn.appendChild(tileIcon(t, px));
   if (!el.classList.contains("art") && (t.k === "h" || t.l > 1)) { const b = document.createElement("i"); b.className = "fgl"; b.textContent = t.l; inn.appendChild(b) } return el }
 // A habitat above the bare ground limit that "downgrade" plants as level 1 (the hand's caption and the outlines on the island say so).
 const lowers = t => t.k === "h" && plantLevel(CFG, t.l) > 0 && plantLevel(CFG, t.l) < t.l;
@@ -862,7 +871,7 @@ const widenText = o => o.l <= CFG.riverReach.length ? "wider" + (o.pts ? " +" + 
 // stack. Each tile is one element that keeps its place in the pile (a tile is the same object in the game from the moment it is dealt), moved by a class (s0 in hand, s1 and s2 next, s3 coming off the stack).
 const NEXT_SHOWN = 2, dockEls = new Map(), TINT = {r:"#58b4e8", g:"#7dce5c", p:"#e3de6a", m:"#6ec6b4", t:"#2f7d4f", n:"#d6e4d2"}, SLAB_CAP = 24;
 let dockS = null, dockN = -1, dockSig = "", dockTop = "", dockCount = 0;
-const artOk = t => { const pk = pileKind(t), pa = pk && PILE_ART[pk]; return !!(pa && pa.ok) };
+const artOk = t => { const pk = pileKind(t), pa = pk && pileArt(pk); return !!(pa && pa.ok) };
 function dockTile(t) { const el = tileEl(t, 172, "dk", true), c = el.querySelector("canvas"); if (c) c.style.width = c.style.height = "100%"; el._art = artOk(t); return el }
 const handName = t => t.k === "r" ? "River tile · level " + t.l : tileText(CFG, t).replace(/ \(level (\d+)\)$/, " · level $1");
 const handLabel = t => marshStuck(t) ? tileText(CFG, t) + (t.c ? " copy" : "") + " · no bank tile free" : lowers(t) ? tileText(CFG, t) + (t.c ? " copy" : "") + " · plants as level 1" : handName(t) + (t.c ? " · copy" : "");
