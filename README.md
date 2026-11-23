@@ -23,12 +23,32 @@ Plain HTML/JS, no build step, no framework, and nothing loaded from other sites.
 - **Locking** (LOU-299): there is **no limit on locks** (Dan, Nov 20): lock as many tiles as you like, as often as you like. Tap **Lock**, tap a tile and confirm. Each neighbour at that tile's level or below is copied to the back of your pile, and the locked tile can't grow any more. The run ends when the pile is empty and no lock would bank a copy, or when you tap **End run**.
 - Every number is in `flowgrow.config.js`. Add `?seed=123` to the address to replay the same pile.
 
-## Two looks
+## Three looks
 
 - **Simple** (the page opens on it, for piloting): flat hexes seen from above. **Blue** tiles are the river and **green**, **yellow** (prairie), **turquoise** (marsh) and **deep green** (trees) tiles are habitats. Every kind gets darker with each level, with a gold rim from level 8 and a second one from level 12. Every one carries its level as a **number**. Empty land the river reaches is pale green, land it doesn't reach is off-white, mountains are grey, and the source has a white ring. A locked tile carries a padlock. A gold ring marks a tile you can combine with (and its points), a teal ring a river tile you can raise a level, and a dashed blue ring land the river can extend onto.
 - **Painted:** the first look, a hand-painted tilted island with seven kinds of habitat.
+- **3D** (LOU-311): a small living island seen from a fixed angle, with a day and night. See "The 3D look" below.
 
-The rules, the pile, locking and the saved run are the same in both. Switch with **Look** in the menu (it remembers your choice, and you can switch in the middle of a run), or add `?look=simple` or `?look=painted` to the address for one visit.
+The rules, the pile, locking and the saved run are the same in all three. Switch with **Look** in the menu (it cycles the three, remembers your choice, and you can switch in the middle of a run), or add `?look=simple`, `?look=painted` or `?look=3d` to the address for one visit.
+
+## The 3D look
+
+`?look=3d` (Dan, Nov 22: "this looks good, can you provide very detailed instructions in linear to make it for flowgrow. some changes, you do not need the rotation. include day/night cycles."; LOU-311) draws the same game as a small living island seen from a fixed angle: terrarium tiles with soil layers on the island's edge, ground that blends from tile to tile, plants that spill across tile borders, a green pond, one small animal on each tile, and a day and night. **It changes no rule**: it reads the game and calls `tap()`, and the same seed and moves score the same in every look. **Nothing rotates**: the camera angle never changes; you pan with one finger and zoom with a pinch, the wheel or the zoom button. The whole island fits at the opening view. Nothing man-made is drawn, even at night. When you aim at a tile (the mouse over it, or a finger on it) tall plants in front of it fade so you can see it.
+
+- **The day** runs on a 4-minute clock (`dayLength`: dawn, day, golden hour, dusk, night, pre-dawn) and starts in the morning. It is only light: there is no clock or warning on screen, and it never touches a rule, a score or a tap. The Menu's **Time of day** row (3D look only) cycles Auto, Day, Golden hour, Night and Paused. `?time=day`, `?time=gold` and `?time=night` (also `dawn` and `dusk`, or a number from 0 to 1) hold a moment, and `?time=progress` makes the pile the day (morning at the first tile, night when the pile is empty). Reduced motion and the low tier start in day and hold. At night the sea has a column of moonlight and mirrored stars, fireflies come out, some plants glow a little, and the night animals replace the day ones.
+- **Quality:** `?q=low|med|high`; without it a short frame-time probe picks one when the look starts. `low` has no shadows and no animals, `med` has one shadow map and one animal on each tile, `high` is the full look. While the whole island is in view the plants and grass are drawn thinner, and a late game that would go over the triangle budget has them thinned further (never below 30 per cent).
+- **Files:** `flowgrow.look3d.js` (the camera, ground, sea, river, rings, animals and the work to stay in budget), `flowgrow.look3d.art.js` (what grows on a tile, and the animals) and `flowgrow.look3d.sky.js` (the day and night), with three.js r128 in `vendor/three.r128.min.js` (MIT). They are loaded only for this look. Every number is in `flowgrow.config.js` under `look3d`.
+- **Numbers** at 390×844, measured in headless Chrome with software GL on a fresh island, a typical 20-tile run and a heavy late game (80 tiles of mixed kinds, levels 1 to 8), whole island in view. A tile with a shadow is drawn twice, so the shadow pass is listed with the main pass (the page's own stats don't count it). The budget is 250k triangles and 150 draw calls on `med`, and counts both passes.
+
+  | Tier | Fresh island | A 20-tile run | Heavy late game |
+  | -- | -- | -- | -- |
+  | `low` | 30k triangles, 121 draw calls | 31k, 122 | 58k, 122 |
+  | `med` | 52k + 6k shadows, 123 draw calls (+9) | 53k + 10k, 124 (+19) | 98k + 74k, 124 (+98) |
+  | `high` | 82k + 11k shadows, 123 (+9) | 86k + 20k, 124 (+19) | 235k + 192k, 124 (+98) |
+
+  Zoomed in (about 4 tiles across) the heavy late game is 52k on `low`, 112k + 96k on `med` and 301k + 298k on `high` (thinned to 91 per cent). The frame rates under software GL, which is a processor doing a graphics card's work, are far below a phone's (`low` 27 and 18, `med` 18 and 10, `high` 13 and 6, on the fresh island and the heavy game), and the JavaScript's own time for a frame is about 1 ms on `low` and 3 to 4 ms on `med`. **None of it has been measured on a phone.**
+- **Tests:** `node --experimental-websocket tools/look3d-smoke.mjs` (see "Check it"). `window.__flowgrow3d` has `setTime(mode or t)`, `getTime()`, `setQuality(q)`, `setThrottle(on)`, `stats()` (triangles, draw calls, fps, the shadow pass, the level of detail) and `sample()` for scripts.
+- What was changed from the build spec, cut, or left as a placeholder (the art for levels 8 to 15 and for the four kinds is a proposal) is listed in CANON.md under "The 3D look, no rules changed".
 
 ## Run it
 
@@ -44,6 +64,7 @@ then go to http://localhost:8000/.
 
 - `node tools/flowgrow-sim.mjs --test` runs the rule checks. All must pass. They use fixed first-build values (80 tiles, level odds 0.5), so tuning `flowgrow.config.js` never breaks them.
 - `node tools/flowgrow-sim.mjs` plays 1,000 runs of the game in `flowgrow.config.js` (the pilot pile with unlimited locks now; add `stackSize=80 levelOdds=0.5 lockEvery=10` for the first build's game), with the game's own rules. No run may crash, stall or fail to rebuild from its seed and moves. With unlimited locks a run is about 300 moves, so the 1,000 runs take a few minutes: ask for fewer (node tools/flowgrow-sim.mjs 200) when you only want a quick check. Run it with `lockEnabled=false` and `lockEvery=0` as well, for example `node tools/flowgrow-sim.mjs 300 lockEvery=0`. Any config value can be changed as `key=value`. `picks=meadow,pine` makes the simple player pick those upgrades (the default is steppe and roots).
+- `node --experimental-websocket tools/look3d-smoke.mjs` checks the 3D look in headless Chrome (software GL, so no graphics card is needed): it loads `?look=3d&time=night&q=low`, plays three moves by tapping the canvas, and checks that the page logged no errors, that the canvas isn't blank, that nothing came from another site, that the camera never leaves its angle, that the day goes round without rebuilding anything, that the whole island fits at 390×844 and 1280×800, and that the same twenty moves play and score the same in the simple look and the 3D look. `--url` tests another address and `--out DIR` saves screenshots of day, golden hour and night.
 - Play one whole run in a browser at 390×844.
 
 ## Search it
