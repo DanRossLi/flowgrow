@@ -493,7 +493,7 @@ const pops = {}, fx = [];
 // The page opens on the simple look. ?look=painted shows the painted one for that visit, and the menu's Look row switches and remembers.
 // LOU-311: "3d" is a third look, drawn by flowgrow.look3d.js (and the vendored three.js), which are loaded only when it is asked for. Until it has loaded the page draws the simple look.
 const LOOKS = ["simple", "painted", "3d"];
-const WANT = (() => { const u = new URLSearchParams(location.search).get("look"), m = mem.get("look"); return LOOKS.includes(u) ? u : LOOKS.includes(m) ? m : "simple" })();
+const WANT = (() => { const u = new URLSearchParams(location.search).get("look"), m = mem.get("look"); return LOOKS.includes(u) ? u : new URLSearchParams(location.search).has("example") ? "3d" : LOOKS.includes(m) ? m : "simple" })();   // ?example= (an example island) is only drawn by the 3D look, so it opens that
 let skin = WANT === "3d" ? "simple" : WANT, L3 = null;   // L3: the 3D look's controller, once it is mounted (then skin is "3d")
 const flat = () => skin !== "painted";   // the simple look and the 3D look share the flat maths and the simple tile pictures
 $("app").classList.toggle("simple", flat());
@@ -971,7 +971,7 @@ function setSkin(v) { if (!LOOKS.includes(v) || v === skin) return; mem.set("loo
 const LOOK3D_FILES = ["vendor/three.r128.min.js", "flowgrow.look3d.js", "flowgrow.look3d.art.js", "flowgrow.look3d.sky.js"];
 let l3Loading = null;
 function load3d() { if (G.Flowgrow3D) return Promise.resolve(G.Flowgrow3D); if (l3Loading) return l3Loading;
-  l3Loading = LOOK3D_FILES.reduce((p, f) => p.then(() => new Promise((ok, bad) => { const s = document.createElement("script"); s.src = new URL(f, SRC_URL).href; s.onload = ok; s.onerror = () => bad(new Error("Couldn't load " + f)); document.head.appendChild(s) })), Promise.resolve()).then(() => G.Flowgrow3D);
+  l3Loading = LOOK3D_FILES.concat(new URLSearchParams(location.search).has("example") ? ["flowgrow.look3d.example.js"] : []).reduce((p, f) => p.then(() => new Promise((ok, bad) => { const s = document.createElement("script"); s.src = new URL(f, SRC_URL).href; s.onload = ok; s.onerror = () => bad(new Error("Couldn't load " + f)); document.head.appendChild(s) })), Promise.resolve()).then(() => G.Flowgrow3D);
   l3Loading.catch(() => { l3Loading = null }); return l3Loading }
 const bridge3d = () => ({board:$("board"), cv, top:$("top"), cfg:CFG, grid:GRID, rules, W, H, key, unkey, step, reduce, state:() => S, options:() => opts, tap, say, fit:$("fitBtn"),
   lock:() => ({mode:lockMode, sel:lockSel, list:lockList}), pops, fx, widenText, marshMult, upgradeOf, levelName, tileText, BIOME_NAME, mem});

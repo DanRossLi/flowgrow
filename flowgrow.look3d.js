@@ -111,6 +111,10 @@ function mount(B) {
 
   // ---------- what each cell looks like now, from the game's state; a signature finds the cells that changed
   let S = B.state(), reach = new Set(), elev = null;
+  // An example island, for looking at (Dan, Nov 22: "give me an example map where everything is very filled out and the ecosystem is rich"). ?example=rich draws a designed, fully grown island in place of the run's
+  // own state (flowgrow.look3d.example.js builds it). The game's state, saves, score and pile are never touched, and a tap only says what this is.
+  const EXN = QS.get("example"); let EXS = null, EXM = false;
+  function stateNow() { const s = B.state(); if (!EXN) return s; const m = G.Flowgrow3D.example; if (!EXS && m && m[EXN]) EXS = m[EXN]({cfg, W, H, step}); if (!EXS) return s; EXM = true; return Object.assign({}, s, EXS, {over:true, pend:[]}) }
   function describe(cl) { const k = cl.k, rv = S.r[k], hl = S.h[k] || 0, hb = S.hb[k] || "";
     return {code:cl.code, river:rv ? rv.l : 0, from:rv ? rv.from : null, level:hl, kind:hl ? (hb || "g") : "", up:hl ? (B.upgradeOf(cfg, {k:"h", b:hb || undefined, l:hl, f:S.hf[k]}) || "") : "", locked:k in S.lk, reach:reach.has(k) ? 1 : 0, elev:elev ? elev[k] : 0,
       fall:rv && rv.from != null && elev && elev[rv.from] > elev[k] ? 1 : 0} }   // fall: a river tile that steps down from the one it flows from (the elevation rule)
@@ -370,7 +374,8 @@ function mount(B) {
     for (const L of list) { const R = RING[L.kind]; add(L.x, L.z, .9 - R.w * 1.3, .9, R.c, R.a, R.f) }
     const g = new T.BufferGeometry(); g.setAttribute("position", new T.Float32BufferAttribute(pos, 3)); g.setAttribute("color", new T.Float32BufferAttribute(col, 4)); g.setIndex(ind); return g }
   let ringList = [];
-  function buildRings() { const list = [], tags = [], opts = B.options(), lk = B.lock(), pend = S.pend[0];
+  function buildRings() { if (EXM) { ringList = []; ringMesh.geometry.dispose(); ringMesh.geometry = new T.BufferGeometry(); ringTags = []; return }   // an example island has no rings
+    const list = [], tags = [], opts = B.options(), lk = B.lock(), pend = S.pend[0];
     if (!S.over && !lk.mode) for (const o of opts) { const c = cellAt(o.p[0], o.p[1]); if (!c) continue; list.push({x:c.x, z:c.z, kind:o.does});
       if (o.does === "combine") tags.push({id:"o" + c.k, cell:c, text:"+" + o.pts, cls:"gold", dy:.5}); else if (o.does === "overgrow") tags.push({id:"o" + c.k, cell:c, text:"over +" + o.pts, cls:"green", dy:.5});
       else if (o.does === "widen") tags.push({id:"o" + c.k, cell:c, text:B.widenText(o), cls:"teal", dy:.4});
@@ -458,7 +463,7 @@ function mount(B) {
     // pan: put the ground point that was under the finger when the drag began back under it (the camera follows at once while dragging)
     const now = groundAt(e.clientX, e.clientY); if (gesture.g0 && now) { view.gx += gesture.g0.x - now.x; view.gz += gesture.g0.z - now.z; clampView(); view.tx = view.gx; view.tz = view.gz; applyCamera(true); dirtyLabels = true; requestRender() } });
   const lift = (e, tapOk) => { const had = gesture; ptrs.delete(e.pointerId);
-    if (had && !had.pinch && !had.moved && tapOk && ptrs.size === 0) { const c = cellAtScreen(e.clientX, e.clientY); if (c) B.tap([c.c, c.r]) }
+    if (had && !had.pinch && !had.moved && tapOk && ptrs.size === 0) { const c = cellAtScreen(e.clientX, e.clientY); if (c) { if (EXM) B.say("This is an example island: pan, zoom, and try Time of day in the Menu. Start a new run to play."); else B.tap([c.c, c.r]) } }
     if (!ptrs.size) { gesture = null; setAim(e.pointerType === "mouse" ? hover : null) } else if (had && had.pinch) { gesture = null; setAim(null) } };
   cv3.addEventListener("pointerup", e => lift(e, true)); cv3.addEventListener("pointercancel", e => lift(e, false));
   cv3.addEventListener("pointerleave", e => { if (e.pointerType === "mouse" && hover) { hover = null; setHover(null); setAim(null) } });
@@ -471,7 +476,7 @@ function mount(B) {
 
   // ---------- the game's state, into the scene: find the cells that changed (and their neighbours, for the ground), rebuild only those; the river and the rings are cheap and rebuilt when they change
   let riverSig = null, lastSeed = null, firstSync = true;
-  function syncState() { S = B.state(); const seedChanged = lastSeed !== S.seed; lastSeed = S.seed; reach = rules.reachOf(S); elev = cfg.elevation ? rules.elevOf(cfg, S.seed) : null;
+  function syncState() { S = stateNow(); const seedChanged = lastSeed !== S.seed; lastSeed = S.seed; reach = rules.reachOf(S); elev = cfg.elevation ? rules.elevOf(cfg, S.seed) : null;
     const first = firstSync, dirty = new Set(), changed = [], born = new Map(), frozen = [], animate = !first && !seedChanged; firstSync = false;
     for (const cl of cells) { const old = cl.d, d = describe(cl), sg = sigOf(d); cl.d = d;
       if (sg !== cl.sig || seedChanged) { cl.sig = sg; changed.push(cl);   // a tile that grew (a plant, a level, a river tile) springs up, a tile that was locked gets a frost ring; undo and a new island just rebuild
@@ -544,7 +549,7 @@ function mount(B) {
     cpuMs += (performance.now() - c0 - cpuMs) * .1; frames++; frameTotal++; const n = performance.now(); if (n - fpsT >= 1000) { fps = frames * 1000 / (n - fpsT); frames = 0; fpsT = n } }
   const stats = () => { const i = renderer.info; let g = 0, gr = 0, pl = 0; for (const cl of cells) { g += cl.tg || 0; gr += cl.tr || 0; pl += cl.tp || 0 }
     let st = 0, sc = 0; if (renderer.shadowMap.enabled) for (const cl of cells) if (cl.mesh && cl.mesh.castShadow) { sc++; st += cl.mesh.geometry.attributes.position.count / 3 }
-    return {quality, lod:lod ? "near" : "far", detail:Math.round(detail * 100) / 100, triangles:i.render.triangles, calls:i.render.calls, shadowTriangles:Math.round(st), shadowCalls:sc, gpuTriangles:i.render.triangles + Math.round(st), gpuCalls:i.render.calls + sc, fps:Math.round(fps * 10) / 10, cpuMs:Math.round(cpuMs * 10) / 10, geometries:i.memory.geometries, textures:i.memory.textures,
+    return {quality, example:EXM, lod:lod ? "near" : "far", detail:Math.round(detail * 100) / 100, triangles:i.render.triangles, calls:i.render.calls, shadowTriangles:Math.round(st), shadowCalls:sc, gpuTriangles:i.render.triangles + Math.round(st), gpuCalls:i.render.calls + sc, fps:Math.round(fps * 10) / 10, cpuMs:Math.round(cpuMs * 10) / 10, geometries:i.memory.geometries, textures:i.memory.textures,
       parts:{ground:g, grass:gr, plants:pl}, animals:zoo.length, animalTriangles:Math.round(zooVerts / 3), popping:pops.length, sparks:sparks.length, queued:queue.length, frameTotal, drawTotal, busy:busyWhy, syncMs:Math.round(syncMs * 10) / 10, probeMs:Math.round(probeMs * 10) / 10, width:w, height:h} };
   const sample = (n = 12) => { renderer.render(scene, camera); const gl = renderer.getContext(), px = new Uint8Array(4), out = [], Wd = gl.drawingBufferWidth, Hd = gl.drawingBufferHeight;   // read an n by n grid of pixels back, for the smoke test
     for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) { gl.readPixels(Math.floor((i + .5) * Wd / n), Math.floor((j + .5) * Hd / n), 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); out.push([px[0], px[1], px[2]]) } return out };
@@ -558,7 +563,7 @@ function mount(B) {
   const ctl = {draw, resize, sync: syncState, scr, look, toggleFit, cycleTime: () => skyCtl ? skyCtl.cycle() : "", timeNote: () => skyCtl ? skyCtl.note() : "",
     unmount() { alive = false; delete G.__flowgrow3d; for (const c of cells) { dropPop(c); if (c.mesh) c.mesh.geometry.dispose() } if (zGeo) zGeo.dispose(); if (skyCtl) skyCtl.dispose(); pGeo.dispose(); renderer.dispose(); cv3.remove(); lab.remove(); B.fit && (B.fit.style.top = "") }};
   G.__flowgrow3d = {setTime: v => skyCtl ? skyCtl.setTime(v) : null, getTime: () => skyCtl ? skyCtl.getTime() : null, setQuality, setThrottle(v) { throttle = !!v }, stats, sample, renderer, scene, camera, view, dayState};
-  syncState(); resize();
+  syncState(); resize(); if (EXM) B.say("An example island: pan, zoom, and try Time of day in the Menu.");
   return ctl;
 }
 
