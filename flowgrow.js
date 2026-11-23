@@ -831,8 +831,20 @@ function lockCard() { const k = key(lockSel), got = copiesOf(S, lockSel), n = go
 
 // ---------- the pile, the top bar and the messages
 function say(t, warn) { const m = $("msg"); m.textContent = t || ""; m.classList.toggle("warn", !!warn); m.classList.toggle("fade", !t); clearTimeout(msgT); if (t) msgT = setTimeout(() => m.classList.add("fade"), warn ? 3200 : 4500) }
-function tileEl(t, px, cls) { const el = document.createElement("div"); el.className = "fgt " + cls + (t.c ? " copy" : ""); el.title = tileText(CFG, t) + (upgradeOf(CFG, t) ? ", " + UPGRADE[upgradeOf(CFG, t)].name.toLowerCase() : "") + (t.c ? ", a copy" : ""); el.appendChild(tileIcon(t, px));
-  if (t.k === "h" || t.l > 1) { const b = document.createElement("i"); b.className = "fgl"; b.textContent = t.l; el.appendChild(b) } return el }
+// ---------- the tile holder's pictures (LOU-312). The five level 1 tiles the pile deals (river, green, prairie, marsh, trees) have an illustrated sprite, baked once from the Flowgrow Pile Tiles page and kept in art/pile/
+// (tools/bake-pile-sprites.mjs makes them). The holder draws a sprite for a tile that is level 1 with no upgrade; every other tile keeps its flat picture and its number. A sprite that is missing or hasn't loaded is
+// simply not used: the flat tile is drawn, so the holder is never empty. A sprite has its level number baked into the picture (Dan, Nov 22: "the level numbers 'blend in' rather than stick out with the pill"), so it carries no
+// pill, and its level is in the tile's accessible label instead. A copy's gold dot and the hand's ring are the same HTML as before, over the picture.
+// placeholder: art for levels 2+ is not made yet
+const PILE_KINDS = ["river", "green", "prairie", "marsh", "trees"], PILE_ART = {};
+const pileKind = t => t.k === "r" ? (t.l === 1 ? "river" : "") : t.k === "h" && t.l === 1 && !upgradeOf(CFG, t) ? ({p:"prairie", m:"marsh", t:"trees"}[t.b || ""] || "green") : "";
+function loadPileArt() { for (const k of PILE_KINDS) { const a = PILE_ART[k] = {img:new Image(), ok:false}; a.img.onload = () => { a.ok = true; if (S) drawPile() }; a.img.onerror = () => { a.ok = false }; a.img.src = new URL("art/pile/" + k + ".webp", SRC_URL).href } }
+function tileEl(t, px, cls, art) { const el = document.createElement("div"); el.className = "fgt " + cls + (t.c ? " copy" : "");
+  el.title = tileText(CFG, t) + (upgradeOf(CFG, t) ? ", " + UPGRADE[upgradeOf(CFG, t)].name.toLowerCase() : "") + (t.c ? ", a copy" : "");
+  if (art) { el.setAttribute("role", "img"); el.setAttribute("aria-label", (t.k === "r" && t.l === 1 ? "River tile (level 1)" : tileText(CFG, t)) + (upgradeOf(CFG, t) ? ", " + UPGRADE[upgradeOf(CFG, t)].name.toLowerCase() : "") + (t.c ? ", a copy" : "")) }   // the pile's tiles say their level in words (the number is part of a picture)
+  const pk = art ? pileKind(t) : "", pa = pk && PILE_ART[pk];
+  if (pa && pa.ok) { const im = pa.img.cloneNode(); im.className = "fgart"; im.alt = ""; im.draggable = false; el.classList.add("art"); el.appendChild(im) } else el.appendChild(tileIcon(t, px));
+  if (!el.classList.contains("art") && (t.k === "h" || t.l > 1)) { const b = document.createElement("i"); b.className = "fgl"; b.textContent = t.l; el.appendChild(b) } return el }
 // A habitat above the bare ground limit that "downgrade" plants as level 1 (the hand's caption and the outlines on the island say so).
 const lowers = t => t.k === "h" && !(t.b === "t" && CFG.overgrow) && plantLevel(CFG, t.l) > 0 && plantLevel(CFG, t.l) < t.l;   // trees never plant, so they never plant as level 1
 // A marsh tile with no tile next to the river free (LOU-301): the pile's caption says why there is nothing to plant it on. It can still combine onto marsh, or be discarded.
@@ -842,13 +854,13 @@ const treeStuck = t => t.k === "h" && t.b === "t" && CFG.overgrow && !S.pend.len
 // What the ring on a river tile it can raise says (Dan, Nov 20: rivers level up): "wider" while the raise still widens the river, and its points (riverScore) or the new level after that.
 const widenText = o => o.l <= CFG.riverReach.length ? "wider" + (o.pts ? " +" + o.pts : "") : o.pts ? "+" + o.pts : "level " + o.l;
 function drawPile() { const q = $("queue"), small = innerWidth < 380; q.textContent = "";
-  if (S.q[0]) { q.appendChild(tileEl(S.q[0], small ? 54 : 60, "now")); for (const t of S.q.slice(1, 1 + CFG.queueShown)) q.appendChild(tileEl(t, small ? 32 : 36, "")) }
+  if (S.q[0]) { q.appendChild(tileEl(S.q[0], small ? 80 : 90, "now", true)); for (const t of S.q.slice(1, 1 + CFG.queueShown)) q.appendChild(tileEl(t, small ? 46 : 52, "", true)) }
   else { const e = document.createElement("span"); e.className = "fgempty"; e.textContent = S.over ? "Run over" : "Pile empty"; q.appendChild(e) }
   tx("hName", !S.q[0] ? "" : marshStuck(S.q[0]) ? tileText(CFG, S.q[0]) + (S.q[0].c ? " copy" : "") + " · no bank tile free" : treeStuck(S.q[0]) ? tileText(CFG, S.q[0]) + (S.q[0].c ? " copy" : "") + " · nothing to grow over" : lowers(S.q[0]) ? tileText(CFG, S.q[0]) + (S.q[0].c ? " copy" : "") + " · plants as level 1"   // shorter, so a copy's whole caption fits across a phone
     : "In hand: " + tileText(CFG, S.q[0]) + (S.q[0].c ? ", a copy" : ""));
   const more = CFG.stackSize === 0 ? Infinity : CFG.stackSize - S.dealt + Math.max(0, S.q.length - 1 - CFG.queueShown); // the rest of the stack, behind the tiles shown
   $("stack").hidden = !(more > 0); tx("stackN", more === Infinity ? "many more" : "+" + more + " more");
-  const list = $("bankList"); $("bank").hidden = !S.bank.length; list.textContent = ""; for (const t of S.bank) list.appendChild(tileEl(t, 26, "")) } // the copies waiting at the back, in order
+  const list = $("bankList"); $("bank").hidden = !S.bank.length; list.textContent = ""; for (const t of S.bank) list.appendChild(tileEl(t, 32, "", true)) } // the copies waiting at the back, in order
 // The pick (LOU-305): a card above the pile with one large button for each of the first waiting tile's two upgrades, each with its mark, its name and one plain line.
 function drawPick() { const k = S.pend[0], card = $("pickq"); card.hidden = !k; if (!k) return;
   { const r = card.getBoundingClientRect(), [, sy] = scr(GRID.at[k]), s = lay.fit * view.z; if (r.height && s && sy > r.top - 56) { view.cy += (sy - (r.top - 80)) / s; applyView() } }   // the tile waiting for its pick must not be under the card: pan it up
@@ -983,6 +995,7 @@ function leave3d() { if (!L3) return; L3.unmount(); L3 = null; cv.style.visibili
 addEventListener("resize", resize);
 if (window.ResizeObserver) { const ro = new ResizeObserver(resize); ro.observe($("board")); ro.observe($("top")) }
 function loop() { draw(); requestAnimationFrame(loop) }
+loadPileArt();   // the pile's pictures (they are drawn when they arrive)
 if (load()) sync(); else newRun();
 resize(); if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { lastSize = ""; resize(); drawPile() });
 if (reduce) draw(); else loop();

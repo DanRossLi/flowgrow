@@ -9,13 +9,18 @@
 .fgcap{display:flex;justify-content:space-between;align-items:baseline;gap:10px;min-width:0}
 .fgcap b{flex:none;font:800 11px/1.2 var(--hand);letter-spacing:.07em;text-transform:uppercase;color:#4f6f70}
 .fgcap span{min-width:0;font:700 12.5px/1.2 var(--hand);color:#24434a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.fgtray{display:flex;align-items:center;gap:9px;min-width:0;min-height:62px}
+.fgtray{display:flex;flex-wrap:wrap;align-items:center;gap:9px;row-gap:6px;min-width:0;min-height:92px}
 .fgq{display:flex;align-items:center;gap:7px;flex:none}
-.fgt{position:relative;flex:none;display:grid;place-items:center;width:36px;height:36px;border-radius:12px;background:#eef5f4}
+.fgt{position:relative;flex:none;display:grid;place-items:center;width:52px;height:52px;border-radius:16px;background:#eef5f4}
 .fgt canvas{position:static;display:block;border-radius:inherit}
-.fgt.now{width:60px;height:60px;border-radius:18px;background:#fff;box-shadow:0 0 0 2.5px #5fae9c,0 4px 10px rgba(30,60,60,.18)}
-.fgl{position:absolute;right:-4px;bottom:-3px;min-width:15px;height:15px;padding:0 3px;box-sizing:border-box;border-radius:999px;background:#fff;color:#24434a;font:800 10.5px/15px var(--hand);font-style:normal;text-align:center;box-shadow:0 1px 3px rgba(30,60,60,.35)}
-.fgt.now .fgl{right:-5px;bottom:-4px;min-width:20px;height:20px;font-size:13px;line-height:20px}
+.fgt.now{width:90px;height:90px;border-radius:26px;background:#fff;box-shadow:0 0 0 2.5px #5fae9c,0 4px 10px rgba(30,60,60,.18)}
+/* the illustrated sprite (LOU-312): it fills the tile's box and never takes a tap itself; the one in hand bobs 2 px on a 3 s loop, unless the player asks for less motion */
+.fgt .fgart{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:block;pointer-events:none;user-select:none;-webkit-user-drag:none}
+.fgt.now .fgart{animation:fgbob 3s ease-in-out infinite}
+@keyframes fgbob{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
+@media (prefers-reduced-motion:reduce){.fgt.now .fgart{animation:none}}
+.fgl{position:absolute;right:-4px;bottom:-3px;min-width:18px;height:18px;padding:0 4px;box-sizing:border-box;border-radius:999px;background:#fff;color:#24434a;font:800 12px/18px var(--hand);font-style:normal;text-align:center;box-shadow:0 1px 3px rgba(30,60,60,.35)}
+.fgt.now .fgl{right:-4px;bottom:-4px;min-width:26px;height:26px;font-size:16px;line-height:26px}
 .fgempty{padding:0 6px;font:800 14px var(--hand);color:#4f6f70;white-space:nowrap}
 /* the rest of the stack: three tiles lying on each other, and how many more there are */
 .fgstack{position:relative;flex:none;width:56px;height:54px;text-align:center}
@@ -40,13 +45,14 @@
 .fglock.none{color:#8b9b9d}.fglock.none .ubadge{background:#9aa9ab}
 .fg button.fglock.on{background:#fff3cf;box-shadow:0 0 0 2.5px #d9a520,var(--soft)}
 .fgt.copy::before{content:"";position:absolute;left:-2px;top:-2px;width:7px;height:7px;border-radius:50%;background:#d9a520;box-shadow:0 0 0 1.5px #fff}
-.fgbank{flex:1;min-width:0;display:grid;gap:3px;align-content:center;padding-left:9px;border-left:1.5px dashed #c3d2d4}
+.fgbank{flex:1 1 100%;min-width:0;display:grid;gap:3px;align-content:center;padding:5px 0 0;border-top:1.5px dashed #c3d2d4}   /* the copies take a row of their own under the tiles: the bigger tiles leave no room beside them */
 .fgbank[hidden]{display:none}
 .fgbank>span{font:700 9.5px/1 var(--hand);color:#4f6f70;white-space:nowrap}
 #bankList{display:flex;gap:6px;min-width:0;overflow-x:auto;padding:2px 5px 5px 3px;scrollbar-width:none}
-#bankList .fgt{width:26px;height:26px;border-radius:8px}
-#bankList .fgl{right:-4px;bottom:-4px;min-width:13px;height:13px;font-size:9.5px;line-height:13px}
-@media (max-width:379px){.fgt{width:32px;height:32px}.fgt.now{width:54px;height:54px}.fgtray{gap:6px}.fgq{gap:5px}.fgstack{width:50px}.fgstack i{left:7px}
+#bankList .fgt{width:34px;height:34px;border-radius:10px}
+#bankList .fgl{right:-4px;bottom:-4px;min-width:15px;height:15px;padding:0 3px;font-size:10.5px;line-height:15px}
+@media (max-height:700px){.fgt{width:46px;height:46px}.fgt.now{width:76px;height:76px}.fgtray{min-height:78px}#bankList .fgt{width:30px;height:30px}}   /* a short phone: the tiles are a little smaller so the island keeps its room */
+@media (max-width:379px){.fgt{width:46px;height:46px}.fgt.now{width:80px;height:80px}.fgtray{gap:6px}.fgq{gap:5px}.fgstack{width:50px}.fgstack i{left:7px}
   .fgw{display:none}.fg button.fgbw{width:44px;padding:0;justify-content:center}}
 
 /* the pick (LOU-305): a small card above the pile with one large button for each of the two upgrades */
