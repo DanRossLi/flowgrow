@@ -395,9 +395,11 @@ function mount(B) {
     if (e.text !== text || e.cls !== cls || e.html !== html) { e.el.className = "l3t " + cls; if (html) e.el.innerHTML = html + text; else e.el.textContent = text; e.text = text; e.cls = cls; e.html = html }
     e.seen = labFrame; return e }
   function placeLabel(e, x, y, z, o) { pv.set(x, y, z).project(camera); if (pv.z > 1 || pv.z < -1) { e.el.style.display = "none"; return } const px = (pv.x * .5 + .5) * w, py = (-pv.y * .5 + .5) * h; if (e.el.style.display === "none") e.el.style.display = "";
-    const tx = px.toFixed(1), ty = py.toFixed(1); if (e.x !== tx || e.y !== ty || (o != null && e.o !== o)) { e.x = tx; e.y = ty; e.o = o; e.el.style.transform = "translate3d(" + (px - e.el.offsetWidth / 2).toFixed(1) + "px," + (py - 11).toFixed(1) + "px,0)"; if (o != null) e.el.style.opacity = o } }
+    const tx = px.toFixed(1), ty = py.toFixed(1); if (e.x !== tx || e.y !== ty || e.s !== labScale || (o != null && e.o !== o)) { e.x = tx; e.y = ty; e.s = labScale; e.o = o; e.el.style.transform = "translate3d(" + (px - e.el.offsetWidth / 2).toFixed(1) + "px," + (py - 11).toFixed(1) + "px,0) scale(" + labScale.toFixed(2) + ")"; if (o != null) e.el.style.opacity = o } }
+  // a pill shrinks with the zoom: with the whole island in view a tile is about 28 px across and a full-size pill would hide the plants under it (never below 46 per cent, the number stays legible)
+  let labScale = 1; function computeLabScale() { pv.set(midX, ELAND, midZ).project(camera); const a = (pv.x * .5 + .5) * w; pv.set(midX + SQ, ELAND, midZ).project(camera); labScale = clamp(Math.abs((pv.x * .5 + .5) * w - a) / 62, .46, 1) }
   const pillY = d => { const art = G.Flowgrow3D && G.Flowgrow3D.art; return art && art.pillH ? art.pillH(d) : .3 };   // the height of a level pill above the ground: above the tile's plants (the art says how tall they are)
-  function updateLabels(T0) { labFrame++;
+  function updateLabels(T0) { labFrame++; computeLabScale();
     for (const cl of cells) { const d = cl.d; if (!d || d.code === "B") continue; const gnd = CH[cl.i];
       if (d.level) { const cls = d.kind === "g" ? "" : d.kind; const e = label("p" + cl.k, String(d.level), cls, d.locked ? LOCK : ""); placeLabel(e, cl.x + .34, gnd + pillY(d), cl.z + .5) }   // a level pill sits at the foot of its tile, to the right and in front, so it stays with the tile whatever grows on it
       else if (d.river > 1) { const e = label("p" + cl.k, String(d.river), "r", d.locked ? LOCK : ""); placeLabel(e, cl.x, gnd + .35, cl.z) }
