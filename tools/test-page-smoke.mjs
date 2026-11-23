@@ -13,7 +13,8 @@
 // (3) the same seed gives the same pile, ?seed= starts that run whatever was saved, and the same seed and moves give the same score and the same board here as in the rules read by Node (the simulator's);
 // (4) the board is data: one element for every cell with its kind, level and cell, and the pile;
 // (5) the rules line says which rules the address changed and ignores names it doesn't know;
-// (6) a run copied on the page loads again on it, in place under the same rules and across a reload under other rules.
+// (6) a run copied on the page loads again on it, in place under the same rules and across a reload under other rules;
+// (7) the green takeover (LOU-307), off in the config, works with ?greenTakeover=true in the address: a prairie tile takes over green of its level, in the board data and the words, replays and undoes, and has no such move with the switch off.
 // It exits with 1 if a check fails. It needs Chrome (set CHROME to its path if it isn't found) and drives it over the DevTools protocol with Node's built-in WebSocket, which is switched on by
 // --experimental-websocket on Node 20 (Node 22 and newer need no flag). No packages.
 import fs from "fs"; import path from "path"; import os from "os"; import {spawn, execSync} from "child_process"; import {fileURLToPath} from "url";
@@ -108,6 +109,23 @@ try {
   // under other rules: the page opens with them in the address and replays the run there
   const other = JSON.stringify({flowgrow: "run", v: 1, rules: "x", seed: 5, config: {treeShare: 0, stackSize: 12}, moves: []}); await b.ev(`Flowgrow.loadRun(${JSON.stringify(other)})`); await sleep(1200); await ready(b);
   ok("a run played under other rules opens the page with those rules, and the rules line says so", (await b.ev("Flowgrow.run().seed")) === 5 && (await b.ev("Flowgrow.run().cfg.treeShare")) === 0 && /treeShare=0/.test(await b.ev("document.getElementById('testLine').textContent")), await b.ev("document.getElementById('testLine').textContent"));
+  ok("no page errors", b.errors.length === 0, b.errors.join(" | ").slice(0, 300));
+} finally { await b.stop() }
+// the green takeover (LOU-307): off in the config, on with ?greenTakeover=true on the test build. A prairie tile in hand takes over green of its level, the board data and the words say so, it is a move of the run, and with the switch off there is no such move
+b = await launch();
+try {
+  const TK = TEST + "?seed=7&stackSize=12&lockEvery=500&opening=habitat%201,prairie%201,marsh%201&greenTakeover=true";
+  await b.goto(TK); ok("the test build starts with the takeover on, and the rules line says so", (await ready(b)) && (await b.ev("Flowgrow.run().cfg.greenTakeover")) === true && /greenTakeover=true/.test(await b.ev("document.getElementById('testLine').textContent")));
+  await b.ev("Flowgrow.tap([7, 4])");   // the first tile is green: it is planted beside the source
+  const o = JSON.parse(await b.ev("JSON.stringify(Flowgrow.options().filter(o => o.p[0] === 7 && o.p[1] === 4))"));
+  ok("with a prairie tile in hand, the green beside the source is one move on that tile: a takeover to level 2 for 3 points", o.length === 1 && o[0].does === "takeover" && o[0].l === 2 && o[0].pts === 3, JSON.stringify(o));
+  await b.ev("Flowgrow.tap([7, 4])"); const cell = await b.ev("document.getElementById('t-7-4').dataset.kind + '/' + document.getElementById('t-7-4').dataset.level"), msg = await b.ev("document.getElementById('msg').textContent");
+  ok("tapping it makes level 2 prairie, the board data says so, and the words say what happened", cell === "prairie/2" && /Prairie took over green, level 2/.test(msg) && (await b.ev("Flowgrow.run().taken")) === 1, cell + " · " + msg);
+  await b.goto(TK); await ready(b);
+  ok("it is a move of the run: a reload replays it", (await b.ev("Flowgrow.run().moves.length")) === 2 && (await b.ev("document.getElementById('t-7-4').dataset.kind + '/' + document.getElementById('t-7-4').dataset.level")) === "prairie/2");
+  await b.ev("Flowgrow.undo()"); ok("and undo steps back to the green", (await b.ev("document.getElementById('t-7-4').dataset.kind + '/' + document.getElementById('t-7-4').dataset.level")) === "green/1" && (await b.ev("Flowgrow.run().taken")) === 0);
+  const keys = JSON.parse(await b.ev("JSON.stringify(Object.keys(localStorage))")); await b.goto(TEST + "?seed=7&stackSize=12&lockEvery=500&opening=habitat%201,prairie%201,marsh%201"); await ready(b);
+  ok("with the switch off (the usual game) there is no such move, and the run is saved apart from the takeover's", (await b.ev("Flowgrow.run().cfg.greenTakeover")) === false && (await b.ev("Flowgrow.tap([7, 4]); Flowgrow.options().filter(o => o.p[0] === 7 && o.p[1] === 4).length")) === 0 && keys.every(k => k.startsWith("flowgrow.test.")), keys.join(", "));
   ok("no page errors", b.errors.length === 0, b.errors.join(" | ").slice(0, 300));
 } finally { await b.stop() }
 console.log(bad ? `${bad} check(s) FAILED` : "all checks passed"); process.exit(bad ? 1 : 0);

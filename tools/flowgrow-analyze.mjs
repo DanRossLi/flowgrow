@@ -25,7 +25,7 @@ let S; try { S = R.replay(CFG, run.seed, run.moves) } catch (e) { die(`The run d
 
 console.log(`seed ${run.seed} · replayed score ${S.score} (saved ${run.score}) · ${S.moves.length} moves · locks ${S.lockUsed} · top level ${S.top} · over ${S.over}`);
 const by = {}, lv = {}, lockLv = {}, lockCopies = {};
-for (const e of S.log) { if (e.did === "plant" || e.did === "combine" || (e.did === "widen" && e.pts)) { const k = e.did + (e.t.c ? " of copies" : " of dealt tiles"); by[k] = (by[k] || 0) + e.pts; const key = e.did + " to level " + e.l; lv[key] = (lv[key] || 0) + 1 }
+for (const e of S.log) { if (e.did === "plant" || e.did === "combine" || e.did === "takeover" || (e.did === "widen" && e.pts)) { const k = e.did + (e.t.c ? " of copies" : " of dealt tiles"); by[k] = (by[k] || 0) + e.pts; const key = e.did + " to level " + e.l; lv[key] = (lv[key] || 0) + 1 }
   if (e.did === "lock") { const key = (e.t.k === "r" ? "river " : "habitat ") + "L" + e.t.l; lockLv[key] = (lockLv[key] || 0) + 1; lockCopies[key] = (lockCopies[key] || 0) + e.copies.length } }
 console.log("points from:", Object.entries(by).map(([k, v]) => `${k} ${v}`).join(" · "));
 const low = S.log.filter(e => e.did === "plant" && e.l < e.t.l);   // bare ground mode "downgrade": tiles planted as level 1 (they are inside the "plant" points above)
@@ -34,6 +34,10 @@ console.log("placements:", Object.entries(lv).sort((a, b) => a[0].localeCompare(
 console.log("locks (count, average copies banked):", Object.entries(lockLv).sort().map(([k, v]) => `${k}: ${v} (${(lockCopies[k] / v).toFixed(1)})`).join(" · "));
 const top = Math.max(S.top, 1);
 console.log(`final island: ${Object.keys(S.h).length} habitats, ${Object.keys(S.r).length} river tiles, ${Object.keys(S.lk).length} locked. Habitats by level:`, Array.from({length: top}, (_, i) => `L${i + 1}:${Object.values(S.h).filter(v => v === i + 1).length}`).join(" "));
+// What the green takeover did in this run (LOU-307; replayed move by move): the takeovers by kind and from lock copies, the points they scored, the most one scored, and the green habitats left at the end.
+if (CFG.greenTakeover || S.log.some(e => e.did === "takeover")) { const o = {n:0, pts:0, big:0, copies:0, copyPts:0, kind:{m:0, p:0, t:0}, lv:{}};
+  for (const e of S.log) if (e.did === "takeover") { o.n++; o.pts += e.pts; o.big = Math.max(o.big, e.pts); o.kind[e.t.b]++; o.lv[e.l] = (o.lv[e.l] || 0) + 1; if (e.t.c) { o.copies++; o.copyPts += e.pts } }
+  console.log(`green takeover: ${o.n} takeovers (${o.kind.m} marsh, ${o.kind.p} prairie, ${o.kind.t} trees; ${o.copies} with lock copies) · ${o.pts} points from them (${Math.round(100 * o.pts / Math.max(1, S.score))}% of ${S.score}; ${o.copyPts} from lock copies) · the most one scored ${o.big} · to level ${Object.keys(o.lv).sort((a, b) => a - b).map(l => `${l}: ${o.lv[l]}`).join(", ") || "none"} · ${Object.keys(S.h).filter(k => !S.hb[k]).length} green habitats on the island at the end`) }
 // What the plant rules of LOU-301 did in this run (replayed move by move): marsh tiles with nothing to plant them on, and prairie planted beyond the river's reach.
 if (CFG.marshNeedsRiver || CFG.prairieSpreads) { const T = R.fresh(CFG, run.seed), m = {marshTurns:0, marshNoBank:0, marshDiscards:0, prairieTurns:0, spreadOffered:0, spreadPlanted:0};
   for (const mv of run.moves) { const t = (mv.a === "p" || mv.a === "d") && T.q[mv.i];

@@ -90,7 +90,7 @@ const hexd = (x, z) => { x = Math.abs(x); z = Math.abs(z); return Math.max(x, x 
 
 // The rings (LOU-317): every cell the tile in hand can go to has a soft dashed white ring with a faint white fill (22%), pulsing slowly; a cell that combines is tinted gold, a river raise teal. The points are text inside the ring, not a pill.
 // d: dashed. The rest (lock mode and the cell a carried tile hovers over) are solid.
-const RING = {plant:{c:[1, 1, 1], a:1, f:.22, w:.07, d:1}, extend:{c:[1, 1, 1], a:1, f:.22, w:.07, d:1}, combine:{c:[1, .92, .6], a:1, f:.32, w:.08, d:1}, widen:{c:[.78, 1, .94], a:1, f:.28, w:.075, d:1},
+const RING = {plant:{c:[1, 1, 1], a:1, f:.22, w:.07, d:1}, extend:{c:[1, 1, 1], a:1, f:.22, w:.07, d:1}, combine:{c:[1, .92, .6], a:1, f:.32, w:.08, d:1}, takeover:{c:[.76, .64, 1], a:1, f:.3, w:.08, d:1}, widen:{c:[.78, 1, .94], a:1, f:.28, w:.075, d:1},
   pick:{c:[.95, .72, .15], a:1, f:.16, w:.1}, lockable:{c:[.98, .92, .7], a:.95, f:.1, w:.07}, copy:{c:[.25, .78, .68], a:.95, f:.1, w:.075}, high:{c:[.55, .6, .62], a:.8, f:.05, w:.05}};
 
 function mount(B) {
@@ -415,7 +415,7 @@ if (art && art.animal && quality !== "low") for (const s of riverSegs) { const s
   function buildRings() { if (EXM) { ringList = []; ringMesh.geometry.dispose(); ringMesh.geometry = new T.BufferGeometry(); ringTags = []; return }   // an example island has no rings
     const list = [], tags = [], opts = B.options(), lk = B.lock(), pend = S.pend[0];
     if (!S.over && !lk.mode) for (const o of opts) { const c = cellAt(o.p[0], o.p[1]); if (!c) continue; list.push({x:c.x, z:c.z, kind:o.does});
-      const L = B.optLabel(o); if (L.main || L.note) tags.push({id:"o" + c.k, cell:c, text:L.main, note:L.note || "", cls:"rt " + (o.does === "widen" || (o.does === "plant" && o.mult > 1) ? "teal " : "gold ") + (o.does === "combine" ? "lg" : o.does === "plant" ? "sm" : "md"), dy:-.38}) }
+      const L = B.optLabel(o); if (L.main || L.note) tags.push({id:"o" + c.k, cell:c, text:L.main, note:L.note || "", cls:"rt " + (o.does === "widen" || (o.does === "plant" && o.mult > 1) ? "teal " : o.does === "takeover" ? "violet " : "gold ") + (o.does === "combine" || o.does === "takeover" ? "lg" : o.does === "plant" ? "sm" : "md"), dy:-.38}) }
     if (pend) { const c = cells[idx[unkey(pend)[1] * W + unkey(pend)[0]]]; list.push({x:c.x, z:c.z, kind:"pick"}) }
     if (lk.mode) { if (!lk.sel) { for (const L of lk.list) { const c = cellAt(L.p[0], L.p[1]); list.push({x:c.x, z:c.z, kind:"lockable"}); tags.push({id:"l" + c.k, cell:c, text:L.n + (L.n === 1 ? " copy" : " copies"), cls:"gold", dy:.5}) } }
       else { const got = rules.copiesOf(S, lk.sel), c0 = cellAt(lk.sel[0], lk.sel[1]); list.push({x:c0.x, z:c0.z, kind:"lockable"}); tags.push({id:"l" + c0.k, cell:c0, text:"lock", cls:"gold", dy:.5});
@@ -474,7 +474,7 @@ if (art && art.animal && quality !== "low") for (const s of riverSegs) { const s
   const lab = document.createElement("div"); lab.id = "l3labels"; board.insertBefore(lab, B.top);
   if (!document.getElementById("l3css")) { const st = document.createElement("style"); st.id = "l3css";
     st.textContent = "#l3labels{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:1}.l3t{position:absolute;left:0;top:0;min-width:22px;height:22px;padding:0 7px;border-radius:11px;background:#fff;color:#24434a;font:800 13px/22px 'M PLUS Rounded 1c',Nunito,sans-serif;text-align:center;white-space:nowrap;box-shadow:0 2px 6px rgba(10,40,50,.28),0 0 0 1.5px rgba(10,40,50,.12);will-change:transform;font-variant-numeric:tabular-nums}" +
-      ".l3t.p{color:#7a5a10}.l3t.m{color:#0d6a66}.l3t.t{color:#0f4f31}.l3t.r{color:#1f5f8f}.l3t.gold{color:#7a5a10}.l3t.teal{color:#0f7a66}.l3t.grey{color:#6b7b7e}.l3t.fx{background:rgba(255,243,184,.96);color:#5a3d06;font-size:15px}" +
+      ".l3t.p{color:#7a5a10}.l3t.m{color:#0d6a66}.l3t.t{color:#0f4f31}.l3t.r{color:#1f5f8f}.l3t.gold{color:#7a5a10}.l3t.teal{color:#0f7a66}.l3t.violet{color:#5a3a9a}.l3t.grey{color:#6b7b7e}.l3t.fx{background:rgba(255,243,184,.96);color:#5a3d06;font-size:15px}" +
       ".l3t svg{width:10px;height:11px;margin-right:3px;vertical-align:-1px}#l3labels.night .l3t{box-shadow:0 2px 8px rgba(2,12,24,.6),0 0 0 2px rgba(255,255,255,.16)}" +   // at night a pill gets a faint halo
       ".l3t.rt{min-width:0;height:auto;padding:0;border-radius:0;background:none;box-shadow:none;font:800 13px/1 'M PLUS Rounded 1c',Nunito,sans-serif;text-shadow:0 0 3px rgba(255,255,255,.95),0 0 7px rgba(255,255,255,.75),0 1px 1px rgba(255,255,255,.9)}" +   // the points inside a ring (LOU-317): dark gold text with a pale halo, no pill
       ".l3t.rt.lg{font-size:16px}.l3t.rt.sm{font-size:12px}.l3t.rt b{display:block;font-weight:800}.l3t.rt small{display:block;margin-top:1px;font:800 10.5px/1.1 'M PLUS Rounded 1c',Nunito,sans-serif}#l3labels.night .l3t.rt{color:#ffe7a0;text-shadow:0 0 4px rgba(8,16,34,.95),0 1px 2px rgba(8,16,34,.95)}#l3labels.night .l3t.rt.teal{color:#8ef0dc}" +

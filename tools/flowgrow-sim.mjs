@@ -9,7 +9,7 @@
 //   node tools/flowgrow-sim.mjs 500 riverShare=0.15  500 runs with one value changed (any config value, as key=value)
 //   node tools/flowgrow-sim.mjs --test               the rule checks; exits with an error if one fails
 //
-// The simple player combines when it can, otherwise plants, and uses each river tile where it opens the most land.
+// The simple player combines when it can, otherwise takes over green (LOU-307, with the switch on), otherwise plants, and uses each river tile where it opens the most land.
 // No run may crash or stall, and every run must rebuild exactly from its seed and moves.
 import fs from "fs"; import path from "path"; import {fileURLToPath} from "url"; import {spawnSync} from "child_process";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -20,6 +20,7 @@ function load() { const window = {FLOWGROW_SIM:true};
   return {R:window.Flowgrow.rules, base:window.FLOWGROW} }
 const {R, base} = load();
 const BASE = R.tidy(base).cfg;
+const GREEN = process.argv.includes("--green");   // print the report's green-on-the-map line even with the green takeover off (LOU-307), to compare with it on
 // The rule checks are written for these values, the first build's, so tuning flowgrow.config.js never breaks them (the pilot pile, for one,
 // changes the pile; bare ground takes any level, and the bare ground rule is checked on its own below). The report and the command line use the config file as it is.
 const REF = (() => { const t = R.tidy({...base, map:["_____________", "_BB__________", "__B_______B__", "__________BB_", "______T______", "_____________", "___BB________", "_____________", "_____________"],
@@ -41,7 +42,7 @@ function turn(S) { const c = S.cfg;
     if (b && b.n > 0 && c.lockEvery > 0 && S.toLock === c.lockEvery - 1) return R.lock(S, b.p) } // use each lock just before the next one arrives
   const opts = R.options(S, 0), t = S.q[0]; if (!opts.length) return R.discard(S, 0);
   let o = null;
-  if (t.k === "h") o = opts.find(x => x.does === "combine") || opts[0];      // combine when it can, otherwise plant
+  if (t.k === "h") o = opts.find(x => x.does === "combine") || opts.find(x => x.does === "takeover") || opts[0];      // combine when it can, otherwise take over green (LOU-307: only with the switch on), otherwise plant
   else { let best = -1; for (const x of opts) { const n = R.opens(S, 0, x) + (x.does === "widen" ? .5 : 0); if (n > best) { best = n; o = x } } } // a tie goes to widening, which uses no land
   return R.place(S, 0, o.p) }
 // What the plant rules do to the tile in hand (LOU-301): how often a marsh tile has no tile next to the river free to plant on, and how often prairie plants beyond the river's reach.
@@ -71,6 +72,13 @@ function upStats(cfg, S) { const T = R.fresh(cfg, S.seed), o = {steppeUps:0, mea
       if (r.does === "plant" && past) o.pineTrees++ }
     else m.a === "d" ? R.discard(T, m.i) : m.a === "l" ? R.lock(T, [m.x, m.y]) : m.a === "u" ? R.pick(T, m.x + "," + m.y, m.f) : R.end(T) }
   return o }
+// What the green takeover did in a run (LOU-307), worked out by replaying its moves: the takeovers (by kind, from lock copies, and the points they scored) and how many green habitats were on the map at the middle of the run
+// (after half of its moves) and at the end of it.
+function takeStats(cfg, S) { const T = R.fresh(cfg, S.seed), o = {n:0, pts:0, copies:0, copyPts:0, big:0, kind:{m:0, p:0, t:0}, mid:-1, end:0}, half = Math.floor(S.moves.length / 2), green = () => Object.keys(T.h).filter(k => !T.hb[k]).length;
+  for (const m of S.moves) { if (m.a === "p") { const t = T.q[m.i], r = R.place(T, m.i, [m.x, m.y]); if (r.does === "takeover") { o.n++; o.pts += r.pts; o.big = Math.max(o.big, r.pts); o.kind[t.b]++; if (t.c) { o.copies++; o.copyPts += r.pts } } }
+    else m.a === "d" ? R.discard(T, m.i) : m.a === "l" ? R.lock(T, [m.x, m.y]) : m.a === "u" ? R.pick(T, m.x + "," + m.y, m.f) : R.end(T);
+    if (o.mid < 0 && T.moves.length >= half) o.mid = green() }
+  o.end = green(); if (o.mid < 0) o.mid = o.end; return o }
 // What the marsh river multiplier did in a run (LOU-309), worked out by replaying its moves: every score a marsh tile earned (planted, combined onto, lifted by roots) by its multiplier, the points
 // from marsh, the largest single marsh score, and the points each marsh tile earned over the run (the most one tile earned says whether a marsh tile became a farm).
 function marshStats(cfg, S) { const T = R.fresh(cfg, S.seed), o = {b:{}, pts:0, big:0, tile:{}};   // b: how many marsh scores had each multiplier (keyed by the multiplier: the ramp can have halves)
@@ -104,6 +112,9 @@ function report(cfg, runs) { const res = []; for (let seed = 1; seed <= runs; se
   const trees = cfg.treeShare > 0;   // trees (LOU-302) are dealt: the report says what they did (with treeShare 0 it is as it was)
   console.log(`  habitats on the map  ${f1(avg(ok.map(r => r.hab)))} (planted ${f1(avg(S.map(s => s.planted)))}, combined ${f1(avg(S.map(s => s.combined)))})`);
   if (cfg.prairieShare + cfg.marshShare > 0 || trees) console.log(`  kinds on the map     ${f1(avg(S.map(s => Object.keys(s.h).filter(k => !s.hb[k]).length)))} green · ${f1(avg(S.map(s => Object.values(s.hb).filter(b => b === "p").length)))} prairie · ${f1(avg(S.map(s => Object.values(s.hb).filter(b => b === "m").length)))} marsh${trees ? ` · ${f1(avg(S.map(s => Object.values(s.hb).filter(b => b === "t").length)))} trees` : ""} habitats at the end`);
+  if (cfg.greenTakeover || GREEN) { const Q = S.map(s => takeStats(cfg, s));   // the green takeover (LOU-307): with it on, what it did; --green prints the green line with it off too, for the comparison
+    if (cfg.greenTakeover) console.log(`  green takeover       ${f2(avg(Q.map(q => q.n)))} takeovers a run (${f2(avg(Q.map(q => q.kind.m)))} marsh, ${f2(avg(Q.map(q => q.kind.p)))} prairie, ${f2(avg(Q.map(q => q.kind.t)))} trees; ${f2(avg(Q.map(q => q.copies)))} with lock copies) · none in ${share(Q, q => q.n === 0)} of runs · at most ${Math.max(...Q.map(q => q.n))} in a run · ${f1(avg(Q.map(q => q.pts)))} points from them (${Math.round(100 * sum(Q.map(q => q.pts)) / Math.max(1, sum(S.map(s => s.score))))}% of the score; ${f1(avg(Q.map(q => q.copyPts)))} from lock copies) · the most one scored ${Math.max(...Q.map(q => q.big))}`);
+    console.log(`  green on the map     ${f1(avg(Q.map(q => q.mid)))} green habitats at the middle of a run (after half its moves) · ${f1(avg(Q.map(q => q.end)))} at the end`) }
   console.log(`  river tiles          ${f1(avg(ok.map(r => r.riv)))} with the source (extended ${f1(avg(S.map(s => s.extended)))}, widened ${f1(avg(S.map(s => s.widened)))})`);
   if (cfg.riverMaxLevel > cfg.riverReach.length) console.log(`  river levels         the river rises to level ${f1(avg(ok.map(r => Math.max(...Object.values(r.S.r).map(v => v.l)))))} on average (${f1(avg(S.map(s => s.log.filter(e => e.did === "widen" && e.l > cfg.riverReach.length).length)))} level-ups past the widest)${cfg.riverScore === "none" ? "" : `, ${f1(avg(S.map(s => s.log.reduce((n, e) => n + (e.did === "widen" || e.did === "extend" ? e.pts : 0), 0))))} points from river moves`}`);
   console.log(`  discards             ${f2(avg(S.map(s => s.discarded)))} a run · at least one in ${share(S, s => s.discarded > 0)} of runs`);
@@ -927,6 +938,89 @@ function checks() { let n = 0; const fails = [];
   { const pages = ["foothills", "ridges", "terraces"].map(id => fs.readFileSync(path.join(ROOT, "elevation", id, "index.html"), "utf8")), sw = fs.readFileSync(path.join(ROOT, "sw.js"), "utf8");
     ok("each elevation map sets elevation on for itself and nothing else of the game's, loads the game from two folders up, and is in the service worker's list", pages.every((h, i) => h.includes(`"elevationShape":"${["foothills", "ridges", "terraces"][i]}"`) && h.includes('"elevation":true') && h.includes('src="../../flowgrow.js"') && !/(?:href|src)="(?!\.\.\/\.\.\/|https?:|#)[^"]*"/.test(h)) && ["./elevation/", "./elevation/foothills/", "./elevation/ridges/", "./elevation/terraces/"].every(u => sw.includes(`"${u}"`))) }
 
+  // ----- green is taken over (LOU-307; Dan, Nov 21: "scrub right now is "any tile" therefore it's special is that any tile can go on top and "take over"", "green will fade as it becomes converted and or taken over"). With greenTakeover
+  // on, a marsh, prairie or trees habitat put on an unlocked green habitat of its own level turns it into its own kind one level up and scores like a combine, if the green tile is a place the taker could be planted. It is off in the
+  // config file, and REF has it off, so every check above is about the game as it was.
+  ok("the config file has the green takeover off, with every level open (Dan decides after the numbers)", BASE.greenTakeover === false && BASE.greenTakeoverMaxLevel === 15);
+  { const a = cfgWith({}), b = cfgWith({greenTakeover:true}), c = cfgWith({greenTakeover:true, greenTakeoverMaxLevel:3}), d = cfgWith({greenTakeoverMaxLevel:3});
+    ok("takeover: both values are part of the ruleset key when it is on, and with it off the usual game's key is what it was", R.rulesKey(a) === R.rulesKey(d) && R.rulesKey(a) !== R.rulesKey(b) && R.rulesKey(b) !== R.rulesKey(c)) }
+  { const t = R.tidy({...REF, greenTakeover:"maybe", greenTakeoverMaxLevel:0}, REF); ok("a bad value for the takeover is refused and the old one stands", same(t.bad, ["greenTakeover", "greenTakeoverMaxLevel"]) && t.cfg.greenTakeover === false && t.cfg.greenTakeoverMaxLevel === 15) }
+  for (const [name, mode] of [["refuse", RF], ["downgrade", DG]]) {
+    const tk = (opening, o = {}) => run(opening, {...mode, greenTakeover:true, ...o});
+    const put = (S, p, b, l = 1, f) => { const k = R.key(p); S.h[k] = l; if (b) S.hb[k] = b; if (f) S.hf[k] = f; S.top = Math.max(S.top, l) };   // a habitat written straight onto the island (b: its kind, none for green)
+    for (const [b, word] of [["p", "prairie"], ["m", "marsh"], ["t", "trees"]]) for (const L of [1, 3]) { const S = tk([word + " " + L]); put(S, E, null, L); const a = R.place(S, 0, E), pts = R.scoreOf(S.cfg, L + 1);   // a level 3 tile can't be planted on bare ground under "refuse", but a takeover is not a planting, as a combine isn't
+      ok(`takeover (${name}): a level ${L} ${word} tile on a level ${L} green habitat makes level ${L + 1} ${word} and scores ${pts}, as a takeover (not a planting, not a combine)`, a && a.does === "takeover" && a.l === L + 1 && a.pts === pts && at(S, E) === L + 1 && S.hb["7,4"] === b && S.score === pts && S.taken === 1 && S.planted === 0 && S.combined === 0 && S.top === L + 1 && !S.hf["7,4"] && Object.keys(S.h).length === 1) }
+    { const S = run(["prairie 1"], mode); put(S, E, null);
+      ok(`takeover (${name}): with it off (the config's value) a prairie tile has no move on green, and the text is the old one`, does(S, E) === undefined && R.place(S, 0, E) === null && R.why(S, 0, E) === "That's Sprouts (level 1). Only a tile of the same kind and level goes on it." && S.taken === 0) }
+    { const S = tk(["prairie 1"]); put(S, E, null);
+      ok(`takeover (${name}): it is one move among the others: bare ground is still planted`, does(S, E) === "takeover" && does(S, W) === "plant" && R.options(S, 0).filter(o => o.does === "takeover").length === 1) }
+    { const S = tk(["prairie 1"]); put(S, E, null, 2);
+      ok(`takeover (${name}): green of another level isn't taken over, and the text says which level does`, does(S, E) === undefined && R.place(S, 0, E) === null && R.why(S, 0, E) === "That's Meadow (level 2). Only a level 2 tile can take it over.") }
+    { const S = tk(["prairie 1"]); put(S, E, null); S.lk["7,4"] = 1;
+      ok(`takeover (${name}): locked green can't be taken over`, does(S, E) === undefined && R.place(S, 0, E) === null && R.why(S, 0, E) === "That tile is locked.") }
+    { const S = tk(["prairie 1"]); ok(`takeover (${name}): a river tile isn't green and isn't taken over`, does(S, SRC) === undefined && R.why(S, 0, SRC) === "That's the river. Plant beside it.") }
+    { const S = tk(["habitat 1"]); put(S, E, null); const a = R.place(S, 0, E);
+      ok(`takeover (${name}): green on green is still a combine`, a && a.does === "combine" && at(S, E) === 2 && !("7,4" in S.hb) && S.combined === 1 && S.taken === 0) }
+    { const S = tk(["prairie 1"]); put(S, E, "m"); const a = R.place(S, 0, E);
+      ok(`takeover (${name}): a prairie tile on a marsh habitat of its level is still refused, and only green is taken over`, a === null && does(S, E) === undefined && R.why(S, 0, E) === "That's Marsh (level 1). Only a tile of the same kind and level goes on it.") }
+    { const S = tk(["trees 1"]); put(S, E, "p");
+      ok(`takeover (${name}): trees on another kind are refused too, and the text says green is the one they go on`, does(S, E) === undefined && R.why(S, 0, E) === "That's Prairie (level 1). Trees go on open land, on green of their level, or on a tree of the same level.") }
+    // where each kind can take over green: the planting test of the kind, asked of the green tile's cell
+    { const S = tk(["marsh 1"], {marshNeedsRiver:true, upgradeLevel:4}); put(S, E, null); put(S, [8, 4], null); S.r["6,4"].l = 2;   // (7,4) touches the river; (8,4) is within the level 2 river's reach but doesn't touch it
+      ok(`takeover (${name}): marsh takes over only green that touches a river tile or a reed bed`, does(S, E) === "takeover" && does(S, [8, 4]) === undefined && R.place(S, 0, [8, 4]) === null && R.why(S, 0, [8, 4]) === "Marsh takes over green only next to the river or a reed bed.");
+      put(S, [9, 4], "m", 4);   // a reed bed (a level 4 marsh) beside it
+      ok(`takeover (${name}): ... and green beside a reed bed too`, does(S, [8, 4]) === "takeover") }
+    { const S = tk(["marsh 1"]); put(S, E, null); put(S, [8, 4], null); S.r["6,4"].l = 2;   // marshNeedsRiver off (REF): marsh plants wherever green does, so it takes over wherever the reach is
+      ok(`takeover (${name}): with marshNeedsRiver off marsh takes over green within reach, as it plants`, does(S, E) === "takeover" && does(S, [8, 4]) === "takeover" && does(S, [9, 4]) === undefined) }
+    { const S = tk(["prairie 1"], {prairieSpreads:true}); put(S, [8, 4], null);   // outside the level 1 river's reach, with no prairie beside it
+      ok(`takeover (${name}): prairie takes over green only within reach or beside prairie`, does(S, [8, 4]) === undefined && R.why(S, 0, [8, 4]) === "Prairie takes over green only within reach of the river or next to prairie.");
+      put(S, E, null); put(S, [9, 4], "p"); ok(`takeover (${name}): ... within reach, and beside a prairie habitat (even a locked one) outside it`, does(S, E) === "takeover" && does(S, [8, 4]) === "takeover");
+      S.lk["9,4"] = 1; ok(`takeover (${name}): ... a locked prairie habitat still counts`, does(S, [8, 4]) === "takeover") }
+    { const S = tk(["prairie 1"], {prairieSpreads:false}); put(S, [8, 4], null); put(S, [9, 4], "p");
+      ok(`takeover (${name}): with prairieSpreads off prairie takes over only green within reach`, does(S, [8, 4]) === undefined && R.why(S, 0, [8, 4]) === "Prairie takes over green only within reach of the river.") }
+    { const S = tk(["trees 1"], {upgradeLevel:4}); put(S, [8, 4], null);   // outside the reach, with no pine-oneer: trees don't take over every green (since LOU-314 they overgrow nothing)
+      ok(`takeover (${name}): trees take over green only within reach or beside a pine-oneer`, does(S, [8, 4]) === undefined && R.why(S, 0, [8, 4]) === "Trees take over green only within reach of the river, or next to a pine-oneer.");
+      put(S, E, null); put(S, [9, 4], "t", 4, "roots"); ok(`takeover (${name}): ... within reach yes, beside a roots tree no`, does(S, E) === "takeover" && does(S, [8, 4]) === undefined);
+      S.hf["9,4"] = "pine"; ok(`takeover (${name}): ... beside a pine-oneer yes, outside the reach`, does(S, [8, 4]) === "takeover") }
+    // the level limit
+    { const S = tk(["prairie 3"], {greenTakeoverMaxLevel:3}), T = tk(["prairie 4"], {greenTakeoverMaxLevel:3}), U = tk(["prairie 4"]); put(S, E, null, 3); put(T, E, null, 4); put(U, E, null, 4);
+      ok(`takeover (${name}): greenTakeoverMaxLevel 3 takes over green up to level 3 and no higher, and the text says so; at 15 level 4 is taken over`, does(S, E) === "takeover" && does(T, E) === undefined && R.place(T, 0, E) === null && R.why(T, 0, E) === "Green above level 3 can't be taken over." && does(U, E) === "takeover") }
+    // the marsh river multiplier
+    { const S = tk(["marsh 1"], {marshRiverMultiplier:true}); put(S, E, null); const q = R.nbrs(S.cfg, E).find(p => R.key(p) !== "6,4" && R.codeAt(S.cfg, p) === "_"); S.r[R.key(q)] = {l:1, from:"6,4", n:S.rn++};   // a second river tile beside it: two touch it, so x2 on this ramp
+      const O = R.options(S, 0).find(o => o.p + "" === E + ""), a = R.place(S, 0, E);
+      ok(`takeover (${name}): a marsh takeover scores times the river tiles touching it (two touch it: x2, so 6 points for level 2)`, O && O.mult === 2 && O.mk === "marsh" && a && a.does === "takeover" && a.pts === 6 && S.score === 6);
+      const P = tk(["prairie 1"], {marshRiverMultiplier:true}); put(P, E, null); ok(`takeover (${name}): ... and only marsh is multiplied`, R.options(P, 0).find(o => o.p + "" === E + "").pts === 3) }
+    // upgrades and picks
+    { const o = {upgradeLevel:4}, M = tk(["marsh 3"], {...o, marshNeedsRiver:true}); put(M, E, null, 3); R.place(M, 0, E);
+      ok(`takeover (${name}): a marsh result at level 4 is a reed bed, and has nothing to pick`, M.h["7,4"] === 4 && R.upgradeOf(M.cfg, {k:"h", b:"m", l:4}) === "reed" && R.reedBedAt(M, "7,4") && M.pend.length === 0 && !M.hf["7,4"]);
+      for (const [b, word, picks] of [["p", "prairie", ["steppe", "meadow"]], ["t", "trees", ["roots", "pine"]]]) { const S = tk([word + " 3", "habitat 1"], o); put(S, E, null, 3); R.place(S, 0, E);
+        ok(`takeover (${name}): a ${word} result at level 4 asks for a pick before the next move, and has no upgrade of its own`, S.h["7,4"] === 4 && S.hb["7,4"] === b && S.pend.length === 1 && S.pend[0] === "7,4" && !S.hf["7,4"] && R.options(S, 0).length === 0 && R.discard(S, 0) === null);
+        const p = R.pick(S, "7,4", picks[0]); ok(`takeover (${name}): ... the pick is made, the game goes on, and undo takes the move and the pick back together`, p && S.hf["7,4"] === picks[0] && S.pend.length === 0 && R.options(S, 0).length > 0 && R.undoCount(S.moves) === 2) }
+      { const S = tk(["prairie 4"], o); put(S, E, null, 4); R.place(S, 0, E); ok(`takeover (${name}): a result at level 5 asks for a pick too (level 4 or more with no upgrade, not exactly 4)`, S.h["7,4"] === 5 && S.pend.length === 1) }
+      { const S = tk(["habitat 1"], o); S.q[0] = {k:"h", l:4, b:"p", f:"steppe", c:1}; put(S, E, null, 4); const a = R.place(S, 0, E);
+        ok(`takeover (${name}): a lock's copy takes over like any tile; its upgrade is not carried over, so the result has none and a pick is asked`, a && a.does === "takeover" && S.hb["7,4"] === "p" && S.h["7,4"] === 5 && !S.hf["7,4"] && S.pend.length === 1 && S.copyPlaced === 1 && S.copyPoints === a.pts) } }
+    // a real move: the log, the replay and the undo
+    { const S = tk(["habitat 1", "prairie 1", "habitat 1"], {lockEvery:0}); R.place(S, 0, E); const a = R.place(S, 0, E), T = R.replay(S.cfg, S.seed, S.moves), U = R.replay(S.cfg, S.seed, S.moves.slice(0, S.moves.length - R.undoCount(S.moves)));
+      ok(`takeover (${name}): a takeover is a move of the run: it is in the log, replays exactly from the seed and moves, and undo steps back to the green`, a && a.does === "takeover" && same(T, S) && at(U, E) === 1 && !("7,4" in U.hb) && U.taken === 0 && S.taken === 1 && /Prairie \(level 1\), dealt · took over green at 7,4, now level 2 Prairie · \+3 · score 4/.test(R.logText(S))) }
+    // whole runs of random legal moves with every kind, picks and locks
+    { const cfg = cfgWith({...mode, greenTakeover:true, marshNeedsRiver:true, prairieSpreads:true, upgradeLevel:4, prairieShare:.3, marshShare:.3, treeShare:.2, levelOdds:.5, marshRiverMultiplier:true, opening:["habitat 1", "habitat 1", "prairie 1", "marsh 1", "river", "river"], lockEvery:6, stackSize:40, riverShare:.15});
+      let takes = 0, bad = 0, changed = 0, wrong = 0, sums = 0, replays = 0, ends = 0;
+      for (const sd of [3, 8, 12, 21]) { const S = R.fresh(cfg, sd); let z = sd * 37 + 5, guard = 0; const rn = () => (z = (z * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+        while (!S.over && guard++ < 4000) { if (S.pend.length) { const k = S.pend[0]; R.pick(S, k, R.PICKS[S.hb[k]][Math.floor(rn() * 2)]); continue }
+          if (!S.q.length) { const lk = [...Object.keys(S.h), ...Object.keys(S.r)].map(R.unkey).find(p => R.lockable(S, p) && R.copiesOf(S, p).copies.length); if (!lk) { R.end(S); break } R.lock(S, lk); continue }
+          const o = R.options(S, 0); if (!o.length || rn() < .08) { R.discard(S, 0); continue } R.place(S, 0, o[Math.floor(rn() * o.length)].p) }
+        const T = R.fresh(cfg, sd); let tt = 0;   // every kind change is a takeover, of an unlocked green habitat of the tile's own level
+        for (const m of S.moves) { const kinds = Object.fromEntries(Object.keys(T.h).map(k => [k, T.hb[k] || ""]));
+          if (m.a === "p") { const t = T.q[m.i], k = m.x + "," + m.y; if (t.k === "h" && t.b && k in T.h && !T.hb[k]) { if (T.h[k] !== t.l || k in T.lk) wrong++; else tt++ } }
+          m.a === "p" ? R.place(T, m.i, [m.x, m.y]) : m.a === "d" ? R.discard(T, m.i) : m.a === "l" ? R.lock(T, [m.x, m.y]) : m.a === "u" ? R.pick(T, m.x + "," + m.y, m.f) : R.end(T);
+          for (const k in kinds) if ((T.hb[k] || "") !== kinds[k]) changed += (T.hb[k] || "") !== "" && kinds[k] === "" ? 0 : 1 }   // green to another kind is the takeover; anything else would be a change of kind
+        takes += S.taken; if (S.taken !== tt) bad++; if (S.over && guard < 4000) ends++; if (same(S, R.replay(cfg, sd, S.moves))) replays++;
+        if (S.planted + S.combined + S.taken + S.extended + S.widened + S.discarded === S.used && S.log.reduce((n, e) => n + e.pts, 0) === S.score) sums++ }
+      ok(`a whole run of random legal moves with every kind, picks and locks and the takeover on (${name}), four seeds: each ends, takeovers happened, each was on unlocked green of its tile's level, no tile changed kind otherwise, the score is the sum of the moves, and each replays from its seed`,
+        ends === 4 && takes > 0 && bad === 0 && wrong === 0 && changed === 0 && sums === 4 && replays === 4) }
+    { let bad = 0; for (let s = 1; s <= 8; s++) { const a = play(cfgWith({...mode, greenTakeover:true, prairieShare:.3, marshShare:.3, treeShare:.2, lockEvery:10, stackSize:30}), s); if (a.error || !a.S.over) bad++ }
+      ok(`the simple player finishes whole runs with the takeover on (${name}), eight seeds, and each rebuilds from its seed and moves`, bad === 0) } }
+
   for (const f of fails) console.log("FAILED: " + f);
   console.log(fails.length ? `${fails.length} of ${n} rule checks failed` : `all ${n} rule checks passed`);
   if (fails.length) process.exitCode = 1 }
@@ -955,7 +1049,7 @@ const args = process.argv.slice(2);
 if (args.includes("--test")) checks();
 else if (args.includes("--elevation")) { const over = {}; for (const a of args) { const m = /^([A-Za-z]+)=(.*)$/.exec(a); if (m && R.KEYS.some(k => k[0] === m[1])) over[m[1]] = m[2] } elevationReport(+(args.find(a => /^\d+$/.test(a)) || 1000), over) }
 else { let runs = 1000; const over = {};
-  for (const a of args) { if (/^\d+$/.test(a)) runs = +a; else { const m = /^([A-Za-z]+)=(.*)$/.exec(a);
+  for (const a of args) { if (a === "--green") continue; if (/^\d+$/.test(a)) runs = +a; else { const m = /^([A-Za-z]+)=(.*)$/.exec(a);
       if (m && m[1] === "picks") { for (const f of m[2].split(",")) { const kind = Object.keys(R.PICKS).find(k => R.PICKS[k].includes(f)); if (!kind) { console.error(`Unknown upgrade: ${f}. picks=... takes steppe or meadow, and roots or pine, separated by commas.`); process.exit(1) } PICKIDX[kind] = R.PICKS[kind].indexOf(f) } continue }   // picks=meadow,pine: which upgrades the simple player picks
       if (!m || !R.KEYS.some(k => k[0] === m[1])) { console.error(`Unknown setting: ${a}. Use key=value with one of: ${R.KEYS.map(k => k[0]).join(", ")}`); process.exit(1) } over[m[1]] = m[2] } }
   const t = R.tidy({...BASE, ...over}, BASE); if (t.bad.length) { console.error("Refused: " + t.bad.join(", ")); process.exit(1) }
