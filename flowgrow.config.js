@@ -84,9 +84,15 @@ window.FLOWGROW = {
     polar: 0.98,
     fov: 30,
     nearTilesAcross: 4,     // the closest zoom shows about this many tiles across; the farthest shows the whole island (the opening view, Dan: "Follow the spec")
-    budget: {triangles: 250000, drawCalls: 150, fps: 30},   // what the build aims for at 390x844 on q=med: the triangles drawn (the main pass plus the shadow pass) with the whole island in view. If a late game would pass it, the plants and grass are thinned (never below 30 per cent)
+    budget: {triangles: 250000, drawCalls: 150, fps: 30},   // what the build aims for at 390x844 on q=med: the triangles drawn (the main pass plus the shadow pass) with the whole island in view. If a late game would pass it, the plants and grass are thinned (never below 30 per cent)
     budgetScale: {low: 0.5, med: 1, high: 2.2},             // the budget's multiple for each tier (the high tier is for a desktop)
     shadowMap: {low: 0, med: 1024, high: 2048},             // shadow map size by quality (0: no shadows)
-    pixelRatio: {touch: 1.5, other: 2}                       // the highest pixel ratio drawn
+    pixelRatio: {touch: 1.5, other: 2},                      // the highest pixel ratio drawn
+    // The level number of a tile (LOU-313, Dan, Nov 22: "have a way such that the level numbers 'blend in' rather than stick out with the pill"): a pale numeral pressed into the ground at the front of the
+    // tile, in place of the white pill. x, z: where it lies in the tile's own coordinates (the tile's circumradius is 1, z towards the camera); width: how wide the picture is; stretch: how much taller than wide it
+    // is drawn on the ground (1 is square; the camera looks down at the ground from about 34 degrees, so a stretch above 1 makes the number read as upright); lift: how far above the ground; clear: the radius round
+    // it where no plant, stone or grass grows; grow: how many times larger it is drawn with the whole island in view (1 is its true size, the size it has zoomed in); glow: how much it lights itself at night.
+    // Placeholders, see Linear: CANON.md wins wherever it disagrees.
+    numeral: {x: 0.02, z: 0.74, width: 0.62, stretch: 1.5, lift: 0.034, clear: 0.36, grow: 2, glow: 0.5}
   },
 };

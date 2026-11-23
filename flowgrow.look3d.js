@@ -21,10 +21,13 @@ const G = window, T = G.THREE;
 
 // ---------- the look's numbers: flowgrow.config.js look3d, with these as the fallback if a value is missing
 const DEFAULTS = {quality:"auto", dayNight:"cycle", dayLength:240, startPhase:.2, azimuth:.62, polar:.98, fov:30, nearTilesAcross:4,
-  budget:{triangles:250000, drawCalls:150, fps:30}, budgetScale:{low:.5, med:1, high:2.2}, shadowMap:{low:0, med:1024, high:2048}, pixelRatio:{touch:1.5, other:2}};
+  budget:{triangles:250000, drawCalls:150, fps:30}, budgetScale:{low:.5, med:1, high:2.2}, shadowMap:{low:0, med:1024, high:2048}, pixelRatio:{touch:1.5, other:2},
+  numeral:{x:.02, z:.74, width:.62, stretch:1.5, lift:.034, clear:.36, grow:2, glow:.5}};   // the level number pressed into the ground (LOU-313): see flowgrow.config.js
 const merge = (a, b) => { const o = {...a}; if (b) for (const k in b) o[k] = b[k] && typeof b[k] === "object" && !Array.isArray(b[k]) ? merge(a[k] || {}, b[k]) : b[k]; return o };
 const C3 = merge(DEFAULTS, G.FLOWGROW && G.FLOWGROW.look3d);
 const QS = new URLSearchParams(location.search);
+// The level number of a tile (LOU-313): a habitat shows its level; a river tile shows its level from 2 (a level 1 river tile has none, as before). It lies on the ground at NUM.x, NUM.z of the tile.
+const NUM = C3.numeral, numberOf = d => d.level ? d.level : d.river > 1 ? d.river : 0;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t) };
 
@@ -196,10 +199,12 @@ function mount(B) {
     // the grass field: a world-aligned jittered grid, so it carries on across tile borders. A grid point belongs to the cell it falls in. It keeps off the river and off rock. A blade is ONE triangle that faces
     // the camera (the camera's angle never changes, so a blade can always face it, turned a little for variety): a sixth of the triangles of a cone, and the field is most of an empty island.
     const nG0 = b.p.length / 9;
+    const nsp = []; for (const c of [cl, ...cl.nbc]) if (c && c.d && numberOf(c.d)) nsp.push([c.x + NUM.x, c.z + NUM.z]);   // where level numbers lie on this tile and its neighbours (a number at a tile's front corner lies over the ground of the tiles in front of it)
     if (d.code !== "B" && d.kind !== "m") { const sp = .165 / Math.sqrt(q.grass * lk.grass * Math.max(.3, detail)), r = rng(cl.i * 131 + 7), near = d.river || cl.nbc.some(n => n && n.d && (n.d.river || n.d.code === "T")), per = quality === "low" ? 2 : quality === "med" ? 3 : 4;
       const gx0 = Math.floor((cx - 1) / sp), gx1 = Math.ceil((cx + 1) / sp), gz0 = Math.floor((cz - 1) / sp), gz1 = Math.ceil((cz + 1) / sp);
       for (let gx = gx0; gx <= gx1; gx++) for (let gz = gz0; gz <= gz1; gz++) {
         const X = (gx + hsh(gx, gz)) * sp, Z = (gz + hsh(gz + 7.3, gx - 3.1)) * sp, lx = X - cx, lz = Z - cz, ax = Math.abs(lx); if (ax > .866 || ax * .5 + .866 * Math.abs(lz) > .866) continue;
+        if (nsp.length && nsp.some(s => (X - s[0]) * (X - s[0]) + (Z - s[1]) * (Z - s[1]) < NUM.clear * NUM.clear)) continue;   // the clear patch of a level number: no grass on it
         if (hsh(gx + 11.7, gz - 5.3) > greenAt(X, Z) * .92) continue; if (near && riverD2(X, Z) < .36) continue;
         const gh = heightAt(X, Z), nzv = Math.sin(X * 1.3 + Z * .7) * Math.sin(Z * 1.9 - X * .8), dry = hsh(gx * 1.7, gz * 2.3) < .12 && d.kind !== "t";
         const base = dry ? GRD[hsh(gz, gx) < .5 ? 0 : 1] : GRN[Math.min(3, Math.max(0, Math.floor((nzv * .5 + .5) * 4)))], sc = .75 + hsh(gx, gz * 1.3) * .7;
@@ -388,12 +393,60 @@ function mount(B) {
     ringList = list; ringMesh.geometry.dispose(); ringMesh.geometry = ringGeom(list); ringTags = tags }
   let ringTags = [];
 
-  // ---------- labels: the white level pill on every tile and the tags of the rings, as DOM elements placed over the board from each tile's top (projected every frame the view moves). Pooled by id.
+  // ---------- level numbers (LOU-313; Dan, Nov 22: "have a way such that the level numbers 'blend in' rather than stick out with the pill"): a pale numeral pressed into the ground at the front of each tile, in
+  // place of the white pill. All of them are ONE mesh and one material (a texture holds the numbers 1 to 32, the game's top level is 15; each tile's quad takes its number from it), so they cost one draw call.
+  // A quad is laid over the ground as a small grid (each corner at the ground's height plus NUM.lift, with the ground's own normal), turned to the camera's azimuth so it reads straight on, lit and shaded by the
+  // scene like the ground (it receives the sun's shadow), and drawn after the river and before the rings. It grows with the zoom (NUM.grow times its size with the whole island in view, true size zoomed in),
+  // springs in with a tile that has just grown, brightens a little on the tile being aimed at, and lights itself a little at night so it stays readable. Plants keep off its patch (see the art and the grass).
+  const NCOLS = 8, NROWS = 4, NCELL = 128, NMAX = NCOLS * NROWS, NFONT = "'M PLUS Rounded 1c', Nunito, system-ui, sans-serif";
+  const numCv = document.createElement("canvas"); numCv.width = NCOLS * NCELL; numCv.height = NROWS * NCELL;
+  const numTex = new T.CanvasTexture(numCv); numTex.encoding = T.sRGBEncoding; numTex.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy()); numTex.minFilter = T.LinearMipmapLinearFilter;
+  // each number in a 128 px cell: a heavy rounded font (82 px for one digit, 64 for two), pale cream at 96 per cent with a darker olive shadow 4 px below it, so it reads as pressed in
+  function drawNumerals() { const x = numCv.getContext("2d"); x.clearRect(0, 0, numCv.width, numCv.height); x.textAlign = "center"; x.textBaseline = "alphabetic";
+    for (let n = 1; n <= NMAX; n++) { const cx = ((n - 1) % NCOLS + .5) * NCELL, cy = (Math.floor((n - 1) / NCOLS) + .5) * NCELL, s = String(n), px = n > 9 ? 64 : 82; x.font = "800 " + px + "px " + NFONT;
+      const m = x.measureText(s), by = cy + (m.actualBoundingBoxAscent != null ? (m.actualBoundingBoxAscent - m.actualBoundingBoxDescent) / 2 : px * .36);   // the glyph's own box is centred in the cell
+      x.lineJoin = "round"; x.lineWidth = 7; x.fillStyle = "rgba(28,44,14,.42)"; x.fillText(s, cx, by + 4);
+      x.strokeStyle = "rgba(28,44,14,.3)"; x.strokeText(s, cx, by);   // a thin dark edge round the number, so it still reads on pale ground (prairie, a frozen tile)
+      x.fillStyle = "rgba(244,240,200,.96)"; x.fillText(s, cx, by) }
+    numTex.needsUpdate = true }
+  drawNumerals(); if (document.fonts && document.fonts.load) document.fonts.load("800 82px " + NFONT, "0123456789").then(() => { if (alive) { drawNumerals(); requestRender() } }).catch(() => {});   // drawn at once, and again when the hosted font is in
+  const uNumS = {value:1}, uNumAim = {value:new T.Vector3(0, 0, 0)};   // the size (1 to NUM.grow); the aimed tile's number (x, z, how much it is aimed at)
+  const numMat = new T.MeshStandardMaterial({map:numTex, transparent:true, depthWrite:false, roughness:1, metalness:0});
+  numMat.onBeforeCompile = sh => { sh.uniforms.uTime = uTime; sh.uniforms.uNumS = uNumS; sh.uniforms.uNumAim = uNumAim; sh.uniforms.uGlow = uGlow;
+    sh.vertexShader = "uniform float uTime;\nuniform float uNumS;\nuniform vec3 uNumAim;\nattribute vec3 aNum;\nvarying float vNumAim;\n" + sh.vertexShader.replace("#include <begin_vertex>", "#include <begin_vertex>\n float a_ = (uTime - aNum.z) / .9;\n float e_ = a_ <= 0. ? 0. : a_ >= 1. ? 1. : pow(2., -10. * a_) * sin((a_ * 10. - .75) * 2.0944) + 1.;\n transformed.xz = aNum.xy + (transformed.xz - aNum.xy) * uNumS * max(e_, .01);\n vNumAim = uNumAim.z * (1. - smoothstep(.02, .08, length(aNum.xy - uNumAim.xy)));");
+    sh.fragmentShader = "uniform float uGlow;\nvarying float vNumAim;\n" + sh.fragmentShader.replace("#include <map_fragment>", "#include <map_fragment>\n diffuseColor.rgb *= 1. + .35 * vNumAim;").replace("#include <emissivemap_fragment>", "#include <emissivemap_fragment>\n totalEmissiveRadiance += diffuseColor.rgb * uGlow * " + NUM.glow.toFixed(3) + ";") };
+  const numMesh = new T.Mesh(new T.BufferGeometry(), numMat); numMesh.renderOrder = 2.5; numMesh.frustumCulled = false; numMesh.receiveShadow = true; numMesh.visible = false; scene.add(numMesh);
+  const numBirth = {}, NGU = 4, NGV = 3;   // when each tile's number began to spring in; the grid of a quad
+  // the number's quads for every tile that has one, rebuilt when any tile changes (the ground under a number follows its neighbours). born: the tiles that have just grown, whose number springs in with them.
+  function buildNumerals(born) { const pos = [], nor = [], uv = [], an = [], ind = [], rx = Math.cos(C3.azimuth), rz = -Math.sin(C3.azimuth), ux = -Math.sin(C3.azimuth), uz = -Math.cos(C3.azimuth);   // across the picture and up it (away from the camera), on the ground
+    const hw = NUM.width / 2, hh = hw * NUM.stretch, e = .02;
+    for (const cl of cells) { const d = cl.d; if (!d || d.code === "B") continue; const n = numberOf(d); if (!n) continue;
+      if (born && born.has(cl)) numBirth[cl.i] = reduced() ? -99 : uTime.value; const t0 = numBirth[cl.i] == null ? -99 : numBirth[cl.i], cx = cl.x + NUM.x, cz = cl.z + NUM.z;
+      const nn = Math.min(n, NMAX) - 1, col = nn % NCOLS, row = Math.floor(nn / NCOLS), u0 = col / NCOLS, u1 = (col + 1) / NCOLS, v1 = 1 - row / NROWS, v0 = 1 - (row + 1) / NROWS, base = pos.length / 3;
+      for (let j = 0; j <= NGV; j++) for (let i = 0; i <= NGU; i++) { const fu = i / NGU, fv = j / NGV, a = (fu * 2 - 1) * hw, b = (fv * 2 - 1) * hh, x = cx + rx * a + ux * b, z = cz + rz * a + uz * b;
+        const hx = (heightAt(x + e, z) - heightAt(x - e, z)) / (2 * e), hz = (heightAt(x, z + e) - heightAt(x, z - e)) / (2 * e), nl = Math.hypot(hx, 1, hz);
+        pos.push(x, heightAt(x, z) + NUM.lift, z); nor.push(-hx / nl, 1 / nl, -hz / nl); uv.push(u0 + (u1 - u0) * fu, v0 + (v1 - v0) * fv); an.push(cx, cz, t0) }
+      for (let j = 0; j < NGV; j++) for (let i = 0; i < NGU; i++) { const a = base + j * (NGU + 1) + i, c = a + NGU + 1; ind.push(a, a + 1, c, a + 1, c + 1, c) } }
+    const g = new T.BufferGeometry(); g.setAttribute("position", new T.Float32BufferAttribute(pos, 3)); g.setAttribute("normal", new T.Float32BufferAttribute(nor, 3)); g.setAttribute("uv", new T.Float32BufferAttribute(uv, 2)); g.setAttribute("aNum", new T.Float32BufferAttribute(an, 3)); g.setIndex(ind);
+    numMesh.geometry.dispose(); numMesh.geometry = g; numMesh.visible = ind.length > 0 }
+  const numScale = () => 1 + (NUM.grow - 1) * clamp((view.dist - fit.near) / Math.max(1e-6, fit.dist - fit.near), 0, 1);   // 1 zoomed right in, NUM.grow with the whole island in view
+
+  // ---------- what a screen reader hears: the tiles on the island, in a list nobody sees (the numbers are part of the picture now, so each tile with a level says it: "Prairie (level 4), column 3, row 5").
+  const sr = document.createElement("div"); sr.id = "l3sr"; sr.setAttribute("role", "list"); sr.setAttribute("aria-label", "Tiles on the island"); board.insertBefore(sr, B.top); let srSig = "";
+  function buildA11y() { const rows = [], sg = [];
+    for (const cl of cells) { const d = cl.d; if (!d || d.code === "B" || !(d.level || d.river)) continue; const t = d.level ? {k:"h", l:d.level, b:d.kind === "g" ? undefined : d.kind} : {k:"r", l:d.river};
+      const s = B.tileText(cfg, t) + (d.locked ? ", locked" : "") + ", column " + (cl.c + 1) + ", row " + (cl.r + 1); rows.push(s); sg.push(s) }
+    const sig = sg.join("|"); if (sig === srSig) return; srSig = sig; sr.textContent = ""; for (const s of rows) { const li = document.createElement("div"); li.setAttribute("role", "listitem"); li.textContent = s; sr.appendChild(li) } }
+
+  // ---------- labels: the lock badge of a locked tile and the tags of the rings, as DOM elements placed over the board from each tile's top (projected every frame the view moves). Pooled by id. (The level
+  // numbers are not labels any more: they lie on the ground, above.)
   const lab = document.createElement("div"); lab.id = "l3labels"; board.insertBefore(lab, B.top);
   if (!document.getElementById("l3css")) { const st = document.createElement("style"); st.id = "l3css";
     st.textContent = "#l3labels{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:1}.l3t{position:absolute;left:0;top:0;min-width:22px;height:22px;padding:0 7px;border-radius:11px;background:#fff;color:#24434a;font:800 13px/22px 'M PLUS Rounded 1c',Nunito,sans-serif;text-align:center;white-space:nowrap;box-shadow:0 2px 6px rgba(10,40,50,.28),0 0 0 1.5px rgba(10,40,50,.12);will-change:transform;font-variant-numeric:tabular-nums}" +
       ".l3t.p{color:#7a5a10}.l3t.m{color:#0d6a66}.l3t.t{color:#0f4f31}.l3t.r{color:#1f5f8f}.l3t.gold{color:#7a5a10}.l3t.teal{color:#0f7a66}.l3t.green{color:#0f5a33}.l3t.grey{color:#6b7b7e}.l3t.fx{background:rgba(255,243,184,.96);color:#5a3d06;font-size:15px}" +
-      ".l3t svg{width:10px;height:11px;margin-right:3px;vertical-align:-1px}#l3labels.night .l3t{box-shadow:0 2px 8px rgba(2,12,24,.6),0 0 0 2px rgba(255,255,255,.16)}"; document.head.appendChild(st) }   // at night a pill gets a faint halo
+      ".l3t svg{width:10px;height:11px;margin-right:3px;vertical-align:-1px}#l3labels.night .l3t{box-shadow:0 2px 8px rgba(2,12,24,.6),0 0 0 2px rgba(255,255,255,.16)}" +   // at night a pill gets a faint halo
+      ".l3t.lockb{min-width:22px;width:22px;padding:0;border-radius:50%;color:#24434a}.l3t.lockb svg{width:11px;height:12px;margin:0;vertical-align:-2px}" +   // the lock badge of a locked tile: a small round white badge with the padlock and no number
+      "#l3sr{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}"; document.head.appendChild(st) }   // the list for screen readers, off screen
   const LOCK = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10.500" width="14" height="10" rx="2.200" fill="currentColor"/><path d="M8 10.500V8a4 4 0 018 0v2.500" fill="none" stroke="currentColor" stroke-width="2.800"/></svg>';
   const pool = new Map(); let labFrame = 0; const pv = new T.Vector3();
   function label(id, text, cls, html) { let e = pool.get(id); if (!e) { e = {el:document.createElement("div"), x:-1, y:-1, seen:0, text:"", cls:""}; e.el.className = "l3t"; lab.appendChild(e.el); pool.set(id, e) }
@@ -405,10 +458,10 @@ function mount(B) {
   let labScale = 1; function computeLabScale() { pv.set(midX, ELAND, midZ).project(camera); const a = (pv.x * .5 + .5) * w; pv.set(midX + SQ, ELAND, midZ).project(camera); labScale = clamp(Math.abs((pv.x * .5 + .5) * w - a) / 62, .46, 1) }
   const pillY = d => { const art = G.Flowgrow3D && G.Flowgrow3D.art; return art && art.pillH ? art.pillH(d) : .3 };   // the height of a level pill above the ground: above the tile's plants (the art says how tall they are)
   function updateLabels(T0) { labFrame++; computeLabScale();
-    for (const cl of cells) { const d = cl.d; if (!d || d.code === "B") continue; const gnd = CH[cl.i];
-      if (d.level) { const cls = d.kind === "g" ? "" : d.kind; const e = label("p" + cl.k, String(d.level), cls, d.locked ? LOCK : ""); placeLabel(e, cl.x + .34, gnd + pillY(d), cl.z + .5) }   // a level pill sits at the foot of its tile, to the right and in front, so it stays with the tile whatever grows on it
-      else if (d.river > 1) { const e = label("p" + cl.k, String(d.river), "r", d.locked ? LOCK : ""); placeLabel(e, cl.x, gnd + .35, cl.z) }
-      else if (d.river && d.locked) { const e = label("p" + cl.k, "", "r", LOCK); placeLabel(e, cl.x, gnd + .35, cl.z) } }
+    for (const cl of cells) { const d = cl.d; if (!d || d.code === "B" || !d.locked) continue; const gnd = CH[cl.i];
+      // a locked tile has a small round lock badge where the level pill used to sit (at the foot of the tile, to the right and in front, so it stays with its tile whatever grows on it); its level is the number on the ground
+      if (d.level) { const e = label("k" + cl.k, "", "lockb", LOCK); placeLabel(e, cl.x + .34, gnd + pillY(d), cl.z + .5) }
+      else if (d.river) { const e = label("k" + cl.k, "", "lockb", LOCK); placeLabel(e, cl.x, gnd + .35, cl.z) } }
     for (const t of ringTags) { const e = label(t.id, t.text, t.cls, ""); placeLabel(e, t.cell.x, CH[t.cell.i] + (t.dy || .5) + .5, t.cell.z) }
     // the points that float up from a tile (the game's own list, which this look has to clear when they are done)
     for (let i = B.fx.length - 1; i >= 0; i--) { const f = B.fx[i], a = (T0 - f.t0) / 900; if (a >= 1) { B.fx.splice(i, 1); continue } const c = cellAt(f.p[0], f.p[1]); if (!c) continue;
@@ -449,7 +502,7 @@ function mount(B) {
   const aimN = new T.Vector3(), aimB = new T.Vector3(), aimV = new T.Vector2();
   function updateAim(dt) { const target = aimCell ? 1 : 0; if (aimOn === target && !aimCell) return; aimOn = reduced() ? target : aimOn + (target - aimOn) * Math.min(1, dt * 9); if (Math.abs(aimOn - target) < .01) aimOn = target;
     if (aimCell) { const dbs = renderer.getDrawingBufferSize(aimV), c = aimCell; aimN.set(c.x, CH[c.i] + .3, c.z).project(camera); aimB.set(c.x + 1.7, CH[c.i] + .3, c.z).project(camera);
-      uAim.value.set((aimN.x * .5 + .5) * dbs.x, (aimN.y * .5 + .5) * dbs.y, Math.abs(aimB.x - aimN.x) * .5 * dbs.x * 1.25 + 12, aimOn); uAimW.value.x = c.x; uAimW.value.y = c.z } else uAim.value.w = aimOn }
+      uAim.value.set((aimN.x * .5 + .5) * dbs.x, (aimN.y * .5 + .5) * dbs.y, Math.abs(aimB.x - aimN.x) * .5 * dbs.x * 1.25 + 12, aimOn); uAimW.value.x = c.x; uAimW.value.y = c.z; uNumAim.value.set(c.x + NUM.x, c.z + NUM.z, aimOn) } else { uAim.value.w = aimOn; uNumAim.value.z = aimOn } }   // the aimed tile's number brightens a little (uNumAim)
   const setAim = c => { if (c !== aimCell) { aimCell = c; requestRender() } };
   cv3.addEventListener("pointerdown", e => { try { cv3.setPointerCapture(e.pointerId) } catch (_) {} ptrs.set(e.pointerId, {x:e.clientX, y:e.clientY});
     if (ptrs.size === 1) { gesture = {x:e.clientX, y:e.clientY, moved:false, g0:groundAt(e.clientX, e.clientY) ? groundAt(e.clientX, e.clientY).clone() : null, tx:view.gx, tz:view.gz}; setAim(cellAtScreen(e.clientX, e.clientY)) }
@@ -490,6 +543,7 @@ function mount(B) {
     syncMs = performance.now() - t0;
     for (const cl of born.keys()) celebrate(cl, "grow"); for (const cl of frozen) celebrate(cl, "frost");
     if (changed.length && !queue.length) settle(true);
+    if (first || seedChanged || changed.length) buildNumerals(born); buildA11y();   // the level numbers on the ground and the list for screen readers
     buildRings(); dirtyLabels = true; requestRender() }
   let dirtyLabels = true, skyCtl = null;
   // where the fireflies live: over the springs and the wet, wooded and grown tiles (a tile with a higher level has more)
@@ -542,7 +596,7 @@ function mount(B) {
     if (!busy) { if (still) return; if (throttle) { idleFlip = !idleFlip; if (idleFlip) return } }
     const dt = lastT ? Math.min(.05, (T0 - lastT) / 1000) : 0; lastT = T0; dtLast = dt; if (!still) uTime.value += dt; if (skyCtl && skyCtl.update(dt)) dirtyRender = true;   // the day's clock and colours (step 4)
     for (const c of clouds) { c.position.x += c.userData.sp * dt; if (c.position.x > 120) c.position.x = -120 }
-    applyCamera(false); const cs = view.tx.toFixed(3) + view.tz.toFixed(3) + view.dist.toFixed(2); if (cs !== lastCam) { lastCam = cs; dirtyLabels = true; shadowDirty = true } if (shadowDirty) updateShadowCasters(); updateAim(dt);
+    applyCamera(false); uNumS.value = numScale(); const cs = view.tx.toFixed(3) + view.tz.toFixed(3) + view.dist.toFixed(2); if (cs !== lastCam) { lastCam = cs; dirtyLabels = true; shadowDirty = true } if (shadowDirty) updateShadowCasters(); updateAim(dt);
     popTick(); sparkTick(dt); pulseTick(); poseZoo(uTime.value);
     ringMat.opacity = still ? .9 : .72 + .26 * Math.sin(uTime.value * 3);
     renderer.render(scene, camera); dirtyRender = false; probeTick(T0); if (dirtyLabels || B.fx.length || Object.keys(B.pops).length) { updateLabels(T0); dirtyLabels = false }
@@ -561,11 +615,11 @@ function mount(B) {
   if (skyMod) skyCtl = skyMod.mount({scene, renderer, C3, QS, dayState, seaU, riverMat, sky, cloudMat, clouds, sun, hemi, lab, midX, midZ, uWind, uGlow, uTime, pointScale:pU.scale, reduced, quality:() => quality, mem:B.mem,
     progress:() => cfg.stackSize ? 1 - rules.left(S) / cfg.stackSize : null});   // "progress" mode: how far through the pile the run is (nothing for an endless pile)
   const ctl = {draw, resize, sync: syncState, scr, look, toggleFit, cycleTime: () => skyCtl ? skyCtl.cycle() : "", timeNote: () => skyCtl ? skyCtl.note() : "",
-    unmount() { alive = false; delete G.__flowgrow3d; for (const c of cells) { dropPop(c); if (c.mesh) c.mesh.geometry.dispose() } if (zGeo) zGeo.dispose(); if (skyCtl) skyCtl.dispose(); pGeo.dispose(); renderer.dispose(); cv3.remove(); lab.remove(); B.fit && (B.fit.style.top = "") }};
+    unmount() { alive = false; delete G.__flowgrow3d; for (const c of cells) { dropPop(c); if (c.mesh) c.mesh.geometry.dispose() } if (zGeo) zGeo.dispose(); if (skyCtl) skyCtl.dispose(); pGeo.dispose(); numMesh.geometry.dispose(); numMat.dispose(); numTex.dispose(); renderer.dispose(); cv3.remove(); lab.remove(); sr.remove(); B.fit && (B.fit.style.top = "") }};
   G.__flowgrow3d = {setTime: v => skyCtl ? skyCtl.setTime(v) : null, getTime: () => skyCtl ? skyCtl.getTime() : null, setQuality, setThrottle(v) { throttle = !!v }, stats, sample, renderer, scene, camera, view, dayState};
   syncState(); resize(); if (EXM) B.say("An example island: pan, zoom, and try Time of day in the Menu.");
   return ctl;
 }
 
-G.Flowgrow3D = {mount, util:{Batch, GT, put, rng, lin, hsh, pick, clamp, sstep, tpl}};
+G.Flowgrow3D = {mount, numeral:C3.numeral, util:{Batch, GT, put, rng, lin, hsh, pick, clamp, sstep, tpl}};   // numeral: where the level number lies on a tile (the art keeps its plants off that patch)
 })();

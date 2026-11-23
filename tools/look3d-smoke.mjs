@@ -80,6 +80,10 @@ for (const [w, h] of [[390, 844], [1280, 800]]) { b = await launch(w, h, 1); try
 // the same seed, the same twenty moves, in the simple look and in the 3D look: the moves and the score must match
 const results = {};
 for (const look of ["simple", "3d"]) { b = await launch(); try { await b.goto(`${url}?look=${look}&q=low&time=day&seed=5&stackSize=20`); if (look === "3d") await ready(b); else await sleep(800); await sleep(1500);
-    results[look] = JSON.parse(await b.ev(PLAY)); await sleep(800); if (b.errors.length) { bad++; console.log("FAIL  page errors in the " + look + " look: " + b.errors.join(" | ").slice(0, 300)) } } finally { await b.stop() } }
+    results[look] = JSON.parse(await b.ev(PLAY)); await sleep(800);
+    // the level numbers lie on the ground, one for each habitat and each river tile above level 1 (LOU-313), and a list nobody sees tells a screen reader about each tile; the white pills are gone
+    if (look === "3d") { const nm = JSON.parse(await b.ev("(() => { const S = Flowgrow.run(), m = window.__flowgrow3d.scene.children.find(o => o.renderOrder === 2.5); return JSON.stringify({want: Object.keys(S.h).length + Object.values(S.r).filter(r => r.l > 1).length, got: m ? m.geometry.attributes.position.count / 20 : -1, list: document.querySelectorAll('#l3sr > div').length, pills: document.querySelectorAll('#l3labels .l3t:not(.lockb)').length}) })()"));
+      ok("each tile with a level has its number on the ground, and a hidden list names the tiles", nm.want > 0 && nm.got === nm.want && nm.list >= nm.want, JSON.stringify(nm)) }
+    if (b.errors.length) { bad++; console.log("FAIL  page errors in the " + look + " look: " + b.errors.join(" | ").slice(0, 300)) } } finally { await b.stop() } }
 ok("the simple look and the 3D look play the same moves and score the same", JSON.stringify(results.simple) === JSON.stringify(results["3d"]) && results.simple.moves.length > 0, `${results.simple.moves.length} moves, score ${results.simple.score} and ${results["3d"].score}`);
 console.log(bad ? `${bad} check(s) FAILED` : "all checks passed"); process.exit(bad ? 1 : 0);

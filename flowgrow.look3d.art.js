@@ -12,8 +12,12 @@ const F = window.Flowgrow3D, T = window.THREE, U = F.util, {Batch, GT, put, rng,
 GT.disc = U.tpl(new T.CircleGeometry(1, 14).rotateX(-Math.PI / 2));   // a flat disc facing up: water, lily pads
 
 // ---------- state of the tile being built (the builders below draw into CB, around the tile's own centre)
-let CB = null, DET = 1, CG = GT.ico1, PT = GT.cone2, LK = false, SZ = 1, SW = 1, R = null, INFO = null, LOWPOLY = false;
+let CB = null, DET = 1, CG = GT.ico1, PT = GT.cone2, LK = false, SZ = 1, SW = 1, R = null, INFO = null, LOWPOLY = false, KEEP = null;
 const cnt = n => Math.max(1, Math.round(n * DET));
+// The clear patch (LOU-313): a tile that shows its level as a number pressed into the ground at the front of the tile keeps plants, stones and grass off a disc round it. The core says where it lies (F.numeral, in the
+// tile's own coordinates); KEEP is that disc [x, z, radius] while such a tile is built (null for a tile with no number). clearAt: is a thing standing at x, z (pad: how far it reaches round its foot) off the patch?
+const NUMC = F.numeral || {x:.02, z:.74, clear:.36};
+const clearAt = (x, z, pad) => { if (!KEEP) return true; const dx = x - KEEP[0], dz = z - KEEP[1], r = KEEP[2] + (pad || 0); return dx * dx + dz * dz >= r * r };
 const glow = f => { CB.gl = 10; f(); CB.gl = 0 };   // what is drawn in f lights itself a little at night (pond water, mushroom caps, seed heads): the core's tile shader reads the flag
 const ccache = {}, cl = hex => ccache[hex] || (ccache[hex] = lin(hex));
 const _c = new T.Color();
@@ -24,7 +28,7 @@ const P = (geo, x, y, z, sx, sy, sz, col, ry, rx, rz, am) => put(CB, geo, x, y, 
 const UP = new T.Vector3(0, 1, 0), _D = new T.Vector3(), _Q = new T.Quaternion(), _M = new T.Matrix4(), _V = new T.Vector3(), _S = new T.Vector3();
 function limb(x0, y0, z0, x1, y1, z1, r0, col, tp) { _D.set(x1 - x0, y1 - y0, z1 - z0); const len = _D.length(); if (len < 1e-4) return; _D.normalize(); _Q.setFromUnitVectors(UP, _D);
   _M.compose(_V.set(x0, y0, z0), _Q, _S.set(r0, len, r0)); CB.add(tp || GT.trunk, _M, tint(col), SW) }
-function scatter(n, Rr, minD) { const a = [], N = cnt(n); let tries = 0; while (a.length < N && tries < 1500) { tries++; const ang = R() * 6.2832, rr = Math.sqrt(R()) * Rr, x = Math.cos(ang) * rr, z = Math.sin(ang) * rr; let ok = true;
+function scatter(n, Rr, minD, pad) { const a = [], N = cnt(n); let tries = 0; while (a.length < N && tries < 1500) { tries++; const ang = R() * 6.2832, rr = Math.sqrt(R()) * Rr, x = Math.cos(ang) * rr, z = Math.sin(ang) * rr; let ok = clearAt(x, z, pad == null ? .06 : pad);
     for (let i = 0; i < a.length; i++) { const dx = a[i].x - x, dz = a[i].z - z; if (dx * dx + dz * dz < minD * minD) { ok = false; break } } if (ok) a.push({x, z}) } return a }
 
 // ---------- small plants
@@ -94,7 +98,7 @@ function reedStem(x, y, z, h, kind) { const lx = (R() - .5) * .2, lz = (R() - .5
   if (kind === "cat") { P(GT.cyl, tx, ty - .07, tz, .016, .085, .016, jit("#5c3a21", R, .08), 0, lz * 1.2, lx * 1.2); P(PT, tx, ty + .012, tz, .004, .05, .004, jit("#c9b078", R, .06), 0, lz * 1.2, lx * 1.2) }
   else if (kind === "plume") glow(() => P(CG, tx, ty + .01, tz, .016, .055, .016, jit(pick(["#cbb581", "#b39f84", "#d8c79a"], R), R, .08), R() * 6, lz * 1.3, lx * 1.3));
   else if (kind === "iris") { petals(tx, ty, tz, 3, .045, .024, ["#ffd01f", "#f7bd10"], 1.95); petals(tx, ty + .004, tz, 3, .03, .016, ["#f2b30d"], .55) } }
-function reedBed(n, Rr, hMax, ex) { const s = scatter(n, Rr, .064); for (const p of s) { if (ex && (p.x - ex.x) * (p.x - ex.x) + (p.z - ex.z) * (p.z - ex.z) < ex.r * ex.r) continue; const d = Math.hypot(p.x, p.z) / Rr, base = hMax * (1 - .5 * d * d), ns = 2 + ((R() * 3) | 0) * (DET > .6 ? 1 : 0);
+function reedBed(n, Rr, hMax, ex) { const s = scatter(n, Rr, .064, .14); for (const p of s) { if (ex && (p.x - ex.x) * (p.x - ex.x) + (p.z - ex.z) * (p.z - ex.z) < ex.r * ex.r) continue; const d = Math.hypot(p.x, p.z) / Rr, base = hMax * (1 - .5 * d * d), ns = 2 + ((R() * 3) | 0) * (DET > .6 ? 1 : 0);
     for (let k = 0; k < ns; k++) { const q = R(), kind = q < .34 ? "cat" : q < .58 ? "plume" : q < .66 ? "iris" : "blade"; reedStem(p.x + (R() - .5) * .045, 0, p.z + (R() - .5) * .045, base * (.55 + R() * .55), kind) } } }
 // an organic green pond: a wobbly outline (never a circle), wet mud round it, and water from a deep green-teal to a pale shore. A fan of triangles with a colour at each corner; INFO.pond remembers the first one
 // (a duck swims in it, a frog sits on its edge).
@@ -120,15 +124,15 @@ function pebbles(n, Rr) { for (const p of scatter(n, Rr, .1)) P(GT.dod, p.x, .00
 function fillGreen(L) { const y = 0; let i, s;
   if (L === 1) { for (const p of scatter(11, .62, .2)) sprout(p.x, y, p.z); for (const p of scatter(5, .6, .3)) tuft(p.x, y, p.z, .6) }
   else if (L === 2) { for (const p of scatter(15, .64, .17)) tuft(p.x, y, p.z, 1); for (const p of scatter(10, .62, .2)) flower(p.x, y, p.z) }
-  else if (L === 3) { s = scatter(7, .6, .3); for (i = 0; i < s.length; i++) { const rd = .14 + R() * .11; if (i % 3 === 2) shrub(s[i].x, y, s[i].z, rd); else berryShrub(s[i].x, y, s[i].z, rd, i % 3 === 1) } s = scatter(2, .5, .5); for (i = 0; i < s.length; i++) tree(i ? "birch" : "oak", s[i].x, y, s[i].z, .38, .12);
+  else if (L === 3) { s = scatter(7, .6, .3, .2); for (i = 0; i < s.length; i++) { const rd = .14 + R() * .11; if (i % 3 === 2) shrub(s[i].x, y, s[i].z, rd); else berryShrub(s[i].x, y, s[i].z, rd, i % 3 === 1) } s = scatter(2, .5, .5, .15); for (i = 0; i < s.length; i++) tree(i ? "birch" : "oak", s[i].x, y, s[i].z, .38, .12);
     for (const p of scatter(6, .64, .2)) tuft(p.x, y, p.z, .9); for (const p of scatter(4, .6, .22)) flower(p.x, y, p.z) }
-  else if (L === 4) { const sp4 = ["birch", "oak", "birch", "poplar", "oak", "cherry"]; s = scatter(6, .58, .34); for (i = 0; i < s.length; i++) tree(sp4[i % 6], s[i].x, y, s[i].z, .6 + R() * .2, .17 + R() * .04); for (const p of scatter(4, .62, .2)) fern(p.x, y, p.z, .7); for (const p of scatter(3, .62, .2)) shrub(p.x, y, p.z, .09 + R() * .05) }
-  else if (L === 5) { const sp5 = ["oak", "cherry", "maple", "birch", "oak", "poplar"]; s = scatter(5, .56, .5); for (i = 0; i < s.length; i++) tree(sp5[i % 6], s[i].x, y, s[i].z, .9 + R() * .2, .28 + R() * .04); for (const p of scatter(5, .62, .22)) fern(p.x, y, p.z, .9); for (const p of scatter(3, .62, .22)) shrub(p.x, y, p.z, .1 + R() * .05) }
-  else if (L === 6) { const sp6 = ["oak", "spruce", "birch", "fir", "oak", "poplar", "maple", "spruce", "oak", "snag"]; s = scatter(10, .58, .4); for (i = 0; i < s.length; i++) tree(sp6[i % 10], s[i].x, y, s[i].z, 1.15 + R() * .4, .3 + R() * .06); for (const p of scatter(8, .64, .2)) fern(p.x, y, p.z, 1);
-    for (const p of scatter(3, .64, .2)) tuft(p.x, y, p.z, .8); logPile(-.15, y, .55, .4, .045, .5); rock(.45, y, .5, .09, "#7d8f78"); for (i = 0; i < cnt(5); i++) mushroom(-.3 + i * .12, y, .55 + (R() - .5) * .05, .8 + R() * .5) }
-  else { tree("oak", 0, y, 0, 2.5, .85, 1.8); const sp7 = ["oak", "spruce", "maple", "fir", "oak", "spruce", "birch", "oak"]; for (i = 0; i < cnt(8); i++) { const a = i * .785 + R() * .3, rr = .6 + R() * .05; tree(sp7[i % 8], Math.cos(a) * rr, y, Math.sin(a) * rr, 1.4 + R() * .6, .34 + R() * .08) }
-    for (i = 0; i < cnt(8); i++) { const a5 = R() * 6.28, r5 = .3 + R() * .3; fern(Math.cos(a5) * r5, y, Math.sin(a5) * r5, 1.1) } for (i = 0; i < cnt(6); i++) { const a3 = R() * 6.28, r3 = .3 + R() * .25; mushroom(Math.cos(a3) * r3, y, Math.sin(a3) * r3, .9 + R() * .7) }
-    for (i = 0; i < 3; i++) { const a4 = R() * 6.28; rock(Math.cos(a4) * .45, y, Math.sin(a4) * .45, .1 + R() * .06, "#7d8f78") } logPile(.1, y, -.45, .45, .05, 2.2);
+  else if (L === 4) { const sp4 = ["birch", "oak", "birch", "poplar", "oak", "cherry"]; s = scatter(6, .58, .34, .2); for (i = 0; i < s.length; i++) tree(sp4[i % 6], s[i].x, y, s[i].z, .6 + R() * .2, .17 + R() * .04); for (const p of scatter(4, .62, .2, .1)) fern(p.x, y, p.z, .7); for (const p of scatter(3, .62, .2, .12)) shrub(p.x, y, p.z, .09 + R() * .05) }
+  else if (L === 5) { const sp5 = ["oak", "cherry", "maple", "birch", "oak", "poplar"]; s = scatter(5, .56, .5, .25); for (i = 0; i < s.length; i++) tree(sp5[i % 6], s[i].x, y, s[i].z, .9 + R() * .2, .28 + R() * .04); for (const p of scatter(5, .62, .22, .12)) fern(p.x, y, p.z, .9); for (const p of scatter(3, .62, .22, .15)) shrub(p.x, y, p.z, .1 + R() * .05) }
+  else if (L === 6) { const sp6 = ["oak", "spruce", "birch", "fir", "oak", "poplar", "maple", "spruce", "oak", "snag"]; s = scatter(10, .58, .4, .25); for (i = 0; i < s.length; i++) tree(sp6[i % 10], s[i].x, y, s[i].z, 1.15 + R() * .4, .3 + R() * .06); for (const p of scatter(8, .64, .2, .12)) fern(p.x, y, p.z, 1);
+    for (const p of scatter(3, .64, .2)) tuft(p.x, y, p.z, .8); logPile(-.2, y, -.5, .4, .045, .5); rock(.5, y, .25, .09, "#7d8f78"); for (i = 0; i < cnt(5); i++) mushroom(-.3 + i * .12, y, -.32 + (R() - .5) * .05, .8 + R() * .5) }
+  else { tree("oak", 0, y, 0, 2.5, .85, 1.8); const sp7 = ["oak", "spruce", "maple", "fir", "oak", "spruce", "birch", "oak"]; for (i = 0; i < cnt(8); i++) { const a = i * .785 + R() * .3, rr = .6 + R() * .05, tx = Math.cos(a) * rr, tz = Math.sin(a) * rr; if (clearAt(tx, tz, .25)) tree(sp7[i % 8], tx, y, tz, 1.4 + R() * .6, .34 + R() * .08) }
+    for (i = 0; i < cnt(8); i++) { const a5 = R() * 6.28, r5 = .3 + R() * .3, fx = Math.cos(a5) * r5, fz = Math.sin(a5) * r5; if (clearAt(fx, fz, .12)) fern(fx, y, fz, 1.1) } for (i = 0; i < cnt(6); i++) { const a3 = R() * 6.28, r3 = .3 + R() * .25, mx = Math.cos(a3) * r3, mz = Math.sin(a3) * r3; if (clearAt(mx, mz, .05)) mushroom(mx, y, mz, .9 + R() * .7) }
+    for (i = 0; i < 3; i++) { const a4 = R() * 6.28, kx = Math.cos(a4) * .45, kz = Math.sin(a4) * .45; if (clearAt(kx, kz, .12)) rock(kx, y, kz, .1 + R() * .06, "#7d8f78") } logPile(.1, y, -.45, .45, .05, 2.2);
     const bk = jit("#6d5036", R, .05), hd = Math.sin(.6), hz = Math.cos(.6); P(CG, hd * .105, y + .3, hz * .105, .075, .118, .03, bk, .6); P(CG, hd * .118, y + .3, hz * .118, .058, .098, .03, cl("#120c06"), .6);   // the hollow in the old oak
     for (i = 0; i < 4; i++) { const ra = i * 1.5 + .3; limb(Math.cos(ra) * .34, y + .01, Math.sin(ra) * .34, Math.cos(ra) * .08, y + .32, Math.sin(ra) * .08, .055, bk) } } }
 // prairie: open grass (placeholder, see Linear). Warm yellow-green, golden higher up; tall grass, wildflowers and seed heads. steppe: wind-bent grass and tiny seedlings. meadow: a dense flower carpet (bees come in the animals).
@@ -136,44 +140,44 @@ function fillPrairie(L, up) { const y = 0, t = Math.min(L, 7), bend = up === "st
   for (const p of scatter(8 + t * 3, .64, .17)) tuft(p.x, y, p.z, .9 + t * .12, GOLD, bend);
   for (const p of scatter(3 + t * 2, .62, .2)) { const h = .22 + R() * .18 + t * .03, lx = (R() - .5) * .2 * bend, c = jit(pick(GOLD, R), R, .1); limb(p.x, y, p.z, p.x + lx * h, y + h, p.z, .006, c, GT.stem4); P(CG, p.x + lx * h, y + h + .012, p.z, .012, .045, .012, jit("#c7a63a", R, .08), R() * 6) }   // seed heads
   for (const p of scatter(2 + t * 2, .62, .22)) flower(p.x, y, p.z, 1.1);
-  if (t >= 5) for (const p of scatter(3, .6, .3)) shrub(p.x, y, p.z, .1 + R() * .05);
+  if (t >= 5) for (const p of scatter(3, .6, .3, .15)) shrub(p.x, y, p.z, .1 + R() * .05);
   if (up === "steppe") for (const p of scatter(7, .6, .15)) sprout(p.x, y, p.z);
   if (up === "meadow") for (const p of scatter(24, .64, .12)) flower(p.x, y, p.z, 1.3) }
 // marsh: wet ground with standing water, reeds, cattails and lilies (placeholder, see Linear). A reed bed (the upgrade) is the reference's very dense reed tile and a heron.
 function fillMarsh(L, up) { const y = 0, t = Math.min(L, 7), bed = up === "reed";
-  const nw = bed ? 2 : 1 + (t > 2 ? 1 : 0) + (t > 4 ? 1 : 0); for (let i = 0; i < nw; i++) { const a = R() * 6.28, rr = .15 + R() * .3, pr = .14 + R() * .1 + t * .01; pond(Math.cos(a) * rr, y + i * .005, Math.sin(a) * rr, pr * 1.2, pr); if (R() < .6) pad(Math.cos(a) * rr + .05, y + .03 + i * .005, Math.sin(a) * rr, .055) }
+  const nw = bed ? 2 : 1 + (t > 2 ? 1 : 0) + (t > 4 ? 1 : 0); for (let i = 0; i < nw; i++) { const a = R() * 6.28, rr = .15 + R() * .3, pr = .14 + R() * .1 + t * .01; pond(Math.cos(a) * rr, y + i * .005, Math.sin(a) * rr, pr * 1.2, pr); const px = Math.cos(a) * rr + .05, pz = Math.sin(a) * rr; if (R() < .6 && clearAt(px, pz, .06)) pad(px, y + .03 + i * .005, pz, .055) }
   reedBed(bed ? 70 : 14 + t * 5, .68, bed ? 1.05 : .5 + t * .06, bed ? {x:.22, z:.12, r:.3} : null); if (!bed) for (const p of scatter(4, .62, .2)) tuft(p.x, y, p.z, .8);
   for (const p of scatter(3, .6, .3)) rock(p.x, y, p.z, .04 + R() * .03, "#7d8f78"); if (t >= 4 && !bed) tree("willow", .4, y, -.4, .75, .34); if (bed) heron(.18, y + .012, .1, .9, 1.15) }
 // trees (deep green, dark soil): from a sapling up (placeholder, see Linear). roots: roots coming out of the ground and reaching towards the neighbours. pine-oneer: young pines.
 function fillTrees(L, up) { const y = 0, t = Math.min(L, 7), sp = ["deep", "spruce", "oak", "fir", "deep", "birch", "spruce"], pn = up === "pine";
-  if (t === 7) { tree("deep", 0, y, 0, 2.5, .85, 1.8); for (let i = 0; i < cnt(6); i++) { const a = i * 1.05 + R() * .3, rr = .6 + R() * .05; tree(sp[i % 7], Math.cos(a) * rr, y, Math.sin(a) * rr, 1.4 + R() * .5, .34 + R() * .08) } }
-  else { const n = [1, 2, 3, 4, 5, 8][t - 1] || 5, s = scatter(n, .56, t < 3 ? .3 : .38); for (let i = 0; i < s.length; i++) { const h = [.3, .4, .5, .62, .85, 1.1][t - 1] + R() * .15; tree(pn ? (i % 2 ? "spruce" : "fir") : sp[i % 7], s[i].x, y, s[i].z, h, [.1, .12, .14, .17, .26, .3][t - 1]) } }
-  for (const p of scatter(2 + t, .62, .2)) fern(p.x, y, p.z, .5 + t * .08); for (let i = 0; i < cnt(2 + t); i++) { const a = R() * 6.28, r = .2 + R() * .4; mushroom(Math.cos(a) * r, y, Math.sin(a) * r, .7 + R() * .5) }
+  if (t === 7) { tree("deep", 0, y, 0, 2.5, .85, 1.8); for (let i = 0; i < cnt(6); i++) { const a = i * 1.05 + R() * .3, rr = .6 + R() * .05, tx = Math.cos(a) * rr, tz = Math.sin(a) * rr; if (clearAt(tx, tz, .25)) tree(sp[i % 7], tx, y, tz, 1.4 + R() * .5, .34 + R() * .08) } }
+  else { const n = [1, 2, 3, 4, 5, 8][t - 1] || 5, s = scatter(n, .56, t < 3 ? .3 : .38, .2); for (let i = 0; i < s.length; i++) { const h = [.3, .4, .5, .62, .85, 1.1][t - 1] + R() * .15; tree(pn ? (i % 2 ? "spruce" : "fir") : sp[i % 7], s[i].x, y, s[i].z, h, [.1, .12, .14, .17, .26, .3][t - 1]) } }
+  for (const p of scatter(2 + t, .62, .2, .1)) fern(p.x, y, p.z, .5 + t * .08); for (let i = 0; i < cnt(2 + t); i++) { const a = R() * 6.28, r = .2 + R() * .4, mx = Math.cos(a) * r, mz = Math.sin(a) * r; if (clearAt(mx, mz, .05)) mushroom(mx, y, mz, .7 + R() * .5) }
   if (up === "roots") for (let i = 0; i < 5; i++) { const a = i * 1.26 + .4, bk = jit("#6b4a2e", R, .08); limb(0, y + .05, 0, Math.cos(a) * .42, y + .015, Math.sin(a) * .42, .045, bk); limb(Math.cos(a) * .42, y + .015, Math.sin(a) * .42, Math.cos(a + .35) * .74, y + .004, Math.sin(a + .35) * .74, .025, bk) } }
 // the prestige of levels 8 to 15 (placeholder, see Linear): a thin gold rim on the tile's base from 8, a second rim from 12; the plants get larger and denser. Nothing is invented but light.
 function rim(rr, w, col) { for (let i = 0; i < 6; i++) { const a0 = (60 * i - 90) * Math.PI / 180, a1 = (60 * (i + 1) - 90) * Math.PI / 180, x0 = Math.cos(a0) * rr, z0 = Math.sin(a0) * rr, x1 = Math.cos(a1) * rr, z1 = Math.sin(a1) * rr;
-    for (let s = 0; s < 4; s++) { const t0 = s / 4, t1 = (s + 1) / 4, ax = x0 + (x1 - x0) * t0, az = z0 + (z1 - z0) * t0, bx = x0 + (x1 - x0) * t1, bz = z0 + (z1 - z0) * t1; limb(ax, .02, az, bx, .02, bz, w, col, GT.stem4) } } }
+    for (let s = 0; s < 4; s++) { const t0 = s / 4, t1 = (s + 1) / 4, ax = x0 + (x1 - x0) * t0, az = z0 + (z1 - z0) * t0, bx = x0 + (x1 - x0) * t1, bz = z0 + (z1 - z0) * t1; if (clearAt((ax + bx) / 2, (az + bz) / 2, .03)) limb(ax, .02, az, bx, .02, bz, w, col, GT.stem4) } } }
 function mountain() { const y = 0; const s = [[0, 0, .62], [-.3, .2, .42], [.32, -.1, .46], [.1, .35, .34], [-.2, -.3, .36]]; for (let i = 0; i < s.length; i++) { const [x, z, sc] = s[i], c = jit(pick(["#8f918c", "#9a9b95", "#82857f"], R), R, .08);
     P(GT.dod, x, y + sc * .2, z, sc * 1.15, sc * 1.25, sc * 1.05, c, R() * 6, R() * .3, R() * .3, 0); if (i === 0) P(GT.dod, 0, y + sc * 1.1, 0, sc * .7, sc * .9, sc * .65, jit("#a7a9a3", R, .06), R() * 6, 0, 0, 0) }
   for (let i = 0; i < cnt(5); i++) { const a = i * 1.4 + R(), rr = .55 + R() * .12; tree(R() < .5 ? "spruce" : "fir", Math.cos(a) * rr, y, Math.sin(a) * rr, .5 + R() * .3, .12 + R() * .05) } }
 function spring() { const y = 0; for (let i = 0; i < 7; i++) { const sa = -1.1 - i * .4 + R() * .2, sr = .5 + R() * .18; rock(Math.cos(sa) * sr, y, Math.sin(sa) * sr - .05, .16 + R() * .14) } rock(.05, y + .14, -.58, .2, "#9aa6a9");
   pond(.05, y + .05, .05, .3, .26); for (let i = 0; i < cnt(3); i++) { const a = R() * 6.28; rock(Math.cos(a) * .36, y, Math.sin(a) * .34, .04 + R() * .03) } tree("spruce", -.55, y, .5, .9, .22); tree("fir", .5, y, .55, .7, .19) }
 function emptyLand(d) { pebbles(d.reach ? 4 : 8, .7); if (!d.reach) { rock(-.3, 0, .2, .1); rock(.35, 0, -.25, .07) } for (const p of scatter(d.reach ? 3 : 1, .6, .3)) tuft(p.x, 0, p.z, .6); if (d.reach) for (const p of scatter(3, .6, .3)) flower(p.x, 0, p.z, .8) }
-function riverBank(d) { pebbles(5, .7); for (let i = 0; i < cnt(3); i++) { const a = R() * 6.28, r = .62 + R() * .1; rock(Math.cos(a) * r, 0, Math.sin(a) * r, .03 + R() * .03, pick(["#bfae86", "#a89a7a", "#c9b88c"], R)) }
-  if (d.fall) for (let i = 0; i < cnt(6); i++) { const a = R() * 6.28, r = .3 + R() * .3; P(GT.ico0, Math.cos(a) * r, .1, Math.sin(a) * r, .035, .03, .035, cl("#f4fffb"), R() * 6, 0, 0, 0) } }
+function riverBank(d) { pebbles(5, .7); for (let i = 0; i < cnt(3); i++) { const a = R() * 6.28, r = .62 + R() * .1, kx = Math.cos(a) * r, kz = Math.sin(a) * r, kc = pick(["#bfae86", "#a89a7a", "#c9b88c"], R); if (clearAt(kx, kz, .06)) rock(kx, 0, kz, .03 + R() * .03, kc) }
+  if (d.fall) for (let i = 0; i < cnt(6); i++) { const a = R() * 6.28, r = .3 + R() * .3, fx = Math.cos(a) * r, fz = Math.sin(a) * r; if (clearAt(fx, fz, .05)) P(GT.ico0, fx, .1, fz, .035, .03, .035, cl("#f4fffb"), R() * 6, 0, 0, 0) } }
 
-// where a level pill sits above the tile's ground: low, at the foot of the tile (the core puts it to the right and in front), so it stays with its tile whatever grows on it
+// where a lock badge sits above the tile's ground (it took the level pill's place, LOU-313): low, at the foot of the tile (the core puts it to the right and in front), so it stays with its tile whatever grows on it
 const pillH = d => d.level ? .12 : .3;
 // the cache: a tile's plants only depend on what it is, so identical tiles share one local batch (a few variants for variety), copied into the tile's mesh around its centre
 const CACHE = new Map();
 function build(d, variant, quality, dens) { const key = [d.code, d.kind, Math.min(d.level, 15), d.up, d.locked ? 1 : 0, d.river, d.reach, d.fall ? 1 : 0, variant, quality, dens.toFixed(2)].join("|"); let b = CACHE.get(key); if (b) return b;
-  b = new Batch(0); INFO = b.info = {perch:null, pond:null}; CB = b; DET = dens; CG = quality === "high" ? GT.ico1 : GT.ico0; PT = quality === "high" ? GT.cone2 : GT.blade; LK = !!d.locked; SW = LK ? 0 : 1; SZ = d.level > 7 ? 1 + .25 * Math.min(8, d.level - 7) / 8 : 1;
+  b = new Batch(0); INFO = b.info = {perch:null, pond:null}; CB = b; DET = dens; CG = quality === "high" ? GT.ico1 : GT.ico0; PT = quality === "high" ? GT.cone2 : GT.blade; LK = !!d.locked; SW = LK ? 0 : 1; SZ = d.level > 7 ? 1 + .25 * Math.min(8, d.level - 7) / 8 : 1; KEEP = d.code !== "B" && (d.level || d.river > 1) ? [NUMC.x, NUMC.z, NUMC.clear] : null;
   let seed = 1337 + variant * 977; for (let i = 0; i < key.length; i++) seed = (Math.imul(seed, 31) + key.charCodeAt(i)) | 0; R = rng(seed);
   quality3 = () => quality;
   if (d.code === "B") mountain(); else if (d.code === "T") spring();
   else if (d.river) riverBank(d); else if (d.level) { const L = d.level, ll = Math.min(L, 7); if (d.kind === "g") fillGreen(ll); else if (d.kind === "p") fillPrairie(L, d.up); else if (d.kind === "m") fillMarsh(L, d.up); else fillTrees(L, d.up);
     if (L >= 8) { rim(.86, .012, cl("#f2c14e")); if (L >= 12) rim(.8, .009, cl("#ffe9a8")) } } else emptyLand(d);
-  CB = null; INFO = null; b.p = Float32Array.from(b.p); b.n = Float32Array.from(b.n); b.c = Float32Array.from(b.c); b.s = Float32Array.from(b.s);   // kept as typed arrays: a cached look is small
+  CB = null; INFO = null; KEEP = null; b.p = Float32Array.from(b.p); b.n = Float32Array.from(b.n); b.c = Float32Array.from(b.c); b.s = Float32Array.from(b.s);   // kept as typed arrays: a cached look is small
   CACHE.set(key, b); return b }
 // what grows on a tile: the cached batch for its look, built around the tile's own origin (the core copies it into the tile, or keeps it as a mesh of its own while the tile springs up). The batch's info says where
 // the tallest tree and the first pond are (an owl, a woodpecker, a duck and a frog use them). ctx.detail is the core's global thinning (1 is all of it).
