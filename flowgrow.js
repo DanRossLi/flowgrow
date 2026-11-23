@@ -464,14 +464,18 @@ if (typeof document === "undefined" || G.FLOWGROW_SIM) return;
 // Locking (LOU-299) has its button, lock mode, a confirm card and the banked copies at the back of the pile.
 // Not built yet: Tuning, sound, the settings sheet and the painterly extras.
 // ====================================================================================================================
-const SRC_URL = document.currentScript.src, SW_URL = new URL("sw.js", SRC_URL).href; // sw.js sits next to this file (and the 3D look's files are found from here too)
+// Which page loaded this file (LOU-315, LOU-316). A page names itself before the file loads: window.FLOWGROW_PAGE = "test" is the test build (LOU-315): the plain look only, nothing that needs art, the rules switches in the address and the
+// test tools. With no name the page is as it always was. Nothing in the rules (part 1) knows about a page: a page only decides what this part draws, loads and keeps.
+const PAGE = G.FLOWGROW_PAGE || "", TEST = PAGE === "test";
+const SRC_URL = document.currentScript.src, SW_URL = new URL(G.FLOWGROW_SW || "sw.js", SRC_URL).href; // sw.js sits next to this file (and the 3D look's files are found from here too); a page can name its own (the test build's)
 const $ = id => document.getElementById(id), tx = (id, v) => { const e = $(id); if (e) e.textContent = v };
-const mem = {get(k) { try { return localStorage.getItem("flowgrow." + k) } catch (_) { return null } },
-  set(k, v) { try { if (v == null) localStorage.removeItem("flowgrow." + k); else localStorage.setItem("flowgrow." + k, v) } catch (_) {} }};
+const MEMP = TEST ? "flowgrow.test." : "flowgrow.";   // the test build has its own saved run, best scores and settings, so a test run never overwrites a player's run
+const mem = {get(k) { try { return localStorage.getItem(MEMP + k) } catch (_) { return null } },
+  set(k, v) { try { if (v == null) localStorage.removeItem(MEMP + k); else localStorage.setItem(MEMP + k, v) } catch (_) {} }};
 // Until Nov 20, 2026 Flowgrow lived inside Flow Tile and saved under "flowtile.flowgrow.". Both sites share one address, so those old
 // keys may still be here: bring the best score and any run in progress across once, then drop them.
-for (const k of ["best", "run.v2"]) try { const old = localStorage.getItem("flowtile.flowgrow." + k); if (old != null) { if (mem.get(k) == null) mem.set(k, old); localStorage.removeItem("flowtile.flowgrow." + k) } } catch (_) {}
-for (const v of ["run.v2", "run.v3", "run.v4", "run.v5", "run.v6", "run.v7", "run.v8", "run.v9", "run.v10", "run.v11"]) mem.set(v, null); // runs are saved as run.v12.<ruleset> since LOU-310 (Nov 21: one slot for each ruleset, so the elevation maps keep their own runs; run.v11 since the marsh ramp, run.v10 since LOU-309, run.v9 since the stranding guard, run.v8 since LOU-306) (a rule change can make an older move list illegal, so each one bumps the version): the older keys are dead, drop them
+if (!TEST) for (const k of ["best", "run.v2"]) try { const old = localStorage.getItem("flowtile.flowgrow." + k); if (old != null) { if (mem.get(k) == null) mem.set(k, old); localStorage.removeItem("flowtile.flowgrow." + k) } } catch (_) {}
+if (!TEST) for (const v of ["run.v2", "run.v3", "run.v4", "run.v5", "run.v6", "run.v7", "run.v8", "run.v9", "run.v10", "run.v11"]) mem.set(v, null); // runs are saved as run.v12.<ruleset> since LOU-310 (Nov 21: one slot for each ruleset, so the elevation maps keep their own runs; run.v11 since the marsh ramp, run.v10 since LOU-309, run.v9 since the stranding guard, run.v8 since LOU-306) (a rule change can make an older move list illegal, so each one bumps the version): the older keys are dead, drop them
 // Any config value can be changed in the address for one visit, as key=value, with the simulator's names and checks (LOU-309: "so he can play it"), for example ?marshRiverMultiplier=true. A run and its
 // best score are kept per ruleset, so they never mix with the default game's (and each ruleset has its own saved run slot, run.v12.<ruleset>).
 const QS = {}; for (const [k, v] of new URLSearchParams(location.search)) if (KEYS.some(e => e[0] === k)) QS[k] = v;
@@ -484,8 +488,8 @@ const pops = {}, fx = [];
 // ---------- the look (Dan, Nov 20): "simple" is flat blue and green hexes with a number on each, for piloting; "painted" is the first look.
 // The page opens on the simple look. ?look=painted shows the painted one for that visit, and the menu's Look row switches and remembers.
 // LOU-311: "3d" is a third look, drawn by flowgrow.look3d.js (and the vendored three.js), which are loaded only when it is asked for. Until it has loaded the page draws the simple look.
-const LOOKS = ["simple", "painted", "3d"];
-const WANT = (() => { const u = new URLSearchParams(location.search).get("look"), m = mem.get("look"); return LOOKS.includes(u) ? u : new URLSearchParams(location.search).has("example") ? "3d" : LOOKS.includes(m) ? m : "simple" })();   // ?example= (an example island) is only drawn by the 3D look, so it opens that
+const LOOKS = TEST ? ["simple"] : ["simple", "painted", "3d"];   // the test build has the plain look only (LOU-315): no ?look=, nothing that needs art
+const WANT = TEST ? "simple" : (() => { const u = new URLSearchParams(location.search).get("look"), m = mem.get("look"); return LOOKS.includes(u) ? u : new URLSearchParams(location.search).has("example") ? "3d" : LOOKS.includes(m) ? m : "simple" })();   // ?example= (an example island) is only drawn by the 3D look, so it opens that
 let skin = WANT === "3d" ? "simple" : WANT, L3 = null;   // L3: the 3D look's controller, once it is mounted (then skin is "3d")
 const flat = () => skin !== "painted";   // the simple look and the 3D look share the flat maths and the simple tile pictures
 $("app").classList.toggle("simple", flat());
@@ -869,7 +873,7 @@ function sync() { opts = options(S, 0); landSig = [...reachOf(S)].join(";") + (C
   { const lb = $("lockBtn"); lb.hidden = !CFG.lockEnabled; lb.classList.toggle("on", lockMode); lb.classList.toggle("none", !hasLock(S)); tx("lockN", CFG.lockEvery === 0 ? "∞" : S.locks); tx("lockIn", CFG.lockEvery > 0 ? "next in " + (CFG.lockEvery - S.toLock) : "") }
   $("endq").hidden = !waiting || !!lockSel; $("lockq").hidden = !lockSel; if (lockSel) lockCard();
   if (S.over && !wonShown) result(); if (!S.over) wonShown = false; $("win").hidden = !S.over; $("app").classList.toggle("won", S.over);
-  mem.set(SLOT, S.over ? null : JSON.stringify({seed:S.seed, moves:S.moves, at:Date.now(), rules:RK})); if (L3) L3.sync(); draw() }
+  mem.set(SLOT, S.over ? null : JSON.stringify({seed:S.seed, moves:S.moves, at:Date.now(), rules:RK})); if (TEST) { mirror(); testLine() } if (L3) L3.sync(); draw() }
 // When the tiles run out: the score, the best score on this device, the top level and what was done.
 function result() { wonShown = true; const best = +mem.get(BEST) || 0, low = S.log.filter(e => e.did === "plant" && e.l < e.t.l).length; if (S.score > best) mem.set(BEST, String(S.score));
   $("wScore").innerHTML = `<b>${S.score} points</b> · ${S.score > best ? (best ? `New best (was ${best})` : "New best") : `Best ${best}`}`;
@@ -880,7 +884,7 @@ function result() { wonShown = true; const best = +mem.get(BEST) || 0, low = S.l
 // ---------- a run: new, saved after every move, rebuilt from its seed and moves on reload (a finished or day-old run starts fresh)
 const urlSeed = new URLSearchParams(location.search).get("seed");
 function newRun() { S = fresh(CFG, urlSeed != null && urlSeed !== "" ? urlSeed : Math.floor(Math.random() * 1e9)); for (const k in pops) delete pops[k]; fx.length = 0; lockMode = false; lockSel = null; say(S.q[0] && S.q[0].k === "r" ? "Tap land next to your river to make it longer." : "Tap green land to place the tile in hand."); sync() }
-function load() { try { const d = JSON.parse(mem.get(SLOT) || "null"); if (!d || d.rules !== RK || !Array.isArray(d.moves) || Date.now() - d.at > 12 * 3600e3) return false; S = replay(CFG, d.seed, d.moves); return !S.over } catch (_) { return false } }
+function load() { try { const d = JSON.parse(mem.get(SLOT) || "null"); if (!d || d.rules !== RK || !Array.isArray(d.moves) || Date.now() - d.at > 12 * 3600e3 || (TEST && urlSeed != null && urlSeed !== "" && d.seed !== seedOf(urlSeed))) return false; S = replay(CFG, d.seed, d.moves); return !S.over } catch (_) { return false } }   // on the test build ?seed= means that run: a saved run of another seed isn't picked up
 // With elevation, a tap that has nothing else to say gives the height of the land it was on (LOU-310), and a river tile that stepped down says so.
 const heightLine = (p, res) => { if (!CFG.elevation) return ""; const k = key(p), h = elevOf(CFG, S.seed)[k]; return res.does === "extend" && fallAt(S, k) ? `Waterfall: the river steps down to height ${h}.` : `Height ${h}.` };
 function tap(p) { if (!S || S.over || !p) return;
@@ -895,6 +899,33 @@ function tap(p) { if (!S || S.over || !p) return;
   say(S.locks > had ? "You earned a lock. Tap Lock to use it." : res.lifts.length ? `Roots +${res.lifts.length} ${res.lifts.length === 1 ? "tile" : "tiles"}, ${res.liftPts} points.` : S.pend.length ? "Choose an upgrade." : res.mult > 1 ? `${res.mk === "marsh" ? "Marsh" : "Meadow"} ×${res.mult}: +${res.pts}.` : res.free.length ? `Steppe planted ${res.free.length === 1 ? "a free prairie" : res.free.length + " free prairies"}.` : res.does === "plant" && res.l < res.tile.l ? `Planted as level ${res.l}.` : gained ? upgradeLine({k:"h", b:kind, l:res.l}) : heightLine(p, res)); sync() }
 function undo() { if (!S.moves.length) return; S = replay(CFG, S.seed, S.moves.slice(0, S.moves.length - undoCount(S.moves))); lockMode = false; lockSel = null; say("Stepped back."); sync() }   // a pick goes back with the move that led to it
 async function copyText(t) { try { await navigator.clipboard.writeText(t); return true } catch (_) {} try { const a = document.createElement("textarea"); a.value = t; a.style.cssText = "position:fixed;opacity:0"; document.body.appendChild(a); a.select(); const ok = document.execCommand("copy"); a.remove(); return ok } catch (_) { return false } }
+
+// ---------- the test build's tools (LOU-315). A run is its config, seed and moves, so a bug report can be a paste: runRecord() is that, as an object, and loadRun() replays one (in place when the rules are the ones
+// in force, otherwise by opening this page with the run's rules in the address). The board is also data: one element for every cell with its kind, level and cell as attributes (and the pile), so a test can read
+// the board without pixels. And the rules line says plainly which rules this visit changed. They are drawn only where the page has the elements for them (test/index.html).
+const runRecord = () => ({flowgrow:"run", v:1, rules:RK, seed:S.seed, config:Object.fromEntries(ASKED.map(k => [k, CFG[k]])), moves:S.moves});
+function loadRun(text) { let r; try { r = JSON.parse(String(text).trim()) } catch (_) { return "That isn't a run: paste the text that Copy run gave." }
+  if (!r || r.flowgrow !== "run" || !Array.isArray(r.moves) || r.seed == null || !r.config || typeof r.config !== "object") return "That isn't a run: paste the text that Copy run gave.";
+  const need = tidy({...G.FLOWGROW, ...r.config}, G.FLOWGROW); if (need.bad.length) return "Those rules aren't valid here: " + need.bad.join(", ") + ".";
+  if (rulesKey(need.cfg) !== RK) {   // another ruleset: open this page with the run's rules in the address, and replay it there
+    const q = new URLSearchParams(); q.set("seed", r.seed); for (const [k, v] of Object.entries(r.config)) { if (k === "map") return "This run has its own map, which can't go in the address."; q.set(k, Array.isArray(v) ? v.join(",") : String(v)) }
+    try { sessionStorage.setItem("flowgrow.test.pending", JSON.stringify({config:r.config, seed:r.seed, moves:r.moves})) } catch (_) { return "This run was played under other rules and this device can't carry it across." }
+    location.href = location.pathname + "?" + q; return "" }
+  try { S = replay(CFG, r.seed, r.moves) } catch (e) { return "That run can't be replayed here: " + String(e.message).replace(/^Flowgrow: /, "") + "." }
+  for (const k in pops) delete pops[k]; fx.length = 0; lockMode = false; lockSel = null; wonShown = false; say("Run loaded."); sync(); return "" }
+function takePending() { try { const p = sessionStorage.getItem("flowgrow.test.pending"); if (!p) return false; sessionStorage.removeItem("flowgrow.test.pending"); const r = JSON.parse(p);
+    if (rulesKey(tidy({...G.FLOWGROW, ...r.config}, G.FLOWGROW).cfg) !== RK) return false; S = replay(CFG, r.seed, r.moves); return true } catch (_) { return false } }
+const domCells = [], KIND_WORD = {p:"prairie", m:"marsh", t:"trees"};
+function mirror() { const box = $("boardDom"); if (!box) return;
+  if (!domCells.length) for (const k of Object.keys(GRID.at)) { const e = document.createElement("div"); e.id = "t-" + k.replace(",", "-"); e.setAttribute("role", "listitem"); e.dataset.cell = k; box.appendChild(e); domCells.push([k, e]) }
+  const reach = reachOf(S);
+  for (const [k, e] of domCells) { const rv = S.r[k], hl = S.h[k], mt = codeAt(CFG, GRID.at[k]) === "B", up = hl ? upgradeOf(CFG, {k:"h", ...(S.hb[k] ? {b:S.hb[k]} : {}), l:hl, f:S.hf[k]}) : "";
+    e.dataset.kind = mt ? "mountain" : rv ? (rv.from == null ? "source" : "river") : hl ? KIND_WORD[S.hb[k] || ""] || "green" : "empty"; e.dataset.level = String(rv ? rv.l : hl || 0);
+    e.dataset.locked = k in S.lk ? "1" : "0"; e.dataset.reach = !mt && !rv && !hl && reach.has(k) ? "1" : "0"; if (up) e.dataset.up = up; else delete e.dataset.up }
+  const pile = $("pileDom"); if (pile) { pile.textContent = ""; const add = (id, t) => { const e = document.createElement("div"); e.id = id; e.dataset.kind = t.k === "r" ? "river" : KIND_WORD[t.b || ""] || "green"; e.dataset.level = String(t.l); e.dataset.copy = t.c ? "1" : "0"; pile.appendChild(e) };
+    S.q.forEach((t, i) => add(i === 0 ? "hand" : "next-" + i, t)); S.bank.forEach((t, i) => add("bank-" + i, t)) } }
+function testLine() { const e = $("testLine"); if (!e) return; const ch = ASKED.map(k => `${k}=${Array.isArray(CFG[k]) ? CFG[k].join(",") : CFG[k]}`);
+  e.textContent = "Test build · seed " + S.seed + " · " + (ch.length ? "rules changed: " + ch.join(", ") : "rules as the game"); e.classList.toggle("changed", ch.length > 0); e.dataset.rules = RK; e.dataset.changed = ch.join(" ") }
 
 // ---------- input: drag to pan, pinch or wheel to zoom; a touch that barely moves is a tap (from play.js)
 const ptrs = new Map(); let drag = null, dragged = false;
@@ -928,6 +959,10 @@ $("menuBtn").onclick = () => menu(true);
 $("menu").addEventListener("click", async e => { if (e.target === $("menu")) { menu(false); return } const b = e.target.closest("[data-m]"); if (!b) return; const k = b.dataset.m;
   if (k === "new") { $("mConf").hidden = false; return } if (k === "newNo") { $("mConf").hidden = true; return }
   if (k === "log") { const ok = await copyText(logText(S)); menu(false); say(ok ? "Run log copied." : "Couldn't copy on this device."); return }
+  if (k === "runcopy") { const ok = await copyText(JSON.stringify(runRecord())); menu(false); say(ok ? "Run copied: its rules, seed and moves." : "Couldn't copy on this device."); return }   // the test build's tools (LOU-315)
+  if (k === "runload") { $("runBox").hidden = false; $("runText").focus(); return } if (k === "runNo") { $("runBox").hidden = true; return }
+  if (k === "runGo") { const m = loadRun($("runText").value); tx("runMsg", m); if (!m) { $("runBox").hidden = true; menu(false) } return }
+  if (k === "reload") { location.reload(); return }
   if (k === "time") { if (L3 && L3.cycleTime) { L3.cycleTime(); menu(true) } return }   // Auto, Day, Golden hour, Night, Pause: the menu stays open so the new choice shows
   menu(false); if (k === "newYes") newRun(); else if (k === "look") setSkin(LOOKS[(LOOKS.indexOf(skin) + 1) % LOOKS.length]); else if (k === "zoom") { if (L3 && skin === "3d") L3.toggleFit(); else { view.z = view.z > 1.02 ? 1 : lay.zAuto; applyView() } } });
 addEventListener("keydown", e => { if (e.key === "Escape") menu(false) });
@@ -984,13 +1019,13 @@ function leave3d() { if (!L3) return; L3.unmount(); L3 = null; cv.style.visibili
 addEventListener("resize", resize);
 if (window.ResizeObserver) { const ro = new ResizeObserver(resize); ro.observe($("board")); ro.observe($("top")) }
 function loop() { draw(); requestAnimationFrame(loop) }
-loadPileArt();   // the pile's pictures (they are drawn when they arrive)
-if (load()) sync(); else newRun();
+if (!TEST) loadPileArt();   // the pile's pictures (they are drawn when they arrive); the test build has none, its tiles are the flat ones
+if (TEST && takePending()) sync(); else if (load()) sync(); else newRun();   // on the test build, a run that was loaded under other rules is waiting here
 resize(); if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { lastSize = ""; resize(); drawPile() });
 if (reduce) draw(); else loop();
 if ("serviceWorker" in navigator) addEventListener("load", () => navigator.serviceWorker.register(SW_URL).catch(() => {}));
 if (WANT === "3d") enter3d();   // ?look=3d (or the remembered look)
 // for checking the page from a script
-Object.assign(G.Flowgrow, {run:() => S, tap, undo, pick:doPick, lockMode:() => lockMode, discard:() => $("discardBtn").click(), newRun, scr, options:() => opts, skin:() => skin, setSkin,
+Object.assign(G.Flowgrow, {run:() => S, runRecord, loadRun, page:() => PAGE, tap, undo, pick:doPick, lockMode:() => lockMode, discard:() => $("discardBtn").click(), newRun, scr, options:() => opts, skin:() => skin, setSkin,
   show(h, r) { S.h = h; if (r) S.r = r; S.top = Math.max(0, ...Object.values(h)); sync() }, look3d:() => L3, look(p, z) { if (L3 && skin === "3d") return L3.look(p, z); const o = iso(...p); view.cx = o.x; view.cy = o.y; if (z) view.z = z; applyView() }});
 })();

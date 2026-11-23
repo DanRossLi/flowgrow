@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Flowgrow · test build</title>
+<meta name="description" content="Flowgrow test build: the plain look, no graphics, for testing the rules.">
+<meta name="robots" content="noindex">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Flowgrow test">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#cfe3ea">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../play.css">
+<link rel="stylesheet" href="../flowgrow.css">
+<style>
+/* the test build only (LOU-315): the board as data, the rules line, the run box */
+.fgdom{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+#testLine{position:fixed;left:0;right:0;bottom:0;z-index:5;padding:0 10px calc(1px + env(safe-area-inset-bottom));font:600 11px/14px system-ui,sans-serif;color:#4f6f70;background:rgba(246,250,250,.94);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none}
+#testLine.changed{color:#7a4300;background:#fff1c6}
+#runBox{display:grid;gap:8px;padding:10px 12px}#runBox[hidden]{display:none}#runBox textarea{width:100%;box-sizing:border-box;height:6em;font:12px/1.35 ui-monospace,Consolas,monospace;border:1.5px solid #b3c4c6;border-radius:10px;padding:6px 8px}#runBox small{color:#8a4b00;min-height:1.2em}
+</style>
+</head>
+<body>
+<!-- THE TEST BUILD (LOU-315): Flowgrow with no graphics, for testing the rules and trying ideas. It is the plain look only and never takes art: no image, font, three.js or sound. It shares the rules
+     (flowgrow.js) and the config (flowgrow.config.js) with the play page and carries no rule of its own. Any config value can be changed in the address (?seed=, ?treeShare=0 ...) and the rules line at
+     the bottom says which were. It keeps its own saved run. tools/test-page-smoke.mjs checks that no art request is ever made.
+     Flowgrow (LOU-298, LOU-299): an ecology and nature building game on a hex grid. It began inside Flow Tile and has had its own repo and
+     site since Nov 20, 2026. Its own files are flowgrow.js, flowgrow.css and flowgrow.config.js; play.css is a copy of Flow Tile's stylesheet. -->
+<div class="app fg" id="app">
+  <div class="board" id="board">
+    <canvas id="cv" aria-label="The island"></canvas>
+    <div class="fgdom" id="boardDom" role="list" aria-label="Board tiles"></div>
+    <div class="fgdom" id="pileDom" role="list" aria-label="The pile"></div>
+    <div class="overlay top" id="top">
+      <div class="stats">
+        <div class="stat"><span>Score</span><b id="hScore">0</b></div>
+        <div class="stat"><span>Tiles left</span><b id="hLeft">0</b></div>
+        <div class="stat"><span>Top level</span><b id="hTop">–</b></div>
+      </div>
+    </div>
+    <button type="button" class="icon sq zoom" id="fitBtn" aria-label="Show the whole island"></button>
+    <div class="overlay bottom" id="bottom">
+      <div class="pickq" id="pickq" role="alertdialog" aria-label="Choose an upgrade" hidden><b>Choose an upgrade</b><div class="pickrow"><button type="button" id="pick0"></button><button type="button" id="pick1"></button></div></div>
+      <div class="stuck seaq" id="lockq" role="alertdialog" aria-label="Lock this tile?" hidden><span><b id="lockT"></b><small id="lockS"></small></span><div><button type="button" id="lockYes">Lock</button><button type="button" id="lockNo">Cancel</button></div></div>
+      <div class="stuck seaq" id="endq" role="status" hidden><span><b>The pile is empty</b><small>Lock a tile for more copies, or end the run.</small></span><div><button type="button" id="endYes">End run</button></div></div>
+      <div class="msg fade" id="msg" role="status"></div>
+    </div>
+    <div class="lvdone" id="win" style="--t0:0s" hidden>
+      <div class="dsheet" role="dialog" aria-labelledby="winTitle">
+        <i class="mgrip" aria-hidden="true"></i>
+        <div class="dname">Flowgrow</div>
+        <h2 id="winTitle">Every tile is placed</h2>
+        <div class="dscore" id="wScore"></div>
+        <ul id="wGoals"></ul>
+        <button type="button" class="dnext" id="again"><b>Play again</b></button>
+        <div class="dtoast" id="dToast" role="status" hidden></div>
+        <div class="dlinks"><button type="button" id="copyLog">Copy run log</button></div>
+      </div>
+    </div>
+  </div>
+  <div class="actions" id="actions">
+    <!-- the pile, front to back: the tile in hand, the next tiles, the rest of the stack, then the copies banked by locks -->
+    <div class="fgpile" aria-label="Your pile">
+      <div class="fgcap"><b>Your pile</b><span id="hName"></span></div>
+      <div class="fgtray">
+        <div class="fgq" id="queue"></div>
+        <div class="fgstack" id="stack" hidden><b id="stackN"></b><i></i><i></i><i></i></div>
+        <div class="fgbank" id="bank" hidden><span>Back of the pile</span><div id="bankList"></div></div>
+      </div>
+    </div>
+    <div class="fgbtns">
+      <button type="button" id="menuBtn" class="fgb round" aria-label="Menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h14"/></svg></button>
+      <i class="fgsp"></i>
+      <button type="button" id="lockBtn" class="fgb fglock" aria-label="Lock a tile"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5.500" y="10.500" width="13" height="9.500" rx="2.200"/><path d="M8.500 10.500V8a3.500 3.500 0 017 0v2.500"/></svg><span><b>Lock</b><small id="lockIn"></small></span><b class="ubadge" id="lockN">0</b></button>
+      <button type="button" id="discardBtn" class="fgb fgbw" aria-label="Discard this tile"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13"/></svg><b class="fgw">Discard</b></button>
+      <button type="button" id="undoBtn" class="fgb fgbw" aria-label="Undo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 010 12h-3"/></svg><b class="fgw">Undo</b></button>
+    </div>
+  </div>
+  <div id="testLine" role="status" aria-live="polite">Test build</div>
+  <div class="mwrap" id="menu" hidden><div class="msheet" role="dialog" aria-label="Menu">
+    <i class="mgrip" aria-hidden="true"></i>
+    <div class="mhead"><b>Flowgrow</b><span id="mSeed"></span></div>
+    <p class="fghow">Place tiles near your river. Two tiles of the same level make the next level. River tiles reach more land.</p>
+    <p class="fghow" id="howAddr" hidden></p>
+    <p class="fghow" id="howElev" hidden></p>
+    <p class="fghow" id="howTrees" hidden></p>
+    <p class="fghow" id="howRiver" hidden></p>
+    <p class="fghow" id="howBiome" hidden></p>
+    <p class="fghow" id="howUpgrade" hidden></p>
+    <p class="fghow" id="howBare" hidden></p>
+    <p class="fghow" id="howLock">There is no limit on locks. Lock a tile to copy its neighbours, at its level or below, to the back of your pile. A locked tile can't grow any more.</p>
+    <div class="fgladder" id="ladder" aria-label="The levels"></div>
+    <button type="button" class="mrow" data-m="zoom"><i class="mico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></i><span>Whole island<small>Zoom out, or back in</small></span></button>
+    <button type="button" class="mrow" data-m="runcopy"><i class="mico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4h9v14H8z"/><path d="M5 8v12h9"/></svg></i><span>Copy run<small>Rules, seed and moves, as text</small></span></button>
+    <button type="button" class="mrow" data-m="runload"><i class="mico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5"/><path d="M5 20h14"/></svg></i><span>Load run<small>Replay a pasted run</small></span></button>
+    <div class="mconf" id="runBox" hidden><textarea id="runText" spellcheck="false" placeholder="Paste a run here" aria-label="Run to load"></textarea><small id="runMsg" role="status"></small><div><button type="button" class="mgo" data-m="runGo">Load run</button><button type="button" data-m="runNo">Cancel</button></div></div>
+    <button type="button" class="mrow" data-m="reload"><i class="mico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 109-9 9.500 9.500 0 00-6.700 2.800L3 8"/><path d="M3 3v5h5"/></svg></i><span>Reload<small>Keeps the run</small></span></button>
+    <button type="button" class="mrow" data-m="log"><i class="mico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h10v16H7z"/><path d="M10 9h4M10 13h4"/></svg></i><span>Copy run log<small>One line per move</small></span></button>
+    <button type="button" class="mrow rust" data-m="new"><i class="mico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 109-9 9.500 9.500 0 00-6.700 2.800L3 8"/><path d="M3 3v5h5"/></svg></i><span>New run<small>Asks you to confirm</small></span></button>
+    <div class="mconf" id="mConf" hidden><span>Start a new run? This run is lost.</span><button type="button" class="mgo" data-m="newYes">New run</button><button type="button" data-m="newNo">Cancel</button></div>
+  </div></div>
+</div>
+<script>window.FLOWGROW_PAGE = "test"; window.FLOWGROW_SW = "test/sw.js";</script>
+<script src="../flowgrow.config.js"></script>
+<script src="../flowgrow.js"></script>
+</body>
+</html>
