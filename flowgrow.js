@@ -1012,7 +1012,8 @@ const handSpot = () => { const g = $("grab").getBoundingClientRect(); return [g.
 function flyGhost(t, p) { if (reduce || !$("grab").offsetWidth) return; const c = $("carry"), [hx, hy] = handSpot(), [sx, sy] = scr(p);
   carryPaint(t); c.hidden = false; c.className = "fgcarry"; carryPlace(hx, hy, false); c.getBoundingClientRect(); c.classList.add("go"); carryPlace(sx, sy + 4 * U(), false); setTimeout(() => { if (!carry) { c.hidden = true; c.className = "fgcarry" } }, 240) }
 let carry = null;
-function carryOn() { const t = S.q[0]; if (!t) return; carry.on = true; carryPaint(t); const c = $("carry"); c.hidden = false; c.className = "fgcarry"; $("app").classList.add("carrying"); hapt(8) }
+function carryOn() { const t = S.q[0]; if (!t) return; if (lockSel) { lockSel = null; lockMode = false; sync() }   // a lock that was being chosen is let go: this drag is a placement
+  carry.on = true; carryPaint(t); const c = $("carry"); c.hidden = false; c.className = "fgcarry"; $("app").classList.add("carrying"); hapt(8) }
 function carryMove(x, y) { const dd = overDiscard(x, y), o = dd ? null : optAt(cellUnder(x, y)), c = $("carry"), u = U(); $("discardBtn").classList.toggle("drop", dd);
   if (o) { const [sx, sy] = scr(o.p), L = optLabel(o); carryPlace(sx, sy + 4 * u, true); tx("carryTag", o.does === "widen" ? L.main + " here" : o.pts > 0 ? "+" + o.pts + " here" : o.does === "extend" ? "River here" : "Plant here") }
   else carryPlace(x, y - 2 * u, false);

@@ -127,6 +127,11 @@ for (const look of ["simple", "3d"]) { const b = await launch(390, 844); const t
     { const S = await J(b, `({h: Object.keys(Flowgrow.run().h).filter(k => !(k in Flowgrow.run().lk)), r: Object.keys(Flowgrow.run().r)})`), k = (S.h[0] || S.r[0]).split(",").map(Number), [x, y] = await at(b, k);
       const hit = await b.ev(`(() => { const e = document.elementFromPoint(${x}, ${y}); e.dispatchEvent(new MouseEvent("contextmenu", {clientX: ${x}, clientY: ${y}, bubbles: true, cancelable: true, button: 2})); return e.tagName })()`); await sleep(300);
       ok(`${tag}: right-click on a tile opens the lock card`, hit === "CANVAS" && await b.ev(`!document.getElementById("lockq").hidden && Flowgrow.lockMode()`), "on " + hit); await b.tap(...(await rect(b, "#lockNo")).slice(0, 2)) }
+    // ---- dragging the tile in hand while a lock card is open lets the lock go, and places the tile
+    { const S = await J(b, `({h: Object.keys(Flowgrow.run().h).filter(k => !(k in Flowgrow.run().lk)), r: Object.keys(Flowgrow.run().r)})`), k = (S.h[0] || S.r[0]).split(",").map(Number); await b.ev(`Flowgrow.lockTile(${JSON.stringify(k)})`); await sleep(200);
+      const o = await opts(b), [x, y] = await at(b, o[0].p), g = await rect(b, "#grab"), m = await moves(b), locks = Object.keys(await J(b, `Flowgrow.run().lk`)).length;
+      await b.drag([g[0], g[1]], [x, y]); await sleep(300);
+      ok(`${tag}: dragging the tile in hand while a lock card is open lets the lock go and places the tile`, await moves(b) === m + 1 && Object.keys(await J(b, `Flowgrow.run().lk`)).length === locks && await b.ev(`document.getElementById("lockq").hidden && !Flowgrow.lockMode()`)) }
     // ---- a quick tap on a tile is a placement, not a lock
     { const m = await moves(b), o = await opts(b); if (o.length) { const [x, y] = await at(b, o[0].p); await b.tap(x, y); ok(`${tag}: a quick tap on land places the tile and locks nothing`, await moves(b) === m + 1 && !(await b.ev(`Flowgrow.lockMode()`))) } }
     // ---- undo
