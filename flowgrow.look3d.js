@@ -88,9 +88,9 @@ const STRATA = {land:[["#9b958b", .2], ["#c0834e", .27], ["#8c5b37", .28], ["#4d
 const wob = (X, Z) => [(Math.sin(X * 7.1 + Z * 3.3) + Math.sin(Z * 5.7 - X * 2.1)) * .017, (Math.sin(Z * 6.3 + X * 4.1) + Math.sin(X * 5.3 - Z * 2.7)) * .017];
 const hexd = (x, z) => { x = Math.abs(x); z = Math.abs(z); return Math.max(x, x * .5 + z * .8660254) - .8660254 };   // the distance out from a hex's edge (negative inside)
 
-// The level of a ring or label in the game's own colours (the simple look's): gold for combine, teal for a river raise, blue for extend, green for plant, deep green for overgrow.
+// The level of a ring or label in the game's own colours (the simple look's): gold for combine, teal for a river raise, blue for extend, green for plant.
 const RING = {plant:{c:[.3, .8, .42], a:.8, f:.1, w:.06}, extend:{c:[.2, .58, .95], a:.8, f:.2, w:.06}, combine:{c:[.95, .72, .15], a:.95, f:.13, w:.085}, widen:{c:[.14, .72, .62], a:.95, f:.13, w:.08},
-  overgrow:{c:[.08, .42, .24], a:.95, f:.12, w:.075}, pick:{c:[.95, .72, .15], a:1, f:.16, w:.1}, lockable:{c:[.98, .92, .7], a:.95, f:.1, w:.07}, copy:{c:[.25, .78, .68], a:.95, f:.1, w:.075}, high:{c:[.55, .6, .62], a:.8, f:.05, w:.05}};
+  pick:{c:[.95, .72, .15], a:1, f:.16, w:.1}, lockable:{c:[.98, .92, .7], a:.95, f:.1, w:.07}, copy:{c:[.25, .78, .68], a:.95, f:.1, w:.075}, high:{c:[.55, .6, .62], a:.8, f:.05, w:.05}};
 
 function mount(B) {
   if (!T) return null;
@@ -382,7 +382,7 @@ function mount(B) {
   function buildRings() { if (EXM) { ringList = []; ringMesh.geometry.dispose(); ringMesh.geometry = new T.BufferGeometry(); ringTags = []; return }   // an example island has no rings
     const list = [], tags = [], opts = B.options(), lk = B.lock(), pend = S.pend[0];
     if (!S.over && !lk.mode) for (const o of opts) { const c = cellAt(o.p[0], o.p[1]); if (!c) continue; list.push({x:c.x, z:c.z, kind:o.does});
-      if (o.does === "combine") tags.push({id:"o" + c.k, cell:c, text:"+" + o.pts, cls:"gold", dy:.5}); else if (o.does === "overgrow") tags.push({id:"o" + c.k, cell:c, text:"over +" + o.pts, cls:"green", dy:.5});
+      if (o.does === "combine") tags.push({id:"o" + c.k, cell:c, text:"+" + o.pts, cls:"gold", dy:.5});
       else if (o.does === "widen") tags.push({id:"o" + c.k, cell:c, text:B.widenText(o), cls:"teal", dy:.4});
       else if (o.does === "plant" && (o.l < S.q[0].l || o.mult > 1)) tags.push({id:"o" + c.k, cell:c, text:(o.l < S.q[0].l ? "as " + o.l : "") + (o.mult > 1 ? (o.l < S.q[0].l ? " " : "") + "×" + o.mult : ""), cls:o.mult > 1 ? "teal" : "gold", dy:.3}) }
     if (pend) { const c = cells[idx[unkey(pend)[1] * W + unkey(pend)[0]]]; list.push({x:c.x, z:c.z, kind:"pick"}) }
@@ -443,7 +443,7 @@ function mount(B) {
   const lab = document.createElement("div"); lab.id = "l3labels"; board.insertBefore(lab, B.top);
   if (!document.getElementById("l3css")) { const st = document.createElement("style"); st.id = "l3css";
     st.textContent = "#l3labels{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:1}.l3t{position:absolute;left:0;top:0;min-width:22px;height:22px;padding:0 7px;border-radius:11px;background:#fff;color:#24434a;font:800 13px/22px 'M PLUS Rounded 1c',Nunito,sans-serif;text-align:center;white-space:nowrap;box-shadow:0 2px 6px rgba(10,40,50,.28),0 0 0 1.5px rgba(10,40,50,.12);will-change:transform;font-variant-numeric:tabular-nums}" +
-      ".l3t.p{color:#7a5a10}.l3t.m{color:#0d6a66}.l3t.t{color:#0f4f31}.l3t.r{color:#1f5f8f}.l3t.gold{color:#7a5a10}.l3t.teal{color:#0f7a66}.l3t.green{color:#0f5a33}.l3t.grey{color:#6b7b7e}.l3t.fx{background:rgba(255,243,184,.96);color:#5a3d06;font-size:15px}" +
+      ".l3t.p{color:#7a5a10}.l3t.m{color:#0d6a66}.l3t.t{color:#0f4f31}.l3t.r{color:#1f5f8f}.l3t.gold{color:#7a5a10}.l3t.teal{color:#0f7a66}.l3t.grey{color:#6b7b7e}.l3t.fx{background:rgba(255,243,184,.96);color:#5a3d06;font-size:15px}" +
       ".l3t svg{width:10px;height:11px;margin-right:3px;vertical-align:-1px}#l3labels.night .l3t{box-shadow:0 2px 8px rgba(2,12,24,.6),0 0 0 2px rgba(255,255,255,.16)}" +   // at night a pill gets a faint halo
       ".l3t.lockb{min-width:22px;width:22px;padding:0;border-radius:50%;color:#24434a}.l3t.lockb svg{width:11px;height:12px;margin:0;vertical-align:-2px}" +   // the lock badge of a locked tile: a small round white badge with the padlock and no number
       "#l3sr{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}"; document.head.appendChild(st) }   // the list for screen readers, off screen

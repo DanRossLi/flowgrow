@@ -1006,7 +1006,7 @@ function infoFor(d){
   if(d.k==='tree'&&d.L===1)return{name:'Green',meta:'Level 1 habitat · scores 1 · the starter',line:'Seedlings and clover on bare soil. Any other kind can take it over.'};
   if(d.k==='prairie')return{name:'Prairie',meta:'Level 1 habitat · scores 1 · spreads from prairie',line:'Tall grass and wildflowers. It can be planted next to other prairie, even past the river\'s reach.'};
   if(d.k==='marsh')return{name:'Marsh',meta:'Level 1 habitat · scores 1 · must touch the river',line:'Reeds, still pools and a frog. Scores more for each river tile it touches.'};
-  if(d.k==='trees1')return{name:'Trees',meta:'Level 1 habitat · scores 1 · overgrows',line:'A young oak in mossy soil. Put it on a same-level habitat and the forest takes over.'};
+  if(d.k==='trees1')return{name:'Trees',meta:'Level 1 habitat · scores 1 · combines with trees',line:'A young oak in mossy soil. Plant it on open land within reach of the river, or put it on a tree of the same level.'};
   if(d.k==='tree')return{name:LV[d.L-1],meta:'Level '+d.L+' habitat · '+PTS[d.L]+' life',line:[
     'Seedlings break the soil. A ladybug and a few worms.','Tall grass, bees, butterflies and a rabbit.','Berry shrubs, a nest and a hedgehog.','Young trees in guards, with a fawn.','Dappled shade, bracket fungi, a squirrel and a woodpecker.','Layered canopy, a mossy log and deer. Worth 21 life.','Hollow oak, owl, fox den and fireflies. Worth 28 life.'][d.L-1]};
   if(d.k==='spring')return{name:'Spring',meta:'Source · counts as a level 1 river tile · reach 1',line:'Where the stream starts. River tiles score nothing.'};

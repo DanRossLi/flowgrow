@@ -25,7 +25,7 @@ let S; try { S = R.replay(CFG, run.seed, run.moves) } catch (e) { die(`The run d
 
 console.log(`seed ${run.seed} · replayed score ${S.score} (saved ${run.score}) · ${S.moves.length} moves · locks ${S.lockUsed} · top level ${S.top} · over ${S.over}`);
 const by = {}, lv = {}, lockLv = {}, lockCopies = {};
-for (const e of S.log) { if (e.did === "plant" || e.did === "combine" || e.did === "overgrow" || (e.did === "widen" && e.pts)) { const k = e.did + (e.t.c ? " of copies" : " of dealt tiles"); by[k] = (by[k] || 0) + e.pts; const key = e.did + " to level " + e.l; lv[key] = (lv[key] || 0) + 1 }
+for (const e of S.log) { if (e.did === "plant" || e.did === "combine" || (e.did === "widen" && e.pts)) { const k = e.did + (e.t.c ? " of copies" : " of dealt tiles"); by[k] = (by[k] || 0) + e.pts; const key = e.did + " to level " + e.l; lv[key] = (lv[key] || 0) + 1 }
   if (e.did === "lock") { const key = (e.t.k === "r" ? "river " : "habitat ") + "L" + e.t.l; lockLv[key] = (lockLv[key] || 0) + 1; lockCopies[key] = (lockCopies[key] || 0) + e.copies.length } }
 console.log("points from:", Object.entries(by).map(([k, v]) => `${k} ${v}`).join(" · "));
 const low = S.log.filter(e => e.did === "plant" && e.l < e.t.l);   // bare ground mode "downgrade": tiles planted as level 1 (they are inside the "plant" points above)
@@ -43,14 +43,13 @@ if (CFG.marshNeedsRiver || CFG.prairieSpreads) { const T = R.fresh(CFG, run.seed
     mv.a === "p" ? R.place(T, mv.i, [mv.x, mv.y]) : mv.a === "d" ? R.discard(T, mv.i) : mv.a === "l" ? R.lock(T, [mv.x, mv.y]) : mv.a === "u" ? R.pick(T, mv.x + "," + mv.y, mv.f) : R.end(T) }
   const land = CFG.map.join("").split("_").length - 1, empty = land - Object.keys(S.h).length - (Object.keys(S.r).length - 1);
   console.log(`marsh: ${m.marshTurns} marsh tiles in hand, nothing to plant on in ${m.marshNoBank} of those turns, ${m.marshDiscards} discarded · prairie: ${m.prairieTurns} in hand, ${m.spreadPlanted} planted beyond the river's reach, ${m.prairieTurns ? (m.spreadOffered / m.prairieTurns).toFixed(1) : 0} extra tiles offered per prairie tile in hand · island: ${empty} of ${land} land cells empty at the end`) }
-// What trees did in this run (LOU-302; replayed move by move): tree tiles in hand, how many had no legal target and how many were discarded, and what the overgrows took.
-if (CFG.treeShare > 0 || S.log.some(e => e.t && e.t.b === "t")) { const T = R.fresh(CFG, run.seed), m = {turns:0, copies:0, none:0, discarded:0, grew:{"":0, p:0, m:0}, pts:0, plain:0};
+// What trees did in this run (LOU-302, LOU-314; replayed move by move): tree tiles in hand, how many had no legal spot and how many were discarded, how many were planted and how many combined, and the points from them.
+if (CFG.treeShare > 0 || S.log.some(e => e.t && e.t.b === "t")) { const T = R.fresh(CFG, run.seed), m = {turns:0, copies:0, none:0, discarded:0, planted:0, combined:0, pts:0};
   for (const mv of run.moves) { const t = (mv.a === "p" || mv.a === "d") && T.q[mv.i], tree = t && t.k === "h" && t.b === "t";
     if (tree) { m.turns++; if (t.c) m.copies++; if (!R.options(T, mv.i).length) m.none++; if (mv.a === "d") m.discarded++ }
     const r = mv.a === "p" ? R.place(T, mv.i, [mv.x, mv.y]) : mv.a === "d" ? R.discard(T, mv.i) : mv.a === "l" ? R.lock(T, [mv.x, mv.y]) : mv.a === "u" ? R.pick(T, mv.x + "," + mv.y, mv.f) : R.end(T);
-    if (tree && mv.a === "p") { if (r.does === "overgrow") { m.grew[r.from]++; m.pts += r.pts } else m.plain++ } }
-  const grew = m.grew[""] + m.grew.p + m.grew.m;
-  console.log(`trees: ${m.turns} tree tiles in hand (${m.copies} copies), ${m.none} with no legal target, ${m.discarded} discarded · ${grew} overgrows (${m.grew[""]} green, ${m.grew.p} prairie, ${m.grew.m} marsh) for ${m.pts} points · ${m.plain} tree-on-tree combines · ${Object.values(S.hb).filter(b => b === "t").length} tree habitats at the end`) }
+    if (tree && mv.a === "p") { if (r.does === "plant") m.planted++; else m.combined++; m.pts += r.pts } }
+  console.log(`trees: ${m.turns} tree tiles in hand (${m.copies} copies), ${m.none} with no legal spot, ${m.discarded} discarded · ${m.planted} planted, ${m.combined} combined onto a tree · ${m.pts} points from them · ${Object.values(S.hb).filter(b => b === "t").length} tree habitats at the end`) }
 // What the reed bed did in this run (LOU-304; replayed move by move): marsh tiles that reached the upgrade level, marsh planted only because of a reed bed, and the reed beds left at the end.
 if (CFG.upgradeLevel > 0) { const T = R.fresh(CFG, run.seed), up = CFG.upgradeLevel, m = {inHand:0, planted:0, viaReed:0, rescued:0, reached:0};
   for (const mv of run.moves) { const t = (mv.a === "p" || mv.a === "d") && T.q[mv.i], marsh = t && t.k === "h" && t.b === "m";
