@@ -15,6 +15,7 @@
 // (5) the rules line says which rules the address changed and ignores names it doesn't know;
 // (6) a run copied on the page loads again on it, in place under the same rules and across a reload under other rules;
 // (7) the green takeover (LOU-307), off in the config, works with ?greenTakeover=true in the address: a prairie tile takes over green of its level, in the board data and the words, replays and undoes, and has no such move with the switch off.
+// (8) the starting pile is 25 tiles (LOU-318): the pile reads 25, a reload and an undo mid-run work, and a run ends when all 25 are used.
 // It exits with 1 if a check fails. It needs Chrome (set CHROME to its path if it isn't found) and drives it over the DevTools protocol with Node's built-in WebSocket, which is switched on by
 // --experimental-websocket on Node 20 (Node 22 and newer need no flag). No packages.
 import fs from "fs"; import path from "path"; import os from "os"; import {spawn, execSync} from "child_process"; import {fileURLToPath} from "url";
@@ -126,6 +127,20 @@ try {
   await b.ev("Flowgrow.undo()"); ok("and undo steps back to the green", (await b.ev("document.getElementById('t-7-4').dataset.kind + '/' + document.getElementById('t-7-4').dataset.level")) === "green/1" && (await b.ev("Flowgrow.run().taken")) === 0);
   const keys = JSON.parse(await b.ev("JSON.stringify(Object.keys(localStorage))")); await b.goto(TEST + "?seed=7&stackSize=12&lockEvery=500&opening=habitat%201,prairie%201,marsh%201"); await ready(b);
   ok("with the switch off (the usual game) there is no such move, and the run is saved apart from the takeover's", (await b.ev("Flowgrow.run().cfg.greenTakeover")) === false && (await b.ev("Flowgrow.tap([7, 4]); Flowgrow.options().filter(o => o.p[0] === 7 && o.p[1] === 4).length")) === 0 && keys.every(k => k.startsWith("flowgrow.test.")), keys.join(", "));
+  ok("no page errors", b.errors.length === 0, b.errors.join(" | ").slice(0, 300));
+} finally { await b.stop() }
+// the starting pile is 25 tiles (LOU-318): a new run deals 25 and the pile reads 25 at the start; a reload and an undo mid-run work on it; and a run ends when all 25 are placed or discarded
+b = await launch();
+try {
+  await b.goto(TEST + "?seed=3&lockEnabled=false"); await ready(b);
+  ok("a new run has a pile of 25: the config says so and the pile reads 25 at the start", (await b.ev("Flowgrow.run().cfg.stackSize")) === 25 && (await b.ev("Flowgrow.rules.left(Flowgrow.run())")) === 25 && /^25 left/.test(await b.ev("document.getElementById('leftT').textContent")), await b.ev("document.getElementById('leftT').textContent"));
+  await b.ev("(() => { for (let i = 0; i < 6; i++) { const o = Flowgrow.options(); if (o.length) Flowgrow.tap(o[0].p); else Flowgrow.discard() } })()"); const m6 = await b.ev("Flowgrow.run().moves.length");
+  ok("six moves later the pile reads 19", m6 === 6 && (await b.ev("Flowgrow.rules.left(Flowgrow.run())")) === 19 && /^19 left/.test(await b.ev("document.getElementById('leftT').textContent")), m6 + " moves");
+  await b.goto(TEST + "?seed=3&lockEnabled=false"); await ready(b);
+  ok("a reload mid-run on the 25-tile pile keeps the run", (await b.ev("Flowgrow.run().moves.length")) === 6 && (await b.ev("Flowgrow.rules.left(Flowgrow.run())")) === 19);
+  await b.ev("Flowgrow.undo()"); ok("and undo steps back one move, the pile reads 20 again", (await b.ev("Flowgrow.run().moves.length")) === 5 && (await b.ev("Flowgrow.rules.left(Flowgrow.run())")) === 20);
+  await b.ev(PLAY); const st = JSON.parse(await b.ev("JSON.stringify({over: Flowgrow.run().over, used: Flowgrow.run().used, dealt: Flowgrow.run().dealt, moves: Flowgrow.run().moves.length})"));
+  ok("a run ends when all 25 tiles are placed or discarded", st.over && st.used === 25 && st.dealt === 25 && st.moves === 25, JSON.stringify(st));
   ok("no page errors", b.errors.length === 0, b.errors.join(" | ").slice(0, 300));
 } finally { await b.stop() }
 console.log(bad ? `${bad} check(s) FAILED` : "all checks passed"); process.exit(bad ? 1 : 0);

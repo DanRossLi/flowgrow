@@ -290,7 +290,7 @@ function checks() { let n = 0; const fails = [];
       !a.error && S.over && S.dealt === 10 && dealt.length === 10 && dealt.every(e => e.t.l === 1) && S.used === 10 + S.copyPlaced + S.copyDiscarded) }
   { const S = run(["habitat 1", "habitat 1", "habitat 1", "habitat 1"], {levelOdds:0, stackSize:4, queueShown:0}); R.place(S, 0, E); R.place(S, 0, E);
     ok("with only level 1 dealt, the pile takes a habitat to level 2 and no further: no tile in hand fits a level 2 habitat", at(S, E) === 2 && R.options(S, 0).length > 0 && R.options(S, 0).every(o => o.does === "plant" && o.p + "" !== E + "")) }
-  ok("the config file asks for the pilot pile, grown to 20 tiles (Dan, Nov 20: expand starting tiles to 20), with level odds 0", BASE.stackSize === 20 && BASE.levelOdds === 0);
+  ok("the config file asks for the pilot pile, grown to 20 tiles (Dan, Nov 20: expand starting tiles to 20) and then to 25 (Nov 22, LOU-318), with level odds 0", BASE.stackSize === 25 && BASE.levelOdds === 0);
   // ----- no lock limit (Dan, Nov 20: "there is no lock limit, a user can lock as many times as they want")
   ok("the config file has no lock limit: lockEvery 0, so a lock is always at hand", BASE.lockEnabled === true && BASE.lockEvery === 0);
   { const k = R.rulesKey(REF); ok("a ruleset's key changes with any rule, and not with names or zoom",
@@ -937,6 +937,16 @@ function checks() { let n = 0; const fails = [];
   ok("the elevation map pages are what tools/make-maps.mjs writes from play/index.html", spawnSync(process.execPath, [path.join(ROOT, "tools/make-maps.mjs"), "--check"], {encoding:"utf8"}).status === 0);
   { const pages = ["foothills", "ridges", "terraces"].map(id => fs.readFileSync(path.join(ROOT, "elevation", id, "index.html"), "utf8")), sw = fs.readFileSync(path.join(ROOT, "sw.js"), "utf8");
     ok("each elevation map sets elevation on for itself and nothing else of the game's, loads the game from two folders up, and is in the service worker's list", pages.every((h, i) => h.includes(`"elevationShape":"${["foothills", "ridges", "terraces"][i]}"`) && h.includes('"elevation":true') && h.includes('src="../../flowgrow.js"') && !/(?:href|src)="(?!\.\.\/\.\.\/|https?:|#)[^"]*"/.test(h)) && ["./elevation/", "./elevation/foothills/", "./elevation/ridges/", "./elevation/terraces/"].every(u => sw.includes(`"${u}"`))) }
+
+  // ----- the starting pile is 25 tiles (LOU-318; Dan, Nov 22: "make a ticket to make the starting pile 25"). It was 20 (Dan, Nov 20: "expand starting tiles to 20") and 10 for the pilot. The extra tiles go to the back of the pile and are dealt by the same
+  // rules and the same random stream as every other tile, so the first 20 tiles of a seed are the ones they were, and the opening is unchanged.
+  ok("the config file asks for a pile of 25 tiles (Dan, Nov 22), and the pile reads 25 at the start", BASE.stackSize === 25 && R.left(R.fresh(BASE, 1)) === 25 && R.fresh(BASE, 1).q.length === 4 && R.fresh(BASE, 1).dealt === 4);
+  { const C20 = R.tidy({...base, stackSize:20}, base).cfg, seq = (cfg, n) => { const S = R.fresh(cfg, 5), out = []; for (let i = 0; i < n; i++) { out.push(JSON.stringify(S.q[0])); R.discard(S, 0) } return {S, out} };
+    const a = seq(C20, 20), b = seq(BASE, 25);
+    ok("the first 20 tiles of a seed are the same in a pile of 25 as in a pile of 20, the opening included (the extra five are dealt after them, by the same rules)", b.out.slice(0, 20).every((t, i) => t === a.out[i]) && same(JSON.parse(b.out[0]), {k:"r", l:1}) && b.out.slice(20).every(t => /"k":"[hr]"/.test(t)));
+    ok("a run of 25 ends when all 25 are placed or discarded, and one of 20 when its 20 are", b.S.over && b.S.used === 25 && b.S.dealt === 25 && a.S.over && a.S.used === 20 && a.S.dealt === 20 && R.left(b.S) === 0);
+    const S25 = R.fresh(BASE, 7), S20 = R.fresh(C20, 7); for (let i = 0; i < 6; i++) { R.discard(S25, 0); R.discard(S20, 0) }
+    ok("the count of tiles left follows the pile: 19 of 25 and 14 of 20 after six tiles", R.left(S25) === 19 && R.left(S20) === 14 && R.rulesKey(BASE) !== R.rulesKey(C20)) }
 
   // ----- green is taken over (LOU-307; Dan, Nov 21: "scrub right now is "any tile" therefore it's special is that any tile can go on top and "take over"", "green will fade as it becomes converted and or taken over"). With greenTakeover
   // on, a marsh, prairie or trees habitat put on an unlocked green habitat of its own level turns it into its own kind one level up and scores like a combine, if the green tile is a place the taker could be planted. It is off in the

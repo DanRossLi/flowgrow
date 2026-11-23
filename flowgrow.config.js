@@ -16,7 +16,7 @@ window.FLOWGROW = {
         "_____________"],
 
   // The pile
-  stackSize: 20,            // tiles in a run (0: endless). 20 (Dan, Nov 20: "expand starting tiles to 20"); 10 for the pilot; 80 in the first build
+  stackSize: 25,            // tiles in a run (0: endless). 25 (LOU-318; Dan, Nov 22: "make a ticket to make the starting pile 25"); 20 (Dan, Nov 20: "expand starting tiles to 20"); 10 for the pilot; 80 in the first build
   queueShown: 3,            // tiles shown after the tile in hand
   pickFrom: 1,              // 1: you must place the tile in hand. 3: tap any of the first 3 to take it instead
   riverShare: 0.10,         // chance a dealt tile is a river tile
