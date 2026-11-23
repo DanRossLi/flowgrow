@@ -495,22 +495,27 @@ if (typeof document === "undefined" || G.FLOWGROW_SIM) return;
 // ====================================================================================================================
 // Which page loaded this file (LOU-315, LOU-316). A page names itself before the file loads: window.FLOWGROW_PAGE = "test" is the test build (LOU-315): the plain look only, nothing that needs art, the rules switches in the address and the
 // test tools. With no name the page is as it always was. Nothing in the rules (part 1) knows about a page: a page only decides what this part draws, loads and keeps.
-const PAGE = G.FLOWGROW_PAGE || "", TEST = PAGE === "test";
+const PAGE = G.FLOWGROW_PAGE || "", TEST = PAGE === "test", END = PAGE === "endgame";
 // "play" is the public page (LOU-316): the 3D look by default and one game for a player: no look switch, no rules or seed in the address. ?dev=1 is a developer's door: it turns on ?look= and ?seed= (not the rules: they stay on the test
 // build), shows a small "dev" line and keeps its own saved run, so a developer never touches a player's.
 const PLAY = PAGE === "play", DEV = PLAY && new URLSearchParams(location.search).get("dev") === "1";
+// "endgame" (LOU-319, Dan, Nov 23) is a finished island to look at without playing. It is a static run, made by real play (tools/flowgrow-endgame.mjs) and kept as its seed and moves in endgame/run.js: this page replays them through
+// the rules above, so the island is built by the game and never drawn by hand. It opens on the whole island, in the 3D look unless ?look= asks for another (so the same island can be seen with no graphics: ?look=simple). It has no pile,
+// no Undo and no run to save, it keeps its own keys and never the play page's, and a tap on the island only says what the tile is.
+const EG = END ? G.FLOWGROW_ENDGAME || null : null; let egWhy = "", egLk = null;   // egLk: the island's real lock set while its padlocks are hidden (a view option)   // egWhy: why the island can't be shown (the rules changed since it was made), or ""
+if (END) Object.assign(G.FLOWGROW.look3d || (G.FLOWGROW.look3d = {}), {dayNight:"fixed:gold", lod:"near"});   // held in golden hour, and every plant drawn in full even with the whole island in view; ?time= and the Menu's Time of day still change the light
 const SRC_URL = document.currentScript.src, SW_URL = new URL(G.FLOWGROW_SW || "sw.js", SRC_URL).href; // sw.js sits next to this file (and the 3D look's files are found from here too); a page can name its own (the test build's)
 const $ = id => document.getElementById(id), tx = (id, v) => { const e = $(id); if (e) e.textContent = v };
-const MEMP = TEST ? "flowgrow.test." : DEV ? "flowgrow.dev." : "flowgrow.";   // the test build and a developer on the play page each have their own saved run, best scores and settings, so neither overwrites a player's run
+const MEMP = TEST ? "flowgrow.test." : END ? "flowgrow.endgame." : DEV ? "flowgrow.dev." : "flowgrow.";   // the test build and a developer on the play page each have their own saved run, best scores and settings, so neither overwrites a player's run
 const mem = {get(k) { try { return localStorage.getItem(MEMP + k) } catch (_) { return null } },
   set(k, v) { try { if (v == null) localStorage.removeItem(MEMP + k); else localStorage.setItem(MEMP + k, v) } catch (_) {} }};
 // Until Nov 20, 2026 Flowgrow lived inside Flow Tile and saved under "flowtile.flowgrow.". Both sites share one address, so those old
 // keys may still be here: bring the best score and any run in progress across once, then drop them.
-if (!TEST && !DEV) for (const k of ["best", "run.v2"]) try { const old = localStorage.getItem("flowtile.flowgrow." + k); if (old != null) { if (mem.get(k) == null) mem.set(k, old); localStorage.removeItem("flowtile.flowgrow." + k) } } catch (_) {}
-if (!TEST && !DEV) for (const v of ["run.v2", "run.v3", "run.v4", "run.v5", "run.v6", "run.v7", "run.v8", "run.v9", "run.v10", "run.v11"]) mem.set(v, null); // runs are saved as run.v12.<ruleset> since LOU-310 (Nov 21: one slot for each ruleset, so the elevation maps keep their own runs; run.v11 since the marsh ramp, run.v10 since LOU-309, run.v9 since the stranding guard, run.v8 since LOU-306) (a rule change can make an older move list illegal, so each one bumps the version): the older keys are dead, drop them
+if (!TEST && !DEV && !END) for (const k of ["best", "run.v2"]) try { const old = localStorage.getItem("flowtile.flowgrow." + k); if (old != null) { if (mem.get(k) == null) mem.set(k, old); localStorage.removeItem("flowtile.flowgrow." + k) } } catch (_) {}
+if (!TEST && !DEV && !END) for (const v of ["run.v2", "run.v3", "run.v4", "run.v5", "run.v6", "run.v7", "run.v8", "run.v9", "run.v10", "run.v11"]) mem.set(v, null); // runs are saved as run.v12.<ruleset> since LOU-310 (Nov 21: one slot for each ruleset, so the elevation maps keep their own runs; run.v11 since the marsh ramp, run.v10 since LOU-309, run.v9 since the stranding guard, run.v8 since LOU-306) (a rule change can make an older move list illegal, so each one bumps the version): the older keys are dead, drop them
 // Any config value can be changed in the address for one visit, as key=value, with the simulator's names and checks (LOU-309: "so he can play it"), for example ?marshRiverMultiplier=true. A run and its
 // best score are kept per ruleset, so they never mix with the default game's (and each ruleset has its own saved run slot, run.v12.<ruleset>).
-const QS = {}; if (!PLAY) for (const [k, v] of new URLSearchParams(location.search)) if (KEYS.some(e => e[0] === k)) QS[k] = v;   // the play page has no rules in its address: they are for the test build
+const QS = {}; if (!PLAY && !END) for (const [k, v] of new URLSearchParams(location.search)) if (KEYS.some(e => e[0] === k)) QS[k] = v;   // the play page has no rules in its address: they are for the test build
 const MADE = tidy({...G.FLOWGROW, ...QS}, G.FLOWGROW), CFG = MADE.cfg, ASKED = Object.keys(QS).filter(k => !MADE.bad.includes(k) && JSON.stringify(CFG[k]) !== JSON.stringify(G.FLOWGROW[k])), GRID = grid(CFG), W = CFG.map[0].length, H = CFG.map.length;
 const RK = rulesKey(CFG), BEST = "best." + RK, SLOT = "run.v14." + RK, NAME = G.FLOWGROW_NAME || "";   // each ruleset has its own saved run too (run.v14: LOU-314 changed what a tree can do (run.v13) and LOU-307 added the green takeover, so a save from before either, which can hold a move that is no longer legal, is never read), so the maps and the usual game don't overwrite one another; NAME is set by a map page // the best score is kept per ruleset (every number that changes how a run plays), so scores from different rules never meet
 const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches, now = () => performance.now();
@@ -521,8 +526,8 @@ const pops = {}, fx = [];
 // The page opens on the simple look. ?look=painted shows the painted one for that visit, and the menu's Look row switches and remembers.
 // LOU-311: "3d" is a third look, drawn by flowgrow.look3d.js (and the vendored three.js), which are loaded only when it is asked for. Until it has loaded the page draws the simple look.
 const LOOKS = TEST ? ["simple"] : ["simple", "painted", "3d"];   // the test build has the plain look only (LOU-315): no ?look=, nothing that needs art
-const LOOK_PARAM = new URLSearchParams(location.search).get("look"), DEV_LOOK = DEV && LOOKS.includes(LOOK_PARAM);   // ?dev=1&look= fixes a look (and the play page then keeps it, with no fallback)
-const WANT = TEST ? "simple" : PLAY ? (DEV_LOOK ? LOOK_PARAM : "3d") : (() => { const u = new URLSearchParams(location.search).get("look"), m = mem.get("look"); return LOOKS.includes(u) ? u : new URLSearchParams(location.search).has("example") ? "3d" : LOOKS.includes(m) ? m : "simple" })();   // ?example= (an example island) is only drawn by the 3D look, so it opens that
+const LOOK_PARAM = new URLSearchParams(location.search).get("look"), DEV_LOOK = (DEV || END) && LOOKS.includes(LOOK_PARAM);   // ?dev=1&look= fixes a look (and the play page then keeps it, with no fallback)
+const WANT = TEST ? "simple" : PLAY || END ? (DEV_LOOK ? LOOK_PARAM : "3d") : (() => { const u = new URLSearchParams(location.search).get("look"), m = mem.get("look"); return LOOKS.includes(u) ? u : new URLSearchParams(location.search).has("example") ? "3d" : LOOKS.includes(m) ? m : "simple" })();   // ?example= (an example island) is only drawn by the 3D look, so it opens that
 let skin = WANT === "3d" ? "simple" : WANT, L3 = null;   // L3: the 3D look's controller, once it is mounted (then skin is "3d")
 const flat = () => skin !== "painted";   // the simple look and the 3D look share the flat maths and the simple tile pictures
 $("app").classList.toggle("simple", flat());
@@ -739,12 +744,12 @@ function river(t) { const seg = []; for (const k in S.r) { const v = S.r[k], a =
 const view = {z:null, cx:0, cy:0}, lay = {w:0, h:0, topH:0, availH:0, dpr:1, fit:1, zAuto:1}; let scale = 1, off = {x:0, y:0}, lastSize = "";
 const SRC = unkey(Object.keys(fresh(CFG, 1).r)[0]);
 // the height of the pile over the bottom of the island (LOU-317): the island is fitted and centred in what is left between the top line and the pile
-const dockH = () => { const d = $("actions"), b = $("board"); return d && b ? Math.max(0, Math.round(b.getBoundingClientRect().bottom - d.getBoundingClientRect().top)) : 0 };
+const dockH = () => { const d = $(END ? "egCard" : "actions"), b = $("board"); return d && b ? Math.max(0, Math.round(b.getBoundingClientRect().bottom - d.getBoundingClientRect().top)) : 0 };
 function resize() { const box = $("board"), w = box.clientWidth, h = box.clientHeight, dpr = Math.min(devicePixelRatio || 1, 3); if (!w || !h) return;
   const topH = $("top").offsetHeight, botH = dockH(), k = [w, h, topH, botH, dpr].join(); if (k === lastSize) return; lastSize = k;
   const availH = Math.max(40, h - topH - botH), fit = Math.min(w / B.w, availH / B.h), play = Math.min(1.3, w / (CFG.tilesAcross * (flat() ? 80 : 89))); // a hex is about 89 world px across when tilted, 80 flat
   Object.assign(lay, {w, h, topH, botH, availH, dpr, fit, zAuto:Math.max(1, play / fit)});
-  if (view.z === null) { view.z = lay.zAuto; const o = iso(...SRC); view.cx = o.x; view.cy = o.y }   // open on the source, with about tilesAcross tiles across
+  if (view.z === null) { if (END) { view.z = 1; view.cx = B.x + B.w / 2; view.cy = B.y + B.h / 2 } else { view.z = lay.zAuto; const o = iso(...SRC); view.cx = o.x; view.cy = o.y } }   // open on the source, with about tilesAcross tiles across (the endgame island opens whole)
   cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); if (L3) L3.resize(); applyView() }
 function applyView() { view.z = Math.min(Math.max(5, lay.zAuto * 1.6), Math.max(1, view.z)); const s = lay.fit * view.z, vw = lay.w / s, vh = lay.availH / s;
   view.cx = vw >= B.w ? B.x + B.w / 2 : Math.min(B.x + B.w - vw / 2, Math.max(B.x + vw / 2, view.cx));
@@ -939,15 +944,18 @@ function sync() { opts = options(S, 0); landSig = [...reachOf(S)].join(";") + (C
   tx("hScore", S.score);
   $("undoBtn").disabled = !S.moves.length; $("discardBtn").disabled = S.over || !S.q.length || !!S.pend.length; drawPile(); drawPick();
   $("endq").hidden = !waiting || !!lockSel; $("lockq").hidden = !lockSel; if (lockSel) lockCard();
-  if (S.over && !wonShown) result(); if (!S.over) wonShown = false; $("win").hidden = !S.over; $("app").classList.toggle("won", S.over);
-  mem.set(SLOT, S.over ? null : JSON.stringify({seed:S.seed, moves:S.moves, at:Date.now(), rules:RK})); if (TEST) { mirror(); testLine() } if (DEV) devLine(); if (L3) L3.sync(); draw() }
+  if (END) endCard(); else { if (S.over && !wonShown) result(); if (!S.over) wonShown = false; $("win").hidden = !S.over; $("app").classList.toggle("won", S.over);
+    mem.set(SLOT, S.over ? null : JSON.stringify({seed:S.seed, moves:S.moves, at:Date.now(), rules:RK})) }   // the endgame island is no run: nothing is saved, and no result sheet comes up by itself
+  if (TEST) { mirror(); testLine() } if (DEV) devLine(); if (L3) L3.sync(); draw() }
 // When the tiles run out: the score, the best score on this device, the top level and what was done.
 function result() { wonShown = true; try { G.Flowgrow.onRunEnd({...runRecord(), score:S.score, top:S.top, mode:CFG.mode}) } catch (_) {}   // the hook (LOU-316): daily challenges and the leaderboard hang off it later
-  const best = +mem.get(BEST) || 0, low = S.log.filter(e => e.did === "plant" && e.l < e.t.l).length; if (S.score > best) mem.set(BEST, String(S.score));
+  const best = +mem.get(BEST) || 0; if (S.score > best) mem.set(BEST, String(S.score));
   $("wScore").innerHTML = `<b>${S.score} points</b> · ${S.score > best ? (best ? `New best (was ${best})` : "New best") : `Best ${best}`}`;
-  $("wGoals").innerHTML = [[`Top level ${S.top}${S.top ? " · " + levelName(CFG, S.top) : ""}`, `${Object.keys(S.h).length} habitats on the island`], [`${S.planted} planted${low ? ` (${low} as level 1)` : ""} · ${S.combined} combined${CFG.greenTakeover ? ` · ${S.taken} took over green` : ""}`, `${S.discarded} discarded`],
+  $("wGoals").innerHTML = resultRows() }
+// the rows of the result sheet (the endgame page's details sheet shows the same ones)
+const resultRows = () => { const low = S.log.filter(e => e.did === "plant" && e.l < e.t.l).length; return [[`Top level ${S.top}${S.top ? " · " + levelName(CFG, S.top) : ""}`, `${Object.keys(S.h).length} habitats on the island`], [`${S.planted} planted${low ? ` (${low} as level 1)` : ""} · ${S.combined} combined${CFG.greenTakeover ? ` · ${S.taken} took over green` : ""}`, `${S.discarded} discarded`],
     [`River: ${S.extended} extended · ${S.widened} widened`, `${Object.keys(S.r).length} river tiles with the source`],
-    ...(CFG.lockEnabled ? [[`Locks: ${S.lockUsed} used · ${S.lockLost} lost`, `${Object.keys(S.lk).length} tiles locked`], [`Copies: ${S.copyBanked} banked · ${S.copyPlaced} placed · ${S.copyDiscarded} discarded`, `${S.copyPoints} points from copies`]] : [])].map(([b, s]) => `<li><div><b>${b}</b><small>${s}</small></div></li>`).join("") }
+    ...(CFG.lockEnabled ? [[`Locks: ${S.lockUsed} used · ${S.lockLost} lost`, `${Object.keys(egLk || S.lk).length} tiles locked`], [`Copies: ${S.copyBanked} banked · ${S.copyPlaced} placed · ${S.copyDiscarded} discarded`, `${S.copyPoints} points from copies`]] : [])].map(([b, s]) => `<li><div><b>${b}</b><small>${s}</small></div></li>`).join("") }
 
 // ---------- a run: new, saved after every move, rebuilt from its seed and moves on reload (a finished or day-old run starts fresh)
 const urlSeed = PLAY && !DEV ? null : new URLSearchParams(location.search).get("seed");   // a player has no seed to choose
@@ -955,7 +963,7 @@ function newRun() { S = fresh(CFG, urlSeed != null && urlSeed !== "" ? urlSeed :
 function load() { try { const d = JSON.parse(mem.get(SLOT) || "null"); if (!d || d.rules !== RK || !Array.isArray(d.moves) || Date.now() - d.at > 12 * 3600e3 || (TEST && urlSeed != null && urlSeed !== "" && d.seed !== seedOf(urlSeed))) return false; S = replay(CFG, d.seed, d.moves); return !S.over } catch (_) { return false } }   // on the test build ?seed= means that run: a saved run of another seed isn't picked up
 // With elevation, a tap that has nothing else to say gives the height of the land it was on (LOU-310), and a river tile that stepped down says so.
 const heightLine = (p, res) => { if (!CFG.elevation) return ""; const k = key(p), h = elevOf(CFG, S.seed)[k]; return res.does === "extend" && fallAt(S, k) ? `Waterfall: the river steps down to height ${h}.` : `Height ${h}.` };
-function tap(p, carried) { if (swallow) { swallow = 0; return } if (!S || S.over || !p) return;
+function tap(p, carried) { if (swallow) { swallow = 0; return } if (END) { egTap(p); return } if (!S || S.over || !p) return;
   if (lockMode) { if (!lockable(S, p)) { say(key(p) in S.lk ? "That tile is locked." : "Pick a habitat or a river tile.", true); return } lockSel = p; say(""); sync(); return }
   const had = S.locks, hand = S.q[0], res = place(S, 0, p);
   if (!res) { const k = key(p), u = k in S.h ? upgradeLine({k:"h", b:S.hb[k], l:S.h[k], f:S.hf[k]}) : "", w = why(S, 0, p), hg = CFG.elevation && w && !/uphill/.test(w) && CFG.map[p[1]][p[0]] !== "B" ? ` Height ${elevOf(CFG, S.seed)[k]}.` : "";
@@ -1014,7 +1022,7 @@ cv.addEventListener("pointerup", e => { const wasDrag = dragged; lift(e); if (wa
 $("undoBtn").onclick = undo;
 function doDiscard() { if (discard(S, 0)) { say("Discarded."); sync() } }
 $("discardBtn").onclick = doDiscard;
-$("again").onclick = newRun;
+$("again").onclick = END ? () => { location.href = "../play/" } : newRun;
 // Lock (LOU-317: there is no Lock button): press and hold a tile on the island (right-click with a mouse) and confirm on the card above the pile. With the pile empty and a lock to use, any tap on a tile picks it (lock mode).
 $("pickq").addEventListener("click", e => { const b = e.target.closest("button[data-f]"); if (b) doPick(b.dataset.f) });
 function lockTile(p) { if (!S || S.over || !p || !CFG.lockEnabled) return;
@@ -1026,10 +1034,30 @@ $("lockYes").onclick = () => { if (!lockSel) return; const r = lock(S, lockSel);
 $("lockNo").onclick = () => { lockSel = null; lockMode = false; sync() };   // (with an empty pile and a lock still in hand, sync turns lock mode back on)
 $("endYes").onclick = () => { if (end(S)) sync() };
 $("copyLog").onclick = async () => { const e = $("dToast"); e.textContent = await copyText(logText(S)) ? "Run log copied." : "Couldn't copy on this device."; e.hidden = false; setTimeout(() => { e.hidden = true }, 2200) };
+// ---------- the endgame page (LOU-319): the island is built from the static run (endgame/run.js) and the page only looks at it. If the rules have changed since it was made, or it can't be replayed, the page says so on its card and shows
+// an empty island: never a blank page. (tools/flowgrow-endgame.mjs --check, run by the simulator's rule checks, catches that before it is pushed.)
+function endgameBoot() {
+  if (!EG) egWhy = "The endgame run didn't load.";
+  else if (EG.rules !== RK) egWhy = "The game's rules have changed since this island was made.";
+  else try { S = replay(CFG, EG.seed, EG.moves); if (!S.over || S.score !== EG.score) egWhy = "This island no longer replays to the score it was saved with." } catch (_) { egWhy = "This island can't be replayed under the game's rules any more." }
+  if (egWhy) S = fresh(CFG, EG ? EG.seed : 1);
+  sync() }
+function endCard() { if (egWhy) { tx("egT", "This island can't be shown"); tx("egS", egWhy + " Make it again: node tools/flowgrow-endgame.mjs <run.json>"); return }
+  tx("egT", "A finished island"); tx("egS", `Top level ${S.top} · ${Object.keys(S.h).length} habitats · ${S.lockUsed} locks · ${S.moves.length} moves`) }
+// a tap only says what the tile is (the island is not played)
+function egTap(p) { if (!S || !p) return; const k = key(p), r = S.r[k], hl = S.h[k], t = hl ? {k:"h", l:hl, ...(S.hb[k] ? {b:S.hb[k]} : {}), ...(S.hf[k] ? {f:S.hf[k]} : {})} : null, up = t ? upgradeLine(t) : "";
+  say((t ? tileText(CFG, t) : r ? (r.from == null ? "The source of the river" : tileText(CFG, {k:"r", l:r.l})) : codeAt(CFG, p) === "B" ? "A mountain" : "Empty land") + (k in (egLk || S.lk) ? " · locked" : "") + (up ? ". " + up : "")) }
+function egSheet(on) { if (on) { const f = (EG && EG.found) || {}; $("wScore").innerHTML = `<b>${S.score} points</b> · top level ${S.top}`; $("wGoals").innerHTML = resultRows();
+    tx("egMade", f.method ? `Made by real play: a ${f.method} search played the game's own rules for ${f.seconds} seconds on ${f.workers} processes (pile seed ${S.seed}). This page replays its ${S.moves.length} moves through the same rules.` : `This page replays ${S.moves.length} moves through the game's own rules.`) }
+  $("win").hidden = !on; $("app").classList.toggle("egsheet", on || !$("menu").hidden) }   // the card steps back while a sheet is up
+// the padlock button (top line): hides the locks so the island shows as if nothing were frozen (a view option: no lock is added or removed, only what the looks draw), and shows them again
+function egLocks(show) { if (show && egLk) { S.lk = egLk; egLk = null } else if (!show && !egLk) { egLk = S.lk; S.lk = {} }
+  const b = $("lockTog"); b.setAttribute("aria-pressed", egLk ? "true" : "false"); b.setAttribute("aria-label", egLk ? "Show the locks" : "Hide the locks"); b.title = b.getAttribute("aria-label"); mem.set("locks", egLk ? "off" : null); sync() }
+if (END) { $("egMore").onclick = () => egSheet(true); $("egBack").onclick = () => egSheet(false); $("win").addEventListener("click", e => { if (e.target === $("win")) egSheet(false) }); $("lockTog").onclick = () => egLocks(!!egLk) }
 // The menu: how to play, the seven levels, a new run, the run log and Home. Tap outside to close.
 const menu = open => { $("mConf").hidden = true; tx("mSeed", "Seed " + S.seed); tx("lookNote", skin === "3d" ? "3D. Tap for the simple look" : skin === "painted" ? "Painted. Tap for the 3D look" : "Simple. Tap for the painted look");
   const tr = $("timeRow"); if (tr) { tr.hidden = !(L3 && skin === "3d"); if (L3 && skin === "3d") tx("timeNote", L3.timeNote()) }   // the time of day is a 3D-look setting
-  $("menu").hidden = !open };
+  $("menu").hidden = !open; if (END) $("app").classList.toggle("egsheet", open || !$("win").hidden) };
 $("menuBtn").onclick = () => menu(true);
 // ---------- carrying the tile in hand (LOU-317). Drag it out of the pile: it lifts, hovers over the cell it would go to with its shadow on the ground and a small tag with the points ("+3 here"), and lands when it is let go. Let go over Discard to
 // discard it, and anywhere else (or on a cell it can't go to) and it goes back (a cell that refuses it says why). Tapping land still places the tile in hand at once. The rings show on every cell it can go to the whole time.
@@ -1082,6 +1110,8 @@ $("menu").addEventListener("click", async e => { if (e.target === $("menu")) { m
   if (k === "runcopy") { const ok = await copyText(JSON.stringify(runRecord())); menu(false); say(ok ? "Run copied: its rules, seed and moves." : "Couldn't copy on this device."); return }   // the test build's tools (LOU-315)
   if (k === "runload") { $("runBox").hidden = false; $("runText").focus(); return } if (k === "runNo") { $("runBox").hidden = true; return }
   if (k === "runGo") { const m = loadRun($("runText").value); tx("runMsg", m); if (!m) { $("runBox").hidden = true; menu(false) } return }
+  if (k === "totest") { try { sessionStorage.setItem("flowgrow.test.pending", JSON.stringify({config:{}, seed:S.seed, moves:S.moves})) } catch (_) {} location.href = "../test/"; return }   // the endgame page: this island on the test build, with no graphics (its own "Load run", without the paste)
+  if (k === "toplay") { location.href = "../play/"; return }
   if (k === "reload") { location.reload(); return }
   if (k === "time") { if (L3 && L3.cycleTime) { L3.cycleTime(); menu(true) } return }   // Auto, Day, Golden hour, Night, Pause: the menu stays open so the new choice shows
   menu(false); if (k === "newYes") newRun(); else if (k === "look") setSkin(LOOKS[(LOOKS.indexOf(skin) + 1) % LOOKS.length]); else if (k === "zoom") { if (L3 && skin === "3d") L3.toggleFit(); else { view.z = view.z > 1.02 ? 1 : lay.zAuto; applyView() } } });
@@ -1118,7 +1148,7 @@ if (NAME) { document.title = "Flowgrow · " + NAME; const mb = document.querySel
 { const he = $("howElev"); he.hidden = !CFG.elevation; if (CFG.elevation) he.textContent = `Heights, 0 to ${CFG.elevationLevels}: the land is shaded by height (lighter is higher) and a dark line is a step down. The river starts on the highest ground and can go level or down, never up; where it steps down it makes a waterfall, shown as white lines. `
   + (CFG.stepAdjacency === "all" ? "Tiles across a step don't count as neighbours: no Meadow bonus, no Roots lift, no Steppe tile, no lock copy, and no prairie spread, reed bed or pine-oneer land." : CFG.stepAdjacency === "score" ? "Marsh and trees across a step don't count towards a Meadow's multiplier." : "A step changes nothing else.") }
 // Switch the look and remember it. The camera starts again on the source, since the two looks have different bounds.
-function setSkin(v) { if (!LOOKS.includes(v) || v === skin) return; if (!PLAY) mem.set("look", v);   // the play page remembers no look: it picks one each visit
+function setSkin(v) { if (!LOOKS.includes(v) || v === skin) return; if (!PLAY && !END) mem.set("look", v);   // the play page remembers no look: it picks one each visit
   if (v === "3d") { enter3d(); return }   // it loads first, and the page keeps drawing the look it has until then
   if (skin === "3d") leave3d();
   skin = v; markLook(); $("app").classList.toggle("simple", flat());
@@ -1133,9 +1163,9 @@ function load3d() { if (G.Flowgrow3D) return Promise.resolve(G.Flowgrow3D); if (
 const bridge3d = () => ({board:$("board"), cv, top:$("top"), cfg:CFG, grid:GRID, rules, W, H, key, unkey, step, reduce, state:() => S, options:() => opts, tap, say, bottom:dockH, optLabel,
   lock:() => ({mode:lockMode, sel:lockSel, list:lockList}), pops, fx, widenText, marshMult, upgradeOf, levelName, tileText, BIOME_NAME, mem});
 // (the play page never says "Loading the 3D look", so it has no message to clear when the look is up, and a message of its own stays)
-function enter3d() { if (L3) return Promise.resolve(); if (!PLAY) say("Loading the 3D look…");
+function enter3d() { if (L3) return Promise.resolve(); if (!PLAY && !END) say("Loading the 3D look…");
   return load3d().then(m => { const ctl = m.mount(bridge3d()); if (!ctl) throw new Error("This device can't draw 3D."); L3 = ctl; skin = "3d"; markLook(); cv.style.visibility = "hidden"; $("app").classList.toggle("simple", true);
-    if (!PLAY) say(""); lastSize = ""; resize(); sync() }).catch(err => { if (!PLAY) say((err && err.message || "The 3D look couldn't start.") + " Staying on the " + skin + " look.", true) }) }   // the play page says nothing: it drops to a simpler look (settleLook)
+    if (!PLAY && !END) say(""); lastSize = ""; resize(); sync() }).catch(err => { if (!PLAY && !END) say((err && err.message || "The 3D look couldn't start.") + " Staying on the " + skin + " look.", true) }) }   // the play page says nothing: it drops to a simpler look (settleLook)
 function leave3d() { if (!L3) return; L3.unmount(); L3 = null; cv.style.visibility = "" }
 
 // ---------- the play page's quiet fallback (LOU-316). The page opens on the 3D look. If the device can't draw it (no WebGL) or the first frames run under 20 fps, it drops to the painted look, and from there to the plain look,
@@ -1159,19 +1189,19 @@ function showIntro() { const el = $("intro"); if (!el) return; let i = 0, seen =
 // What the page says about the old runs on this device (LOU-316): a run saved by an older version of the rules can't be replayed now, so it is dropped, once, with a plain line.
 function staleRuns() { let n = 0; try { for (const k of Object.keys(localStorage)) { const m = /^flowgrow\.run\.v(\d+)\./.exec(k); if (!m || +m[1] >= 13) continue; try { if ((JSON.parse(localStorage.getItem(k)).moves || []).length) n++ } catch (_) {} localStorage.removeItem(k) } } catch (_) {} return n }
 addEventListener("resize", resize);
-if (window.ResizeObserver) { const ro = new ResizeObserver(resize); ro.observe($("board")); ro.observe($("top")); ro.observe($("actions")) }
+if (window.ResizeObserver) { const ro = new ResizeObserver(resize); ro.observe($("board")); ro.observe($("top")); ro.observe($("actions")); if (END) ro.observe($("egCard")) }
 function loop() { draw(); requestAnimationFrame(loop) }
-if (!TEST) loadPileArt();   // the pile's pictures (they are drawn when they arrive); the test build has none, its tiles are the flat ones
-if (TEST && takePending()) sync(); else if (load()) sync(); else { const old = PLAY && !DEV ? staleRuns() : 0; newRun(); if (old) say("Your earlier run was from an older version of the rules, so this is a new run.") }   // on the test build, a run that was loaded under other rules is waiting here
+if (!TEST && !END) loadPileArt();   // the pile's pictures (they are drawn when they arrive); the test build has none, its tiles are the flat ones, and the endgame page has no pile
+if (END) { endgameBoot(); if (mem.get("locks") === "off") egLocks(false) } else if (TEST && takePending()) sync(); else if (load()) sync(); else { const old = PLAY && !DEV ? staleRuns() : 0; newRun(); if (old) say("Your earlier run was from an older version of the rules, so this is a new run.") }   // on the test build, a run that was loaded under other rules is waiting here
 if (PLAY && !DEV && mem.get("intro") !== "1" && !S.moves.length) showIntro();   // the first-run moment, once
-if (PLAY) fetch(SW_URL).then(r => r.text()).then(s => { const m = /VERSION = "(v\d+)"/.exec(s); if (m) tx("mVer", m[1]) }).catch(() => {});   // a small version in the menu only
+if (PLAY || END) fetch(SW_URL).then(r => r.text()).then(s => { const m = /VERSION = "(v\d+)"/.exec(s); if (m) tx("mVer", m[1]) }).catch(() => {});   // a small version in the menu only
 requestAnimationFrame(() => requestAnimationFrame(() => { try { performance.mark("fg-first-board") } catch (_) {} }));   // when the board first showed, for the numbers on LOU-316
 resize(); if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { lastSize = ""; resize(); drawPile() });
 if (reduce) draw(); else loop();
 if ("serviceWorker" in navigator) addEventListener("load", () => navigator.serviceWorker.register(SW_URL).catch(() => {}));
-if (PLAY && !DEV_LOOK) settleLook(); else if (WANT === "3d") enter3d();   // ?look=3d (or the remembered look); the play page picks its own (below)
+if ((PLAY || END) && !DEV_LOOK) settleLook(); else if (WANT === "3d") enter3d();   // ?look=3d (or the remembered look); the play page picks its own (below)
 // for checking the page from a script
 G.Flowgrow.onRunEnd = G.Flowgrow.onRunEnd || (() => {});   // onRunEnd(result): the seed, rules, moves and score of a run that has just ended. It does nothing yet (LOU-316)
-Object.assign(G.Flowgrow, {run:() => S, runRecord, loadRun, page:() => PAGE, tap, undo, pick:doPick, lockMode:() => lockMode, lockTile, discard:() => $("discardBtn").click(), newRun, scr, options:() => opts, skin:() => skin, setSkin,
+Object.assign(G.Flowgrow, {run:() => S, runRecord, loadRun, page:() => PAGE, endgame:() => ({run:EG, why:egWhy}), tap, undo, pick:doPick, lockMode:() => lockMode, lockTile, discard:() => $("discardBtn").click(), newRun, scr, options:() => opts, skin:() => skin, setSkin,
   show(h, r) { S.h = h; if (r) S.r = r; S.top = Math.max(0, ...Object.values(h)); sync() }, look3d:() => L3, look(p, z) { if (L3 && skin === "3d") return L3.look(p, z); const o = iso(...p); view.cx = o.x; view.cy = o.y; if (z) view.z = z; applyView() }});
 })();

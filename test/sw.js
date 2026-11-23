@@ -1,6 +1,6 @@
 // Flowgrow test build service worker (LOU-315): lets the test page load offline after the first visit. It is its own service worker, with its own VERSION and cache, so the test page can be updated
 // without touching the play page's. Bump VERSION whenever the files below change so old caches are dropped.
-const VERSION = "t6";
+const VERSION = "t7";
 const CACHE = `fgtest-${VERSION}`;
 const LOCAL = ["./", "../flowgrow.config.js", "../flowgrow.js", "../flowgrow.css", "../play.css"];
 

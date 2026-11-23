@@ -6,6 +6,8 @@ An ecology and nature building game on a hex grid, made for a phone. Tiles arriv
 
 **Test build** (the plain look, no graphics, for testing the rules): https://danrossli.github.io/flowgrow/test/
 
+**Endgame** (a finished, very good island to look at without playing): https://danrossli.github.io/flowgrow/endgame/
+
 Plain HTML/JS, no build step, no framework, and nothing loaded from other sites. It is a quick prototype: what is left out is listed in CANON.md under "Not built yet".
 
 ## How to play
@@ -99,6 +101,19 @@ Only a tile that is level 1 with no upgrade has a picture, and a river tile of a
 
 `/test/` (https://danrossli.github.io/flowgrow/test/; LOU-315, Dan, Nov 22: "one is to keep the game without the graphics...this will make it easier to test and iterate") is Flowgrow with **no graphics**: the plain look only, on its own page, with no art, no 3D and no sound. It shares the rules (`flowgrow.js`) and the config (`flowgrow.config.js`) with the game and has none of its own. **It is the place for rules work, and it never gets graphics.** Any config value can be changed in the address (`?seed=123`, `?treeShare=0`, `?bareGroundMode=refuse`, `?upgradeLevel=0` ...; unknown names are ignored) and a rules line at the bottom says which rules the address changed. Its menu has **Copy run** (the rules, seed and moves as one line of text), **Load run** (paste one to replay it; under other rules the page opens with them) and **Reload** (keeps the run). The board is also data: every cell is an element with `data-kind`, `data-level` and `data-cell` (`#boardDom`, `#pileDom`), so a script can read it without pixels. It keeps its own saved run (`flowgrow.test.*`) and has its own service worker (`test/sw.js`, cache `fgtest-`). `node --experimental-websocket tools/test-page-smoke.mjs` checks it, and fails if an image, font, three.js or other art request ever appears.
 
+## The endgame island
+
+`/endgame/` (https://danrossli.github.io/flowgrow/endgame/; LOU-319, Dan, Nov 23: "an example of a "finished" very good map ... a staticly generated map but uses real game play to generate") shows a finished, very good island without playing it: 1,201.5 points, 98 habitats on a 109-cell island, 74 locks. It is **static** (the same island every time) and **made by real play**: a run that `tools/flowgrow-search.mjs` found by playing the game's own rules, kept as its seed and moves in `endgame/run.js`, which the page replays through `flowgrow.js`. It opens on the whole island in the 3D look in golden hour. `?look=simple` is the same island with no graphics and `?look=painted` the painted one; a tap on a tile says what it is; the padlock button (top right) hides the locks; **Details** says how the run was made; the menu can open the same island in the test build. It has no pile, no Undo and no run, and keeps its own saved keys (`flowgrow.endgame.*`).
+
+To make the island again (after a rule change, or to show another run):
+
+```bash
+node tools/flowgrow-search.mjs --workers 10 --seconds 300 --seed 20261123 --out best.json
+node tools/flowgrow-endgame.mjs best.json other.json      # what each run's island is made of
+node tools/flowgrow-endgame.mjs --use best.json            # write endgame/run.js and endgame/index.html
+node tools/flowgrow-endgame.mjs --check                    # is endgame/ up to date? (the rule checks run this)
+```
+
 ## Run it
 
 Open `index.html` in a browser, or serve the folder to try the service worker too:
@@ -118,6 +133,7 @@ then go to http://localhost:8000/.
 - `node --experimental-websocket tools/test-page-smoke.mjs` checks the test build in headless Chrome: no image, font, media, manifest or three.js request (with `?look=3d` in the address too) and nothing from another site; the plain look only; the board and the pile as data; a whole run played, with the same score and board as the rules Node reads; its own saved run, service worker and cache; `?seed=`; the rules line; a copied run loading again, in place and under other rules. `--url` tests another address and `--out DIR` saves a screenshot.
 - `node --experimental-websocket tools/holder-smoke.mjs` checks the tile holder in headless Chrome: the pictures in the hand and the next two, and the copies at the back of the pile (in the menu), at 390×844 (simple and 3D looks), 360×640 and 1280×800; no pill over a picture and an accessible label with the level on every tile; the hand is the largest and the next two shrink; the count says "N left" and the stack has a slab for each; Discard sits beside the hand with a 44 px touch target; the pile stays inside the window, clear of the top line and about 210 px tall; a level 2 or higher copy keeps its flat tile; the sizes (40 KB each, 250 KB in all for the habitats, 280 KB in all for the river's seven); levels 1 to 15 map to the stages 1 to 7 and each shows its stage's picture with its level drawn on it; a picture that is blocked falls back to the flat tile; nothing bobs or glides with reduced motion. `--url` tests another address and `--out DIR` saves screenshots.
 - `node --experimental-websocket tools/screen-smoke.mjs` plays the game screen in headless Chrome with real touches, on the plain look and the 3D look at 390×844 (LOU-317): the top line is the score, Undo and Menu and nothing else; no Lock button, no zoom button and no panel over the island; the island sits between the top line and the pile; a tap places the tile; a drag lifts it, snaps it over a cell it can go to with its points and lights the cell, and lets go to place it; a drop on a cell that can't take it, or anywhere else, puts it back; a drop on Discard discards; press and hold opens the lock card (a ring fills first, and the lift is not a tap), right-click does too, and a quick tap only places; the 3D look has no white pill over the island; Undo; a whole run to its end; the glass is darker at night; reduced motion. `--url` tests another address and `--out DIR` saves screenshots.
+- `node --experimental-websocket tools/endgame-smoke.mjs` checks the endgame page in headless Chrome (LOU-319): the static run replays to its score and the page shows it finished, with no pile or Undo; the same island in `?look=3d`, `?look=painted` and `?look=simple` (which asks for no picture and no 3D file), and rules or a seed in the address change nothing; taps change nothing and say what the tile is; the padlock button hides and shows the locks without changing the run; the Details sheet and the menu; the play page's saved run, best score and intro flag are untouched, byte for byte; Open in the test build shows the same island there; Play your own goes to the play page; nothing comes from another site and the page logs no error. `--url` tests another address and `--out DIR` saves screenshots.
 - Play one whole run in a browser at 390×844.
 
 ## Search it
@@ -127,6 +143,7 @@ Three developer tools (plain Node, no packages) find out how high a set of rules
 - `node tools/flowgrow-search.mjs --workers 8 --seconds 300` looks for the highest score on one seed with the game's own rules. Any config value can be changed on the command line as `key=value`, to try a rule without editing the config, for example `node tools/flowgrow-search.mjs maxLevel=7 riverMonotone=false`. It saves the best run to `search-best.json`. `--picks steppe,pine` fixes the upgrades it picks (otherwise the policy search tunes the choice and nrpa chooses as it goes).
 - `node tools/flowgrow-analyze.mjs search-best.json` replays a saved run and says where its points came from (planted or combined, copies or dealt tiles), which tiles were locked and what the island looks like at the end.
 - `node --experimental-websocket tools/flowgrow-replay.mjs search-best.json` plays a saved run in the real page (it needs Chrome) and checks that the page scores the same. The page plays by its own rules, so it only accepts runs found under them.
+- `node tools/flowgrow-endgame.mjs best.json` says what a saved run's island is made of, and `--use best.json` makes it the endgame island (see "The endgame island").
 
 To test a rule: give it a config switch, search with it on and with it off, and compare the best score, where the points come from, and how many locks and moves it takes. The default seed, 495454692, is the run Dan pasted on Nov 20 (47 by hand).
 

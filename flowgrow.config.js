@@ -79,6 +79,7 @@ window.FLOWGROW = {
   // changes a rule, a score, a save or a tap. Every number of the look is in this one block, and none of it is a rule (it is not part of the ruleset key).
   look3d: {
     quality: "auto",        // "low", "med", "high", or "auto" (picked from a short frame-time probe when the look starts). ?q=low|med|high picks one for a visit
+    lod: "auto",            // the level of detail: "auto" thins the plants and grass while the whole island is in view and draws them in full as you zoom in; "near" always draws them in full (the endgame page, LOU-319); "far" always thins them
     dayNight: "cycle",      // "cycle": the clock below runs (Dan, Nov 22: the clock is the default for now). "progress": the pile is the day, morning at the first tile and night when it is empty. "fixed:day", "fixed:gold", "fixed:night": hold one moment. ?time=night|gold|day|cycle|progress
     dayLength: 240,         // seconds for a whole day: dawn, day, golden hour, dusk, night
     startPhase: 0.20,       // where the clock starts (0.20 is morning)

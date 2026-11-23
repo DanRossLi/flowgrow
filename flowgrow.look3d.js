@@ -20,7 +20,7 @@
 const G = window, T = G.THREE;
 
 // ---------- the look's numbers: flowgrow.config.js look3d, with these as the fallback if a value is missing
-const DEFAULTS = {quality:"auto", dayNight:"cycle", dayLength:240, startPhase:.2, azimuth:.62, polar:.98, fov:30, nearTilesAcross:4,
+const DEFAULTS = {quality:"auto", lod:"auto", dayNight:"cycle", dayLength:240, startPhase:.2, azimuth:.62, polar:.98, fov:30, nearTilesAcross:4,
   budget:{triangles:250000, drawCalls:150, fps:30}, budgetScale:{low:.5, med:1, high:2.2}, shadowMap:{low:0, med:1024, high:2048}, pixelRatio:{touch:1.5, other:2},
   numeral:{x:.02, z:.74, width:.62, stretch:1.5, lift:.034, clear:.36, grow:2, glow:.5}};   // the level number pressed into the ground (LOU-313): see flowgrow.config.js
 const merge = (a, b) => { const o = {...a}; if (b) for (const k in b) o[k] = b[k] && typeof b[k] === "object" && !Array.isArray(b[k]) ? merge(a[k] || {}, b[k]) : b[k]; return o };
@@ -164,7 +164,7 @@ function mount(B) {
   const shade = (c, k) => ({r:c.r * k, g:c.g * k, b:c.b * k});
   // level of detail by zoom: with the whole island in view a tile is a few dozen pixels across, so its plants and grass are drawn thinner (the tiles are rebuilt a few at a time when the zoom crosses the line)
   // [far, near]: n the change in the rows of a tile's top, grass the share of the grass, dens the share of the plants
-  const LOD = [{n:-1, grass:.28, dens:.42}, {n:0, grass:1, dens:1}]; let lod = 0;
+  const LOD = [{n:-1, grass:.28, dens:.42}, {n:0, grass:1, dens:1}]; let lod = C3.lod === "near" ? 1 : 0;   // C3.lod "near" always draws full detail (the endgame page, LOU-319), "far" never does; "auto" follows the zoom
   // a blade of grass and a flower head, each turned to face the camera: a triangle (base corners of half-width w, apex h above, leaning la) and a diamond of two. cb is the colour of the base, ct of the tip.
   const camDir = new T.Vector3(Math.sin(C3.polar) * Math.sin(C3.azimuth), Math.cos(C3.polar), Math.sin(C3.polar) * Math.cos(C3.azimuth));
   function faceTri(b, p0, p1, p2, c0, c1, c2) { const ux = p1[0] - p0[0], uy = p1[1] - p0[1], uz = p1[2] - p0[2], vx = p2[0] - p0[0], vy = p2[1] - p0[1], vz = p2[2] - p0[2];
@@ -598,7 +598,7 @@ if (art && art.animal && quality !== "low") for (const s of riverSegs) { const s
     if (k < 1) want = clamp(detail * k * .95, .3, 1); else if (detail < 1 && k > 1.5) want = Math.min(1, detail * Math.min(k * .8, 1.6));
     if (Math.abs(want - detail) > .04 && passes < 3) { passes++; detail = want; enqueue(cells.filter(c => c.mesh)); buildRiverLife() } }
   // the level of detail follows the zoom, with a gap so it doesn't flicker: thin when the goal distance is past .62 of the whole-island distance, full when it comes back inside .5
-  function checkLod() { const want = view.gd > fit.dist * (lod === 0 ? .5 : .62) ? 0 : 1; if (want === lod) return; lod = want; updateShadowCasters(); buildRiverLife() }
+  function checkLod() { const want = C3.lod === "near" ? 1 : C3.lod === "far" ? 0 : view.gd > fit.dist * (lod === 0 ? .5 : .62) ? 0 : 1; if (want === lod) return; lod = want; updateShadowCasters(); buildRiverLife() }
   // A shadow pass draws every tile that casts a shadow whether or not it is on screen (the stats of the main pass don't count it), so when zoomed in only the tiles on screen, and two tiles beyond them
   // (which can shade them), cast shadows. With the whole island in view they all do.
   const pvB = new T.Vector3(); let shadowDirty = true;
