@@ -88,8 +88,9 @@ const STRATA = {land:[["#9b958b", .2], ["#c0834e", .27], ["#8c5b37", .28], ["#4d
 const wob = (X, Z) => [(Math.sin(X * 7.1 + Z * 3.3) + Math.sin(Z * 5.7 - X * 2.1)) * .017, (Math.sin(Z * 6.3 + X * 4.1) + Math.sin(X * 5.3 - Z * 2.7)) * .017];
 const hexd = (x, z) => { x = Math.abs(x); z = Math.abs(z); return Math.max(x, x * .5 + z * .8660254) - .8660254 };   // the distance out from a hex's edge (negative inside)
 
-// The level of a ring or label in the game's own colours (the simple look's): gold for combine, teal for a river raise, blue for extend, green for plant.
-const RING = {plant:{c:[.3, .8, .42], a:.8, f:.1, w:.06}, extend:{c:[.2, .58, .95], a:.8, f:.2, w:.06}, combine:{c:[.95, .72, .15], a:.95, f:.13, w:.085}, widen:{c:[.14, .72, .62], a:.95, f:.13, w:.08},
+// The rings (LOU-317): every cell the tile in hand can go to has a soft dashed white ring with a faint white fill (22%), pulsing slowly; a cell that combines is tinted gold, a river raise teal. The points are text inside the ring, not a pill.
+// d: dashed. The rest (lock mode and the cell a carried tile hovers over) are solid.
+const RING = {plant:{c:[1, 1, 1], a:1, f:.22, w:.07, d:1}, extend:{c:[1, 1, 1], a:1, f:.22, w:.07, d:1}, combine:{c:[1, .92, .6], a:1, f:.32, w:.08, d:1}, widen:{c:[.78, 1, .94], a:1, f:.28, w:.075, d:1},
   pick:{c:[.95, .72, .15], a:1, f:.16, w:.1}, lockable:{c:[.98, .92, .7], a:.95, f:.1, w:.07}, copy:{c:[.25, .78, .68], a:.95, f:.1, w:.075}, high:{c:[.55, .6, .62], a:.8, f:.05, w:.05}};
 
 function mount(B) {
@@ -370,21 +371,20 @@ function mount(B) {
   // dynamic mesh with a vertex colour and alpha for each, rebuilt when the game changes. Their tags are labels (below).
   const ringMat = new T.MeshBasicMaterial({vertexColors:true, transparent:true, depthWrite:false, side:T.DoubleSide, polygonOffset:true, polygonOffsetFactor:-2, polygonOffsetUnits:-2}), ringMesh = new T.Mesh(new T.BufferGeometry(), ringMat); ringMesh.renderOrder = 3; ringMesh.frustumCulled = false; scene.add(ringMesh);
   const hoverMat = new T.MeshBasicMaterial({vertexColors:true, transparent:true, depthWrite:false, side:T.DoubleSide, polygonOffset:true, polygonOffsetFactor:-3, polygonOffsetUnits:-3}), hoverMesh = new T.Mesh(new T.BufferGeometry(), hoverMat); hoverMesh.renderOrder = 4; hoverMesh.frustumCulled = false; hoverMesh.visible = false; scene.add(hoverMesh);
-  function ringGeom(list) { const pos = [], col = [], ind = []; const add = (x, z, r0, r1, c, a, f) => { const p = [], base = pos.length / 3, hexPts = rr => { const o = []; for (let i = 0; i < 6; i++) { const a0 = (60 * i - 90) * Math.PI / 180, a1 = (60 * (i + 1) - 90) * Math.PI / 180; for (let s = 0; s < 2; s++) { const t = s / 2; o.push([x + rr * (Math.cos(a0) * (1 - t) + Math.cos(a1) * t), z + rr * (Math.sin(a0) * (1 - t) + Math.sin(a1) * t)]) } } return o };
+  function ringGeom(list) { const pos = [], col = [], ind = []; const add = (x, z, r0, r1, c, a, f, dash) => { const p = [], base = pos.length / 3, hexPts = rr => { const o = []; for (let i = 0; i < 6; i++) { const a0 = (60 * i - 90) * Math.PI / 180, a1 = (60 * (i + 1) - 90) * Math.PI / 180; for (let s = 0; s < 4; s++) { const t = s / 4; o.push([x + rr * (Math.cos(a0) * (1 - t) + Math.cos(a1) * t), z + rr * (Math.sin(a0) * (1 - t) + Math.sin(a1) * t)]) } } return o };
       const outer = hexPts(r1), inner = hexPts(r0), n = outer.length; void p;
       for (let i = 0; i < n; i++) { pos.push(outer[i][0], heightAt(outer[i][0], outer[i][1]) + .05, outer[i][1]); col.push(c[0], c[1], c[2], a) }
       for (let i = 0; i < n; i++) { pos.push(inner[i][0], heightAt(inner[i][0], inner[i][1]) + .05, inner[i][1]); col.push(c[0], c[1], c[2], a) }
-      for (let i = 0; i < n; i++) { const j = (i + 1) % n; ind.push(base + i, base + j, base + n + i, base + j, base + n + j, base + n + i) }
+      for (let i = 0; i < n; i++) { if (dash && i % 2) continue; const j = (i + 1) % n; ind.push(base + i, base + j, base + n + i, base + j, base + n + j, base + n + i) }
       if (f > 0) { const cb = pos.length / 3; pos.push(x, heightAt(x, z) + .045, z); col.push(c[0], c[1], c[2], f); for (let i = 0; i < n; i++) { pos.push(inner[i][0], heightAt(inner[i][0], inner[i][1]) + .045, inner[i][1]); col.push(c[0], c[1], c[2], f) } for (let i = 0; i < n; i++) ind.push(cb, cb + 1 + i, cb + 1 + (i + 1) % n) } };
-    for (const L of list) { const R = RING[L.kind]; add(L.x, L.z, .9 - R.w * 1.3, .9, R.c, R.a, R.f) }
+    for (const L of list) { const R = RING[L.kind]; if (R.d) add(L.x, L.z, .9 - R.w * 1.3 - .03, .9 + .03, [.03, .2, .18], .45, 0, R.d);   // a soft dark edge under a dashed ring, so the white reads on pale ground too
+      add(L.x, L.z, .9 - R.w * 1.3, .9, R.c, R.a, R.f, R.d) }
     const g = new T.BufferGeometry(); g.setAttribute("position", new T.Float32BufferAttribute(pos, 3)); g.setAttribute("color", new T.Float32BufferAttribute(col, 4)); g.setIndex(ind); return g }
   let ringList = [];
   function buildRings() { if (EXM) { ringList = []; ringMesh.geometry.dispose(); ringMesh.geometry = new T.BufferGeometry(); ringTags = []; return }   // an example island has no rings
     const list = [], tags = [], opts = B.options(), lk = B.lock(), pend = S.pend[0];
     if (!S.over && !lk.mode) for (const o of opts) { const c = cellAt(o.p[0], o.p[1]); if (!c) continue; list.push({x:c.x, z:c.z, kind:o.does});
-      if (o.does === "combine") tags.push({id:"o" + c.k, cell:c, text:"+" + o.pts, cls:"gold", dy:.5});
-      else if (o.does === "widen") tags.push({id:"o" + c.k, cell:c, text:B.widenText(o), cls:"teal", dy:.4});
-      else if (o.does === "plant" && (o.l < S.q[0].l || o.mult > 1)) tags.push({id:"o" + c.k, cell:c, text:(o.l < S.q[0].l ? "as " + o.l : "") + (o.mult > 1 ? (o.l < S.q[0].l ? " " : "") + "×" + o.mult : ""), cls:o.mult > 1 ? "teal" : "gold", dy:.3}) }
+      const L = B.optLabel(o); if (L.main || L.note) tags.push({id:"o" + c.k, cell:c, text:L.main, note:L.note || "", cls:"rt " + (o.does === "widen" || (o.does === "plant" && o.mult > 1) ? "teal " : "gold ") + (o.does === "combine" ? "lg" : o.does === "plant" ? "sm" : "md"), dy:-.38}) }
     if (pend) { const c = cells[idx[unkey(pend)[1] * W + unkey(pend)[0]]]; list.push({x:c.x, z:c.z, kind:"pick"}) }
     if (lk.mode) { if (!lk.sel) { for (const L of lk.list) { const c = cellAt(L.p[0], L.p[1]); list.push({x:c.x, z:c.z, kind:"lockable"}); tags.push({id:"l" + c.k, cell:c, text:L.n + (L.n === 1 ? " copy" : " copies"), cls:"gold", dy:.5}) } }
       else { const got = rules.copiesOf(S, lk.sel), c0 = cellAt(lk.sel[0], lk.sel[1]); list.push({x:c0.x, z:c0.z, kind:"lockable"}); tags.push({id:"l" + c0.k, cell:c0, text:"lock", cls:"gold", dy:.5});
@@ -445,6 +445,8 @@ function mount(B) {
     st.textContent = "#l3labels{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:1}.l3t{position:absolute;left:0;top:0;min-width:22px;height:22px;padding:0 7px;border-radius:11px;background:#fff;color:#24434a;font:800 13px/22px 'M PLUS Rounded 1c',Nunito,sans-serif;text-align:center;white-space:nowrap;box-shadow:0 2px 6px rgba(10,40,50,.28),0 0 0 1.5px rgba(10,40,50,.12);will-change:transform;font-variant-numeric:tabular-nums}" +
       ".l3t.p{color:#7a5a10}.l3t.m{color:#0d6a66}.l3t.t{color:#0f4f31}.l3t.r{color:#1f5f8f}.l3t.gold{color:#7a5a10}.l3t.teal{color:#0f7a66}.l3t.grey{color:#6b7b7e}.l3t.fx{background:rgba(255,243,184,.96);color:#5a3d06;font-size:15px}" +
       ".l3t svg{width:10px;height:11px;margin-right:3px;vertical-align:-1px}#l3labels.night .l3t{box-shadow:0 2px 8px rgba(2,12,24,.6),0 0 0 2px rgba(255,255,255,.16)}" +   // at night a pill gets a faint halo
+      ".l3t.rt{min-width:0;height:auto;padding:0;border-radius:0;background:none;box-shadow:none;font:800 13px/1 'M PLUS Rounded 1c',Nunito,sans-serif;text-shadow:0 0 3px rgba(255,255,255,.95),0 0 7px rgba(255,255,255,.75),0 1px 1px rgba(255,255,255,.9)}" +   // the points inside a ring (LOU-317): dark gold text with a pale halo, no pill
+      ".l3t.rt.lg{font-size:16px}.l3t.rt.sm{font-size:12px}.l3t.rt b{display:block;font-weight:800}.l3t.rt small{display:block;margin-top:1px;font:800 10.5px/1.1 'M PLUS Rounded 1c',Nunito,sans-serif}#l3labels.night .l3t.rt{color:#ffe7a0;text-shadow:0 0 4px rgba(8,16,34,.95),0 1px 2px rgba(8,16,34,.95)}#l3labels.night .l3t.rt.teal{color:#8ef0dc}" +
       ".l3t.lockb{min-width:22px;width:22px;padding:0;border-radius:50%;color:#24434a}.l3t.lockb svg{width:11px;height:12px;margin:0;vertical-align:-2px}" +   // the lock badge of a locked tile: a small round white badge with the padlock and no number
       "#l3sr{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}"; document.head.appendChild(st) }   // the list for screen readers, off screen
   const LOCK = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10.500" width="14" height="10" rx="2.200" fill="currentColor"/><path d="M8 10.500V8a4 4 0 018 0v2.500" fill="none" stroke="currentColor" stroke-width="2.800"/></svg>';
@@ -462,7 +464,7 @@ function mount(B) {
       // a locked tile has a small round lock badge where the level pill used to sit (at the foot of the tile, to the right and in front, so it stays with its tile whatever grows on it); its level is the number on the ground
       if (d.level) { const e = label("k" + cl.k, "", "lockb", LOCK); placeLabel(e, cl.x + .34, gnd + pillY(d), cl.z + .5) }
       else if (d.river) { const e = label("k" + cl.k, "", "lockb", LOCK); placeLabel(e, cl.x, gnd + .35, cl.z) } }
-    for (const t of ringTags) { const e = label(t.id, t.text, t.cls, ""); placeLabel(e, t.cell.x, CH[t.cell.i] + (t.dy || .5) + .5, t.cell.z) }
+    for (const t of ringTags) { const e = label(t.id, t.note ? "" : t.text, t.cls, t.note ? "<b>" + t.text + "</b><small>" + t.note + "</small>" : ""); placeLabel(e, t.cell.x, CH[t.cell.i] + (t.dy == null ? .5 : t.dy) + .5, t.cell.z) }
     // the points that float up from a tile (the game's own list, which this look has to clear when they are done)
     for (let i = B.fx.length - 1; i >= 0; i--) { const f = B.fx[i], a = (T0 - f.t0) / 900; if (a >= 1) { B.fx.splice(i, 1); continue } const c = cellAt(f.p[0], f.p[1]); if (!c) continue;
       const e = label("f" + i + "_" + f.t0, f.text, "fx", ""); placeLabel(e, c.x, CH[c.i] + .7 + a * .9, c.z, a < .5 ? 1 : (1 - a) / .5) }
@@ -475,12 +477,12 @@ function mount(B) {
   const view = {tx:midX, tz:midZ, dist:90, gx:midX, gz:midZ, gd:90}, fit = {dist:90, near:24, ox:0}, tcam = new T.PerspectiveCamera(C3.fov, 1, 1, 1400), EXT = [];
   { const ys = [ELAND - .4, EROCK + .6]; for (const y of ys) for (const [sx, sz] of [[-1, -1], [1, -1], [1, 1], [-1, 1], [0, -1], [0, 1], [-1, 0], [1, 0]]) EXT.push(new T.Vector3(midX + sx * halfX, y, midZ + sz * halfZ)) }
   const camAt = (cam, tx, tz, dist) => { cam.position.set(tx, ELAND, tz).addScaledVector(dirV, dist); cam.lookAt(tx, ELAND, tz); cam.updateMatrixWorld(true); cam.updateProjectionMatrix() };
-  function computeFit() { if (!w || !h) return; topH = B.top.offsetHeight || 0; const availW = w - 12, availH = Math.max(60, h - topH - 10); tcam.aspect = w / h; let d = 90;
+  function computeFit() { if (!w || !h) return; topH = B.top.offsetHeight || 0; const botH = B.bottom ? B.bottom() : 0, availW = w - 12, availH = Math.max(60, h - topH - botH - 10); tcam.aspect = w / h; let d = 90;
     for (let it = 0; it < 5; it++) { camAt(tcam, midX, midZ, d); let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9; for (const p of EXT) { pv.copy(p).project(tcam); x0 = Math.min(x0, pv.x); x1 = Math.max(x1, pv.x); y0 = Math.min(y0, pv.y); y1 = Math.max(y1, pv.y) }
       const ex = (x1 - x0) / 2 * (w / 2), ey = (y1 - y0) / 2 * (h / 2); d *= Math.max(ex / (availW / 2), ey / (availH / 2)) * 1.005 }
     fit.dist = d; camAt(tcam, midX, midZ, d); const near = nearDist(); fit.near = Math.min(near, d * .6);
-    // the island's middle sits in the middle of the free part of the board: shift the picture down by half the top bar (the view offset moves the projection, not the camera)
-    fit.ox = topH / 2; if (!view.init) { view.init = true; view.gd = view.dist = fit.dist } view.gd = clamp(view.gd, fit.near, fit.dist); view.dist = clamp(view.dist, fit.near, fit.dist) }
+    // the island's middle sits in the middle of the free part of the board: shift the picture down by half the top line, and up by half the pile (the view offset moves the projection, not the camera)
+    fit.ox = (topH - botH) / 2; if (!view.init) { view.init = true; view.gd = view.dist = fit.dist } view.gd = clamp(view.gd, fit.near, fit.dist); view.dist = clamp(view.dist, fit.near, fit.dist) }
   const nearDist = () => { const widthWorld = C3.nearTilesAcross * SQ; return widthWorld / (2 * Math.tan(C3.fov * Math.PI / 360) * (w / h)) };
   function clampView() { view.gd = clamp(view.gd, fit.near, fit.dist); const f = clamp((fit.dist - view.gd) / Math.max(1e-6, fit.dist - fit.near), 0, 1), ex = f * (halfX + 1), ez = f * (halfZ + 1.5);
     view.gx = clamp(view.gx, midX - ex, midX + ex); view.gz = clamp(view.gz, midZ - ez, midZ + ez) }
@@ -614,8 +616,8 @@ function mount(B) {
   const skyMod = G.Flowgrow3D.sky;
   if (skyMod) skyCtl = skyMod.mount({scene, renderer, C3, QS, dayState, seaU, riverMat, sky, cloudMat, clouds, sun, hemi, lab, midX, midZ, uWind, uGlow, uTime, pointScale:pU.scale, reduced, quality:() => quality, mem:B.mem,
     progress:() => cfg.stackSize ? 1 - rules.left(S) / cfg.stackSize : null});   // "progress" mode: how far through the pile the run is (nothing for an endless pile)
-  const ctl = {draw, resize, sync: syncState, scr, look, toggleFit, cycleTime: () => skyCtl ? skyCtl.cycle() : "", timeNote: () => skyCtl ? skyCtl.note() : "",
-    unmount() { alive = false; delete G.__flowgrow3d; for (const c of cells) { dropPop(c); if (c.mesh) c.mesh.geometry.dispose() } if (zGeo) zGeo.dispose(); if (skyCtl) skyCtl.dispose(); pGeo.dispose(); numMesh.geometry.dispose(); numMat.dispose(); numTex.dispose(); renderer.dispose(); cv3.remove(); lab.remove(); sr.remove(); B.fit && (B.fit.style.top = "") }};
+  const ctl = {draw, resize, sync: syncState, scr, look, toggleFit, cellAt: (x, y) => { const c = cellAtScreen(x, y); return c ? [c.c, c.r] : null }, hover: p => { hover = null; setHover(p ? cellAt(p[0], p[1]) : null) }, cycleTime: () => skyCtl ? skyCtl.cycle() : "", timeNote: () => skyCtl ? skyCtl.note() : "",
+    unmount() { alive = false; delete G.__flowgrow3d; for (const c of cells) { dropPop(c); if (c.mesh) c.mesh.geometry.dispose() } if (zGeo) zGeo.dispose(); if (skyCtl) skyCtl.dispose(); pGeo.dispose(); numMesh.geometry.dispose(); numMat.dispose(); numTex.dispose(); renderer.dispose(); cv3.remove(); { const root = lab.closest(".app"); if (root) root.classList.remove("night") } lab.remove(); sr.remove(); B.fit && (B.fit.style.top = "") }};
   G.__flowgrow3d = {setTime: v => skyCtl ? skyCtl.setTime(v) : null, getTime: () => skyCtl ? skyCtl.getTime() : null, setQuality, setThrottle(v) { throttle = !!v }, stats, sample, renderer, scene, camera, view, dayState};
   syncState(); resize(); if (EXM) B.say("An example island: pan, zoom, and try Time of day in the Menu.");
   return ctl;

@@ -486,7 +486,7 @@ const QS = {}; if (!PLAY) for (const [k, v] of new URLSearchParams(location.sear
 const MADE = tidy({...G.FLOWGROW, ...QS}, G.FLOWGROW), CFG = MADE.cfg, ASKED = Object.keys(QS).filter(k => !MADE.bad.includes(k) && JSON.stringify(CFG[k]) !== JSON.stringify(G.FLOWGROW[k])), GRID = grid(CFG), W = CFG.map[0].length, H = CFG.map.length;
 const RK = rulesKey(CFG), BEST = "best." + RK, SLOT = "run.v13." + RK, NAME = G.FLOWGROW_NAME || "";   // each ruleset has its own saved run too (run.v13: LOU-314 changed what a tree can do, so a save from before it, which can hold a move that is no longer legal, is never read), so the maps and the usual game don't overwrite one another; NAME is set by a map page // the best score is kept per ruleset (every number that changes how a run plays), so scores from different rules never meet
 const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches, now = () => performance.now();
-let S = null, opts = [], landSig = "", wonShown = false, msgT = 0, lockMode = false, lockSel = null, lockList = [];
+let S = null, opts = [], landSig = "", wonShown = false, msgT = 0, lockMode = false, lockSel = null, lockList = [], carryCell = null, swallow = 0;   // carryCell: the cell a carried tile hovers over (LOU-317); swallow: a press-and-hold lock has already used this touch, so its lift is not a tap
 const pops = {}, fx = [];
 
 // ---------- the look (Dan, Nov 20): "simple" is flat blue and green hexes with a number on each, for piloting; "painted" is the first look.
@@ -498,6 +498,8 @@ const WANT = TEST ? "simple" : PLAY ? (DEV_LOOK ? LOOK_PARAM : "3d") : (() => { 
 let skin = WANT === "3d" ? "simple" : WANT, L3 = null;   // L3: the 3D look's controller, once it is mounted (then skin is "3d")
 const flat = () => skin !== "painted";   // the simple look and the 3D look share the flat maths and the simple tile pictures
 $("app").classList.toggle("simple", flat());
+const markLook = () => { const a = $("app"); a.dataset.look = skin; a.classList.toggle("pg-test", TEST) };   // (LOU-317) the screen's ink follows the look: white on the 3D look's teal sea, dark on the pale painted and plain looks
+markLook();
 
 // ---------- the hex projection (from play.js): pointy-top hexes built flat in world space (radius R), then projected isometrically (or, in the simple look, not at all)
 const cv = $("cv"), ctx0 = cv.getContext("2d"); let ctx = ctx0;
@@ -708,25 +710,40 @@ function river(t) { const seg = []; for (const k in S.r) { const v = S.r[k], a =
 // ---------- the camera (from play.js): view.z is zoom relative to "the whole island fits"; cx, cy is the world point in the middle
 const view = {z:null, cx:0, cy:0}, lay = {w:0, h:0, topH:0, availH:0, dpr:1, fit:1, zAuto:1}; let scale = 1, off = {x:0, y:0}, lastSize = "";
 const SRC = unkey(Object.keys(fresh(CFG, 1).r)[0]);
+// the height of the pile over the bottom of the island (LOU-317): the island is fitted and centred in what is left between the top line and the pile
+const dockH = () => { const d = $("actions"), b = $("board"); return d && b ? Math.max(0, Math.round(b.getBoundingClientRect().bottom - d.getBoundingClientRect().top)) : 0 };
 function resize() { const box = $("board"), w = box.clientWidth, h = box.clientHeight, dpr = Math.min(devicePixelRatio || 1, 3); if (!w || !h) return;
-  const topH = $("top").offsetHeight, k = [w, h, topH, dpr].join(); if (k === lastSize) return; lastSize = k;
-  const availH = Math.max(40, h - topH), fit = Math.min(w / B.w, availH / B.h), play = Math.min(1.3, w / (CFG.tilesAcross * (flat() ? 80 : 89))); // a hex is about 89 world px across when tilted, 80 flat
-  Object.assign(lay, {w, h, topH, availH, dpr, fit, zAuto:Math.max(1, play / fit)});
+  const topH = $("top").offsetHeight, botH = dockH(), k = [w, h, topH, botH, dpr].join(); if (k === lastSize) return; lastSize = k;
+  const availH = Math.max(40, h - topH - botH), fit = Math.min(w / B.w, availH / B.h), play = Math.min(1.3, w / (CFG.tilesAcross * (flat() ? 80 : 89))); // a hex is about 89 world px across when tilted, 80 flat
+  Object.assign(lay, {w, h, topH, botH, availH, dpr, fit, zAuto:Math.max(1, play / fit)});
   if (view.z === null) { view.z = lay.zAuto; const o = iso(...SRC); view.cx = o.x; view.cy = o.y }   // open on the source, with about tilesAcross tiles across
-  cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); $("fitBtn").style.top = topH + 6 + "px"; if (L3) L3.resize(); applyView() }
+  cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); if (L3) L3.resize(); applyView() }
 function applyView() { view.z = Math.min(Math.max(5, lay.zAuto * 1.6), Math.max(1, view.z)); const s = lay.fit * view.z, vw = lay.w / s, vh = lay.availH / s;
   view.cx = vw >= B.w ? B.x + B.w / 2 : Math.min(B.x + B.w - vw / 2, Math.max(B.x + vw / 2, view.cx));
   view.cy = vh >= B.h ? B.y + B.h / 2 : Math.min(B.y + B.h - vh / 2, Math.max(B.y + vh / 2, view.cy));
   scale = s * lay.dpr; off = {x:lay.w / 2 * lay.dpr - view.cx * scale, y:(lay.topH + lay.availH / 2) * lay.dpr - view.cy * scale};
-  const zoomed = view.z > 1.02, fb = $("fitBtn");
-  fb.innerHTML = zoomed ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>' : '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21M10.5 7.5v6M7.5 10.5h6"/></svg>';
-  fb.setAttribute("aria-label", zoomed ? "Show the whole island" : "Zoom in"); draw() }
+  draw() }
 function tileAt(cx, cy) { const r = cv.getBoundingClientRect(), d = cv.width / r.width, x = ((cx - r.left) * d - off.x) / scale, y = ((cy - r.top) * d - off.y) / scale;
   const a = x / .7071, b = y / .3536, wx = flat() ? x : (a + b) / 2, wy = flat() ? y : (b - a) / 2, ry = Math.round(wy / (1.5 * R)); let best = null, bd = 1e9;
   for (let yy = ry - 1; yy <= ry + 1; yy++) { const rx = Math.round((wx - (yy & 1 ? SQ3 * R / 2 : 0)) / (SQ3 * R));
     for (let xx = rx - 1; xx <= rx + 1; xx++) { if (!inside(CFG, [xx, yy])) continue; const [qx, qy] = world(xx, yy), dd = Math.hypot(qx - wx, qy - wy); if (dd < bd) { bd = dd; best = [xx, yy] } } }
   return best && bd <= R ? best : null }
 const scr = p => { if (L3 && skin === "3d") return L3.scr(p); const r = cv.getBoundingClientRect(), d = cv.width / r.width, o = iso(...p); return [r.left + (o.x * scale + off.x) / d, r.top + (o.y * scale + off.y) / d] };
+
+// ---------- the rings on the island (LOU-317; Dan, Nov 22: "make the tiles coming on floating", "tidy up the whole screen"). Every cell the tile in hand can go to has a soft dashed ring with its points inside, in dark gold: no white pill floats over the
+// island any more. A river tile's cells are rings with nothing in them (a river tile scores nothing), a raise says "wider", a plant that lands lower or scores more says so under its points, and the cell a carried tile hovers over is lit.
+function optLabel(o) { const t = S.q[0] || {}, gain = o.pts > 0 ? "+" + o.pts : "";
+  if (o.does === "combine") return {main:gain, col:"#7a5a12", size:15};
+  if (o.does === "widen") return {main:widenText(o), col:"#0f6f5e", size:13};
+  if (o.does === "plant") return {main:gain, note:[o.l < t.l ? "as " + o.l : "", o.mult > 1 ? "×" + o.mult : ""].filter(Boolean).join(" "), col:o.mult > 1 ? "#0c6a64" : "#7a5a12", size:12};
+  return {main:gain, col:"#1f5f8f", size:12} }
+const sameCell = (a, b) => (!a && !b) || (!!a && !!b && a[0] === b[0] && a[1] === b[1]), isCarry = o => sameCell(o.p, carryCell), RINGCOL = {plant:"#3f9a5a", extend:"#2f86d6", combine:"#d9961a", widen:"#1f9c86"};
+function ringText(x, y, text, col, size) { ctx.save(); ctx.font = `800 ${size}px ${HAND}`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.lineJoin = "round"; ctx.lineWidth = 4; ctx.strokeStyle = "rgba(255,255,255,.92)"; ctx.strokeText(text, x, y); ctx.fillStyle = col; ctx.fillText(text, x, y); ctx.restore() }
+function optionRings(t) { if (S.over || lockMode) return; const pu = reduce ? .5 : .5 + .5 * Math.sin(t * 3), fl = flat();
+  for (const o of opts) { const hot = isCarry(o), pts = hexPts(o.p, R - (fl ? 4 : 6)), c = iso(...o.p), col = RINGCOL[o.does] || RINGCOL.plant, rad = fl ? 7 : 8;
+    rpath(pts, rad); ctx.fillStyle = o.does === "combine" ? `rgba(255,222,120,${.2 + .1 * pu + (hot ? .22 : 0)})` : `rgba(255,255,255,${.2 + .06 * pu + (hot ? .24 : 0)})`; ctx.fill();
+    ctx.setLineDash([7, 6]); rpath(pts, rad); ink("rgba(255,255,255,.92)", hot ? 7.4 : 5.4); rpath(pts, rad); ink(col, hot ? 3.8 : 2.6 + .5 * pu); ctx.setLineDash([]);
+    const L = optLabel(o), y = c.y + (fl ? 0 : 3); if (L.main) ringText(c.x, y - (L.note ? 6 : 0), L.main, L.col, L.size); if (L.note) ringText(c.x, y + 7, L.note, L.col, 11) } }
 
 // ---------- drawing, every frame: the sea, the island, the river, then everything standing on it from back to front
 const easeBack = k => 1 + 2.70158 * Math.pow(k - 1, 3) + 1.70158 * Math.pow(k - 1, 2);
@@ -743,18 +760,12 @@ function draw() { if (!S || !lay.w) return; const T = now(), t = T / 1000;
       if (S.hb[k]) { rpath(hexPts(p, R - 5), 8); ctx.fillStyle = S.hb[k] === "p" ? "rgba(247,206,60,.8)" : S.hb[k] === "t" ? "rgba(24,110,66,.8)" : "rgba(56,200,190,.75)"; ctx.fill() }   // a yellow, turquoise or deep green patch under the picture shows its kind
       const up = upgradeOf(CFG, {k:"h", b:S.hb[k], l, f:S.hf[k]}); if (up) UPG_LOOK[up].art(p);                                      // an upgrade is a variation of the tile's art (LOU-304): the reed bed has reeds along its edge
       ctx.save(); ctx.translate(o.x, o.y); ctx.scale(s, s); if (k in S.lk) ctx.globalAlpha = .7; ctx.drawImage(hsprite(l), -HB.ox, -HB.oy, HB.w, HB.h); ctx.restore() } } // a locked habitat is a little muted
-  // what the tile in hand can do: a faint outline on land it can be planted on, a ring on tiles it can combine with or widen
-  if (!S.over && !lockMode) { const pu = reduce ? .5 : .5 + .5 * Math.sin(t * 3);
-    for (const o of opts) { const c = iso(...o.p);
-      if (o.does === "plant") { rpath(hexPts(o.p, R - 6), 8); ctx.fillStyle = `rgba(255,255,255,${.07 + .06 * pu})`; ctx.fill(); ink(`rgba(255,255,255,${.5 + .25 * pu})`, 1.8) }
-      else { const rx = o.does === "extend" ? 22 + 2 * pu : 31 + 2 * pu; ctx.beginPath(); ctx.ellipse(c.x, c.y + 1, rx, rx / 2, 0, 0, 7); ink("rgba(232,255,248,.95)", 4.5); ctx.beginPath(); ctx.ellipse(c.x, c.y + 1, rx, rx / 2, 0, 0, 7); ink("rgba(63,191,164,.9)", 1.6);
-        if (o.does === "extend") ell(c.x, c.y + 1, 12, 6, "rgba(98,224,200,.55)") } } }
+  optionRings(t);   // what the tile in hand can do (LOU-317): a soft dashed ring on every cell it can go to, with its points inside
   for (const k in S.h) { const o = iso(...GRID.at[k]); tag(o.x + 25, o.y + 13, String(S.h[k]), S.hb[k] === "p" ? "#7a5a10" : S.hb[k] === "m" ? "#0d6a66" : S.hb[k] === "t" ? "#0f4f31" : "#24434a", 14, k in S.lk, upgradeOf(CFG, {k:"h", b:S.hb[k], l:S.h[k], f:S.hf[k]})) } // every habitat carries its level (and its upgrade's mark), and a padlock once it is locked
   if (CFG.marshRiverMultiplier) for (const k in S.h) if (S.hb[k] === "m" && !(k in S.lk)) { const m = marshMult(S, k); if (m > 1) { const o = iso(...GRID.at[k]); tag(o.x + 25, o.y - 3, "×" + m, "#0d6a66", 12) } }   // a marsh tile that scores more shows its multiplier above its level (LOU-309)
   for (const k in S.lk) if (k in S.r) { const o = iso(...GRID.at[k]); tag(o.x, o.y + 1, S.r[k].l > 1 ? String(S.r[k].l) : "", "#24434a", 14, true) } // a locked river tile gets a padlock of its own
   for (const k in S.r) if (!(k in S.lk) && S.r[k].l > 1) { const o = iso(...GRID.at[k]); tag(o.x, o.y + 1, String(S.r[k].l), "#1f5f8f", 14) }   // and an unlocked one past level 1 carries its level
   if (lockMode) lockHints(); pickRing(T);
-  if (!S.over && !lockMode) for (const o of opts) { const c = iso(...o.p); if (o.does === "combine") tag(c.x, c.y - TALL[Math.min(o.l - 1, 7)] - 14, "+" + o.pts, "#7a5a10", 15); else if (o.does === "widen") tag(c.x, c.y - 20, widenText(o), "#0f7a66", 14); else if (o.does === "plant" && (o.l < S.q[0].l || o.mult > 1)) tag(c.x, c.y - 6, (o.l < S.q[0].l ? "as " + o.l : "") + (o.mult > 1 ? (o.l < S.q[0].l ? " " : "") + "×" + o.mult : ""), o.mult > 1 ? "#0c6a64" : "#7a5a10", 13) }
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
   for (let i = fx.length - 1; i >= 0; i--) { const f = fx[i], k = (T - f.t0) / 900; if (k >= 1) { fx.splice(i, 1); continue } const o = iso(...f.p), y = o.y - f.up - 26 * (1 - Math.pow(1 - k, 2)); // points float up in pale gold
     ctx.globalAlpha = k < .5 ? 1 : (1 - k) / .5; ctx.font = `800 ${17 * lay.dpr / scale}px ${HAND}`; ctx.lineWidth = 3.5 * lay.dpr / scale; ctx.strokeStyle = "rgba(60,45,10,.6)"; ctx.lineJoin = "round"; ctx.strokeText(f.text, o.x, y); ctx.fillStyle = "#ffe9a8"; ctx.fillText(f.text, o.x, y); ctx.globalAlpha = 1 } }
@@ -804,13 +815,7 @@ function drawSimple(T, t) { ctx = ctx0; ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.
       if (k in S.lk) padlock(0, -R * .6, 1.05, numInk(tile)); else if (tile.b === "m" && CFG.marshRiverMultiplier) { const m = marshMult(S, k); if (m > 1) tag(R * .56, -R * .4, "×" + m, "#0c3b38", 13) } }   // a marsh tile that scores more shows its multiplier (LOU-309)                                                  // a locked tile carries a padlock
     ctx.restore() }
   stepEdges((a, b) => line([a, b], "rgba(25,45,65,.6)", 3.4)); fallMarks();   // the steps, and the waterfalls (LOU-310)
-  // what the tile in hand can do: a green outline on land it can be planted on, a gold ring on a tile it combines with (and its points),
-  // a teal ring on a river tile it widens, a dashed blue ring on land it extends the river onto
-  if (!S.over && !lockMode) for (const o of opts) { const c = iso(...o.p), ring = col => { rpath(hexPts(o.p, R - 4), 7); ink("rgba(255,255,255,.95)", 7); rpath(hexPts(o.p, R - 4), 7); ink(col, 3.4) };
-    if (o.does === "plant") { rpath(hexPts(o.p, R - 5), 7); ink(`rgba(60,150,90,${.55 + .35 * pu})`, 2.4); const as = o.l < S.q[0].l; if (as) tag(c.x, c.y - (o.mult > 1 ? 10 : 0), "as " + o.l, "#7a5a10", 13); if (o.mult > 1) tag(c.x, c.y + (as ? 10 : 0), "×" + o.mult, "#0c6a64", 14) }   // "downgrade": a tile above the bare ground limit lands as level 1
-    else if (o.does === "extend") { rpath(hexPts(o.p, R - 5), 7); ctx.fillStyle = "rgba(90,174,234,.32)"; ctx.fill(); ctx.setLineDash([7, 6]); ink("#2f86d6", 3); ctx.setLineDash([]) }
-    else if (o.does === "combine") { ring("#e0a31c"); tag(c.x, c.y - R * .62, "+" + o.pts, "#7a5a10", 15) }
-    else { ring("#1f9c86"); tag(c.x, c.y - R * .62, widenText(o), "#0f7a66", 14) } }
+  optionRings(t);   // what the tile in hand can do (LOU-317): a soft dashed ring on every cell it can go to, with its points inside (green plant, blue river, gold combine, teal raise)
   if (lockMode) lockHints(); pickRing(T);
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
   for (let i = fx.length - 1; i >= 0; i--) { const f = fx[i], k = (T - f.t0) / 900; if (k >= 1) { fx.splice(i, 1); continue } const o = iso(...f.p), y = o.y - R * .3 - 34 * (1 - Math.pow(1 - k, 2)); // points float up
@@ -842,23 +847,49 @@ function loadPileArt() { for (const k of PILE_KINDS) { const a = PILE_ART[k] = {
 function tileEl(t, px, cls, art) { const el = document.createElement("div"); el.className = "fgt " + cls + (t.c ? " copy" : "");
   el.title = tileText(CFG, t) + (upgradeOf(CFG, t) ? ", " + UPGRADE[upgradeOf(CFG, t)].name.toLowerCase() : "") + (t.c ? ", a copy" : "");
   if (art) { el.setAttribute("role", "img"); el.setAttribute("aria-label", (t.k === "r" && t.l === 1 ? "River tile (level 1)" : tileText(CFG, t)) + (upgradeOf(CFG, t) ? ", " + UPGRADE[upgradeOf(CFG, t)].name.toLowerCase() : "") + (t.c ? ", a copy" : "")) }   // the pile's tiles say their level in words (the number is part of a picture)
+  const inn = document.createElement("div"); inn.className = "fgin"; el.appendChild(inn);   // the picture and its level badge: this layer is what bobs
   const pk = art ? pileKind(t) : "", pa = pk && PILE_ART[pk];
-  if (pa && pa.ok) { const im = pa.img.cloneNode(); im.className = "fgart"; im.alt = ""; im.draggable = false; el.classList.add("art"); el.appendChild(im) } else el.appendChild(tileIcon(t, px));
-  if (!el.classList.contains("art") && (t.k === "h" || t.l > 1)) { const b = document.createElement("i"); b.className = "fgl"; b.textContent = t.l; el.appendChild(b) } return el }
+  if (pa && pa.ok) { const im = pa.img.cloneNode(); im.className = "fgart"; im.alt = ""; im.draggable = false; el.classList.add("art"); inn.appendChild(im) } else inn.appendChild(tileIcon(t, px));
+  if (!el.classList.contains("art") && (t.k === "h" || t.l > 1)) { const b = document.createElement("i"); b.className = "fgl"; b.textContent = t.l; inn.appendChild(b) } return el }
 // A habitat above the bare ground limit that "downgrade" plants as level 1 (the hand's caption and the outlines on the island say so).
 const lowers = t => t.k === "h" && plantLevel(CFG, t.l) > 0 && plantLevel(CFG, t.l) < t.l;
 // A marsh tile with no tile next to the river free (LOU-301): the pile's caption says why there is nothing to plant it on. It can still combine onto marsh, or be discarded.
 const marshStuck = t => t.k === "h" && t.b === "m" && CFG.marshNeedsRiver && !S.pend.length && !opts.some(o => o.does === "plant");
 // What the ring on a river tile it can raise says (Dan, Nov 20: rivers level up): "wider" while the raise still widens the river, and its points (riverScore) or the new level after that.
 const widenText = o => o.l <= CFG.riverReach.length ? "wider" + (o.pts ? " +" + o.pts : "") : o.pts ? "+" + o.pts : "level " + o.l;
-function drawPile() { const q = $("queue"), small = innerWidth < 380; q.textContent = "";
-  if (S.q[0]) { q.appendChild(tileEl(S.q[0], small ? 80 : 90, "now", true)); for (const t of S.q.slice(1, 1 + CFG.queueShown)) q.appendChild(tileEl(t, small ? 46 : 52, "", true)) }
-  else { const e = document.createElement("span"); e.className = "fgempty"; e.textContent = S.over ? "Run over" : "Pile empty"; q.appendChild(e) }
-  tx("hName", !S.q[0] ? "" : marshStuck(S.q[0]) ? tileText(CFG, S.q[0]) + (S.q[0].c ? " copy" : "") + " · no bank tile free" : lowers(S.q[0]) ? tileText(CFG, S.q[0]) + (S.q[0].c ? " copy" : "") + " · plants as level 1"   // shorter, so a copy's whole caption fits across a phone
-    : "In hand: " + tileText(CFG, S.q[0]) + (S.q[0].c ? ", a copy" : ""));
-  const more = CFG.stackSize === 0 ? Infinity : CFG.stackSize - S.dealt + Math.max(0, S.q.length - 1 - CFG.queueShown); // the rest of the stack, behind the tiles shown
-  $("stack").hidden = !(more > 0); tx("stackN", more === Infinity ? "many more" : "+" + more + " more");
-  const list = $("bankList"); $("bank").hidden = !S.bank.length; list.textContent = ""; for (const t of S.bank) list.appendChild(tileEl(t, 32, "", true)) } // the copies waiting at the back, in order
+// ---------- the pile, floating over the island (LOU-317). The tile in hand is large, the next two trail to its right (Dan, Nov 22: "show the next two"), and a stack of thin slabs at the right end has one slab for every tile left (the tile in hand
+// and the copies waiting at the back are in it), tinted by the kind of the tile where that is known, so the stack gets shorter as the game goes on. A tile that is played leaves, the next ones glide forward a place and a slab lifts off the
+// stack. Each tile is one element that keeps its place in the pile (a tile is the same object in the game from the moment it is dealt), moved by a class (s0 in hand, s1 and s2 next, s3 coming off the stack).
+const NEXT_SHOWN = 2, dockEls = new Map(), TINT = {r:"#58b4e8", g:"#7dce5c", p:"#e3de6a", m:"#6ec6b4", t:"#2f7d4f", n:"#d6e4d2"}, SLAB_CAP = 24;
+let dockS = null, dockN = -1, dockSig = "", dockTop = "", dockCount = 0;
+const artOk = t => { const pk = pileKind(t), pa = pk && PILE_ART[pk]; return !!(pa && pa.ok) };
+function dockTile(t) { const el = tileEl(t, 172, "dk", true), c = el.querySelector("canvas"); if (c) c.style.width = c.style.height = "100%"; el._art = artOk(t); return el }
+const handName = t => t.k === "r" ? "River tile · level " + t.l : tileText(CFG, t).replace(/ \(level (\d+)\)$/, " · level $1");
+const handLabel = t => marshStuck(t) ? tileText(CFG, t) + (t.c ? " copy" : "") + " · no bank tile free" : lowers(t) ? tileText(CFG, t) + (t.c ? " copy" : "") + " · plants as level 1" : handName(t) + (t.c ? " · copy" : "");
+const shade = (hex, k) => "#" + [1, 3, 5].map(i => Math.round(parseInt(hex.slice(i, i + 2), 16) * k).toString(16).padStart(2, "0")).join("");
+function slabSVG(tints) { const n = tints.length, out = [];
+  for (let i = n - 1; i >= 0; i--) { const y = 4 * i; out.push(`<polygon points="2,${y + 11} 22,${y + 16} 22,${y + 20} 2,${y + 15}" fill="${shade(tints[i], .6)}"/><polygon points="22,${y + 16} 42,${y + 11} 42,${y + 15} 22,${y + 20}" fill="${shade(tints[i], .78)}"/><polygon points="22,${y} 42,${y + 5} 42,${y + 11} 22,${y + 16} 2,${y + 11} 2,${y + 5}" fill="${tints[i]}"/>`) }
+  return `<svg viewBox="0 0 44 ${4 * n + 16}" aria-hidden="true"><g stroke="rgba(40,34,24,.55)" stroke-width=".6" stroke-linejoin="round">${out.join("")}</g></svg>` }
+function liftSlab(color, count) { const d = $("actions"), e = document.createElement("div"); e.className = "fgslab"; e.style.bottom = `calc(${80 + 4 * (count - 1)} * var(--u))`; e.innerHTML = slabSVG([color]); d.appendChild(e); setTimeout(() => e.remove(), 320) }
+function drawPile() { const layer = $("queue"), inst = dockS !== S || reduce || !dockEls.size;   // a run that has just been loaded, undone or begun, or a visitor who asks for less motion, gets the pile at once: nothing glides
+  if (dockS !== S) { dockS = S; layer.textContent = ""; dockEls.clear(); dockN = -1; dockSig = "" }
+  const show = S.q.slice(0, 1 + Math.min(NEXT_SHOWN, CFG.queueShown));
+  for (const [t, el] of [...dockEls]) if (!show.includes(t)) { dockEls.delete(t); el.remove() }   // a tile that was played or discarded leaves
+  show.forEach((t, i) => { let el = dockEls.get(t);
+    if (el && el._art !== artOk(t)) { const ne = dockTile(t); ne.className = el.className; el.replaceWith(ne); dockEls.set(t, ne); el = ne }   // its picture has come in
+    if (!el) { el = dockTile(t); dockEls.set(t, el); el.classList.add(inst ? "s" + i : "s3"); layer.appendChild(el); if (!inst) el.getBoundingClientRect() }   // a new tile starts on the stack and glides to its place
+    for (const c of ["s0", "s1", "s2", "s3"]) el.classList.remove(c); el.classList.add("s" + i) });
+  const t0 = S.q[0]; $("hName").hidden = !t0; if (t0) tx("hName", handLabel(t0)); $("dkShadow").hidden = !t0; $("grab").hidden = !t0 || S.over || !!S.pend.length;
+  let em = layer.querySelector(".fgempty"); if (!t0) { if (!em) { em = document.createElement("span"); em.className = "fgempty"; layer.appendChild(em) } em.textContent = S.over ? "Run over" : "Pile empty" } else if (em) em.remove();
+  // the count and the stack: one slab for every tile left (the stack is drawn up to SLAB_CAP slabs high, and the count says the rest)
+  const n = left(S), tint = x => TINT[x.k === "r" ? "r" : x.b || "g"], front = S.q.map(tint), back = S.bank.map(tint);
+  let mid = CFG.stackSize === 0 ? Math.max(0, 20 - front.length - back.length) : Math.max(0, CFG.stackSize - S.dealt); const over = front.length + mid + back.length - SLAB_CAP; if (over > 0) mid = Math.max(0, mid - over);
+  const tints = [...front, ...Array(mid).fill(TINT.n), ...back].slice(0, SLAB_CAP), sig = (n === Infinity ? "∞" : "") + tints.join();
+  tx("leftT", n === Infinity ? "∞ left" : n + " left"); $("leftChip").hidden = !(n > 0); $("stack").hidden = !(n > 0);
+  if (sig !== dockSig) { if (!inst && dockN === n + 1 && dockTop && dockCount) liftSlab(dockTop, dockCount); $("stack").innerHTML = slabSVG(tints); dockSig = sig }   // the top slab lifts off as a tile is played
+  dockN = n; dockTop = tints[0] || ""; dockCount = tints.length; $("actions").style.setProperty("--n", tints.length); $("stack").setAttribute("aria-label", "The pile: " + (n === Infinity ? "many tiles" : n === 1 ? "1 tile" : n + " tiles"));
+  { const lc = $("lockChip"); lc.hidden = !(CFG.lockEnabled && CFG.lockEvery > 0); if (!lc.hidden) { lc.textContent = S.locks + (S.locks === 1 ? " lock" : " locks"); lc.title = "Next one in " + (CFG.lockEvery - S.toLock) + " tiles" } }   // with limited locks, the locks held (the rules with unlimited locks, the usual ones, show nothing)
+  const list = $("bankList"); $("bank").hidden = !S.bank.length; list.textContent = ""; for (const x of S.bank) list.appendChild(tileEl(x, 32, "", true)) } // the copies waiting at the back, in order, in the menu
 // The pick (LOU-305): a card above the pile with one large button for each of the first waiting tile's two upgrades, each with its mark, its name and one plain line.
 function drawPick() { const k = S.pend[0], card = $("pickq"); card.hidden = !k; if (!k) return;
   { const r = card.getBoundingClientRect(), [, sy] = scr(GRID.at[k]), s = lay.fit * view.z; if (r.height && s && sy > r.top - 56) { view.cy += (sy - (r.top - 80)) / s; applyView() } }   // the tile waiting for its pick must not be under the card: pan it up
@@ -873,9 +904,8 @@ function sync() { opts = options(S, 0); landSig = [...reachOf(S)].join(";") + (C
   const waiting = !S.q.length && !S.over; // the pile is empty but a lock would still bank a copy: lock, or end the run
   if (S.over || !hasLock(S)) { lockMode = false; lockSel = null } else if (waiting) lockMode = true;
   lockList = lockMode ? [...Object.keys(S.h), ...Object.keys(S.r)].map(k => GRID.at[k]).filter(p => lockable(S, p)).map(p => ({p, n:copiesOf(S, p).copies.length})) : [];
-  tx("hScore", S.score); tx("hLeft", left(S) === Infinity ? "∞" : left(S)); tx("hTop", S.top || "–");
+  tx("hScore", S.score);
   $("undoBtn").disabled = !S.moves.length; $("discardBtn").disabled = S.over || !S.q.length || !!S.pend.length; drawPile(); drawPick();
-  { const lb = $("lockBtn"); lb.hidden = !CFG.lockEnabled; lb.classList.toggle("on", lockMode); lb.classList.toggle("none", !hasLock(S)); tx("lockN", CFG.lockEvery === 0 ? "∞" : S.locks); tx("lockIn", CFG.lockEvery > 0 ? "next in " + (CFG.lockEvery - S.toLock) : "") }
   $("endq").hidden = !waiting || !!lockSel; $("lockq").hidden = !lockSel; if (lockSel) lockCard();
   if (S.over && !wonShown) result(); if (!S.over) wonShown = false; $("win").hidden = !S.over; $("app").classList.toggle("won", S.over);
   mem.set(SLOT, S.over ? null : JSON.stringify({seed:S.seed, moves:S.moves, at:Date.now(), rules:RK})); if (TEST) { mirror(); testLine() } if (DEV) devLine(); if (L3) L3.sync(); draw() }
@@ -889,20 +919,23 @@ function result() { wonShown = true; try { G.Flowgrow.onRunEnd({...runRecord(), 
 
 // ---------- a run: new, saved after every move, rebuilt from its seed and moves on reload (a finished or day-old run starts fresh)
 const urlSeed = PLAY && !DEV ? null : new URLSearchParams(location.search).get("seed");   // a player has no seed to choose
-function newRun() { S = fresh(CFG, urlSeed != null && urlSeed !== "" ? urlSeed : Math.floor(Math.random() * 1e9)); for (const k in pops) delete pops[k]; fx.length = 0; lockMode = false; lockSel = null; say(S.q[0] && S.q[0].k === "r" ? "Tap land next to your river to make it longer." : "Tap green land to place the tile in hand."); sync() }
+function newRun() { S = fresh(CFG, urlSeed != null && urlSeed !== "" ? urlSeed : Math.floor(Math.random() * 1e9)); for (const k in pops) delete pops[k]; fx.length = 0; lockMode = false; lockSel = null; say(S.q[0] && S.q[0].k === "r" ? "Drag or tap land next to your river." : "Drag or tap green land."); sync() }
 function load() { try { const d = JSON.parse(mem.get(SLOT) || "null"); if (!d || d.rules !== RK || !Array.isArray(d.moves) || Date.now() - d.at > 12 * 3600e3 || (TEST && urlSeed != null && urlSeed !== "" && d.seed !== seedOf(urlSeed))) return false; S = replay(CFG, d.seed, d.moves); return !S.over } catch (_) { return false } }   // on the test build ?seed= means that run: a saved run of another seed isn't picked up
 // With elevation, a tap that has nothing else to say gives the height of the land it was on (LOU-310), and a river tile that stepped down says so.
 const heightLine = (p, res) => { if (!CFG.elevation) return ""; const k = key(p), h = elevOf(CFG, S.seed)[k]; return res.does === "extend" && fallAt(S, k) ? `Waterfall: the river steps down to height ${h}.` : `Height ${h}.` };
-function tap(p) { if (!S || S.over || !p) return;
+function tap(p, carried) { if (swallow) { swallow = 0; return } if (!S || S.over || !p) return;
   if (lockMode) { if (!lockable(S, p)) { say(key(p) in S.lk ? "That tile is locked." : "Pick a habitat or a river tile.", true); return } lockSel = p; say(""); sync(); return }
-  const had = S.locks, res = place(S, 0, p);
+  const had = S.locks, hand = S.q[0], res = place(S, 0, p);
   if (!res) { const k = key(p), u = k in S.h ? upgradeLine({k:"h", b:S.hb[k], l:S.h[k], f:S.hf[k]}) : "", w = why(S, 0, p), hg = CFG.elevation && w && !/uphill/.test(w) && CFG.map[p[1]][p[0]] !== "B" ? ` Height ${elevOf(CFG, S.seed)[k]}.` : "";
     say(w + hg + (u ? " " + u : ""), true); return }   // a refused tap says why, and with elevation the land's height   // a refused tap on a tile with an upgrade says what the upgrade is
   pops[key(p)] = now(); if (res.pts) fx.push({p, text:"+" + res.pts, t0:now(), up:TALL[Math.min(res.l, 7)]});
   for (const j of res.free) { pops[j] = now(); fx.push({p:unkey(j), text:"+1", t0:now(), up:TALL[1]}) }   // a steppe's free tiles pop in and score 1 each
   for (const L of res.lifts) { pops[L.k] = now(); fx.push({p:unkey(L.k), text:"+" + L.pts, t0:now(), up:TALL[Math.min(S.h[L.k], 7)]}) }   // and so do the tiles roots lifted
   const kind = res.tile.b, gained = res.tile.k === "h" && upgradeOf(CFG, {k:"h", b:kind, l:res.l}) && !(res.does === "combine" && upgradeOf(CFG, {k:"h", b:kind, l:res.l - 1}));   // a move that gives a tile its upgrade says what it is
-  say(S.locks > had ? "You earned a lock. Tap Lock to use it." : res.lifts.length ? `Roots +${res.lifts.length} ${res.lifts.length === 1 ? "tile" : "tiles"}, ${res.liftPts} points.` : S.pend.length ? "Choose an upgrade." : res.mult > 1 ? `${res.mk === "marsh" ? "Marsh" : "Meadow"} ×${res.mult}: +${res.pts}.` : res.free.length ? `Steppe planted ${res.free.length === 1 ? "a free prairie" : res.free.length + " free prairies"}.` : res.does === "plant" && res.l < res.tile.l ? `Planted as level ${res.l}.` : gained ? upgradeLine({k:"h", b:kind, l:res.l}) : heightLine(p, res)); sync() }
+  if (!carried && hand) flyGhost(hand, p);   // the tile in hand glides out to where it goes (a carried tile is already there)
+  const said = S.locks > had ? "You earned a lock. Press and hold a tile to lock it." : res.lifts.length ? `Roots +${res.lifts.length} ${res.lifts.length === 1 ? "tile" : "tiles"}, ${res.liftPts} points.` : S.pend.length ? "Choose an upgrade." : res.mult > 1 ? `${res.mk === "marsh" ? "Marsh" : "Meadow"} ×${res.mult}: +${res.pts}.` : res.free.length ? `Steppe planted ${res.free.length === 1 ? "a free prairie" : res.free.length + " free prairies"}.` : res.does === "plant" && res.l < res.tile.l ? `Planted as level ${res.l}.` : gained ? upgradeLine({k:"h", b:kind, l:res.l}) : heightLine(p, res) || lockTip(); say(said); sync() }
+// There is no Lock button (LOU-317), so a player is told once, after a few moves and when the move has nothing else to say, how to lock a tile.
+function lockTip() { if (!CFG.lockEnabled || !hasLock(S) || S.lockUsed || S.moves.length < 5 || mem.get("tip.lock")) return ""; mem.set("tip.lock", "1"); return "Tip: press and hold a tile to lock it." }
 function undo() { if (!S.moves.length) return; S = replay(CFG, S.seed, S.moves.slice(0, S.moves.length - undoCount(S.moves))); lockMode = false; lockSel = null; say("Stepped back."); sync() }   // a pick goes back with the move that led to it
 async function copyText(t) { try { await navigator.clipboard.writeText(t); return true } catch (_) {} try { const a = document.createElement("textarea"); a.value = t; a.style.cssText = "position:fixed;opacity:0"; document.body.appendChild(a); a.select(); const ok = document.execCommand("copy"); a.remove(); return ok } catch (_) { return false } }
 
@@ -946,16 +979,19 @@ cv.addEventListener("pointercancel", e => { lift(e); dragged = false });
 cv.addEventListener("contextmenu", e => e.preventDefault());
 cv.addEventListener("wheel", e => { e.preventDefault(); view.z *= Math.exp(-e.deltaY * .0015); applyView() }, {passive:false});
 cv.addEventListener("pointerup", e => { const wasDrag = dragged; lift(e); if (wasDrag) { if (!ptrs.size) dragged = false; return } tap(tileAt(e.clientX, e.clientY)) });
-$("fitBtn").onclick = () => { if (L3 && skin === "3d") { L3.toggleFit(); return } view.z = view.z > 1.02 ? 1 : lay.zAuto; applyView() };
 $("undoBtn").onclick = undo;
-$("discardBtn").onclick = () => { if (discard(S, 0)) { say("Discarded."); sync() } };
+function doDiscard() { if (discard(S, 0)) { say("Discarded."); sync() } }
+$("discardBtn").onclick = doDiscard;
 $("again").onclick = newRun;
-// Lock: tap the button to turn lock mode on (or off again), tap a tile, then confirm on the card above the bar.
+// Lock (LOU-317: there is no Lock button): press and hold a tile on the island (right-click with a mouse) and confirm on the card above the pile. With the pile empty and a lock to use, any tap on a tile picks it (lock mode).
 $("pickq").addEventListener("click", e => { const b = e.target.closest("button[data-f]"); if (b) doPick(b.dataset.f) });
-$("lockBtn").onclick = () => { if (S.pend.length) { say("Choose an upgrade first.", true); return } if (!hasLock(S)) { say(CFG.lockEvery > 0 ? `No lock yet. Next one in ${CFG.lockEvery - S.toLock} tiles.` : "", true); return }
-  if (lockMode && !S.q.length) { say("Tap a tile to lock it, or end the run."); return } lockMode = !lockMode; lockSel = null; say(lockMode ? "Tap a tile to lock it." : ""); sync() };
+function lockTile(p) { if (!S || S.over || !p || !CFG.lockEnabled) return;
+  if (S.pend.length) { say("Choose an upgrade first.", true); return }
+  if (!hasLock(S)) { say(CFG.lockEvery > 0 ? `No lock yet. Next one in ${CFG.lockEvery - S.toLock} tiles.` : "", true); return }
+  if (!lockable(S, p)) { say(key(p) in S.lk ? "That tile is locked." : "Press and hold a habitat or a river tile to lock it.", true); return }
+  lockMode = true; lockSel = p; say(""); sync() }
 $("lockYes").onclick = () => { if (!lockSel) return; const r = lock(S, lockSel); lockMode = false; lockSel = null; if (r) say(r.copies.length ? `Locked. ${r.copies.length} ${r.copies.length === 1 ? "copy" : "copies"} banked.` : "Locked. Nothing to copy."); sync() };
-$("lockNo").onclick = () => { lockSel = null; sync() };
+$("lockNo").onclick = () => { lockSel = null; lockMode = false; sync() };   // (with an empty pile and a lock still in hand, sync turns lock mode back on)
 $("endYes").onclick = () => { if (end(S)) sync() };
 $("copyLog").onclick = async () => { const e = $("dToast"); e.textContent = await copyText(logText(S)) ? "Run log copied." : "Couldn't copy on this device."; e.hidden = false; setTimeout(() => { e.hidden = true }, 2200) };
 // The menu: how to play, the seven levels, a new run, the run log and Home. Tap outside to close.
@@ -963,6 +999,50 @@ const menu = open => { $("mConf").hidden = true; tx("mSeed", "Seed " + S.seed); 
   const tr = $("timeRow"); if (tr) { tr.hidden = !(L3 && skin === "3d"); if (L3 && skin === "3d") tx("timeNote", L3.timeNote()) }   // the time of day is a 3D-look setting
   $("menu").hidden = !open };
 $("menuBtn").onclick = () => menu(true);
+// ---------- carrying the tile in hand (LOU-317). Drag it out of the pile: it lifts, hovers over the cell it would go to with its shadow on the ground and a small tag with the points ("+3 here"), and lands when it is let go. Let go over Discard to
+// discard it, and anywhere else (or on a cell it can't go to) and it goes back (a cell that refuses it says why). Tapping land still places the tile in hand at once. The rings show on every cell it can go to the whole time.
+const hapt = ms => { try { if (navigator.vibrate) navigator.vibrate(ms) } catch (_) {} };
+const U = () => $("actions").getBoundingClientRect().width / 390 || 1;
+const cellUnder = (x, y) => L3 && skin === "3d" ? L3.cellAt(x, y) : tileAt(x, y), optAt = p => (p && opts.find(o => sameCell(o.p, p))) || null;
+const overDiscard = (x, y) => { const r = $("discardBtn").getBoundingClientRect(), m = 16; return !$("discardBtn").disabled && x >= r.left - m && x <= r.right + m && y >= r.top - m && y <= r.bottom + m };
+function carryPaint(t) { const box = $("carryTile"); box.textContent = ""; const el = tileEl(t, Math.round(112 * U()), "cr", true), c = el.querySelector("canvas"); if (c) c.style.width = c.style.height = "100%"; box.appendChild(el) }
+function carryPlace(x, y, snap) { const c = $("carry"); c.classList.toggle("snap", !!snap); c.style.transform = `translate3d(${x.toFixed(1)}px,${y.toFixed(1)}px,0)` }
+const handSpot = () => { const g = $("grab").getBoundingClientRect(); return [g.left + g.width / 2, g.bottom - 8 * U()] };
+// a tile that is placed with a tap glides out of the pile to its cell and fades there (reduced motion: it just goes)
+function flyGhost(t, p) { if (reduce || !$("grab").offsetWidth) return; const c = $("carry"), [hx, hy] = handSpot(), [sx, sy] = scr(p);
+  carryPaint(t); c.hidden = false; c.className = "fgcarry"; carryPlace(hx, hy, false); c.getBoundingClientRect(); c.classList.add("go"); carryPlace(sx, sy + 4 * U(), false); setTimeout(() => { if (!carry) { c.hidden = true; c.className = "fgcarry" } }, 240) }
+let carry = null;
+function carryOn() { const t = S.q[0]; if (!t) return; carry.on = true; carryPaint(t); const c = $("carry"); c.hidden = false; c.className = "fgcarry"; $("app").classList.add("carrying"); hapt(8) }
+function carryMove(x, y) { const dd = overDiscard(x, y), o = dd ? null : optAt(cellUnder(x, y)), c = $("carry"), u = U(); $("discardBtn").classList.toggle("drop", dd);
+  if (o) { const [sx, sy] = scr(o.p), L = optLabel(o); carryPlace(sx, sy + 4 * u, true); tx("carryTag", o.does === "widen" ? L.main + " here" : o.pts > 0 ? "+" + o.pts + " here" : o.does === "extend" ? "River here" : "Plant here") }
+  else carryPlace(x, y - 2 * u, false);
+  c.classList.toggle("snap", !!o); const cell = o ? o.p : null; if (!sameCell(cell, carryCell)) { carryCell = cell; if (L3 && L3.hover) L3.hover(cell); if (reduce) draw() } }
+function carryEnd(pt) { const c = $("carry"), app = $("app"); $("discardBtn").classList.remove("drop"); carryCell = null; if (L3 && L3.hover) L3.hover(null);
+  const away = () => { c.hidden = true; c.className = "fgcarry"; app.classList.remove("carrying") }, back = () => { const [hx, hy] = handSpot(); if (reduce) { away(); return } c.classList.add("go"); carryPlace(hx, hy, false); setTimeout(away, 220) };   // back to the pile
+  if (!pt) { back(); return }
+  if (overDiscard(pt[0], pt[1])) { away(); doDiscard(); return }
+  const p = cellUnder(pt[0], pt[1]); if (!p) { back(); return }
+  if (optAt(p)) { c.classList.add("go"); app.classList.remove("carrying"); tap(p, true); setTimeout(() => { if (!carry) away() }, 220) }   // it lands: the island takes it, the next tile glides in
+  else { tap(p, true); back() } }   // a cell that can't take it says why, and the tile goes back
+{ const grab = $("grab");
+  grab.addEventListener("pointerdown", e => { if (!S || S.over || !S.q[0] || S.pend.length || (e.pointerType === "mouse" && e.button !== 0)) return; try { grab.setPointerCapture(e.pointerId) } catch (_) {} carry = {id:e.pointerId, x0:e.clientX, y0:e.clientY, on:false}; e.preventDefault() });
+  grab.addEventListener("pointermove", e => { if (!carry || e.pointerId !== carry.id) return; if (!carry.on) { if (Math.hypot(e.clientX - carry.x0, e.clientY - carry.y0) < 8) return; carryOn() } carryMove(e.clientX, e.clientY) });
+  const up = (e, drop) => { if (!carry || e.pointerId !== carry.id) return; const c = carry; carry = null; try { grab.releasePointerCapture(e.pointerId) } catch (_) {}
+    if (!c.on) { if (drop) say(S.q[0] && S.q[0].k === "r" ? "Drag or tap land next to your river." : "Drag or tap green land."); return }
+    carryEnd(drop ? [e.clientX, e.clientY] : null) };
+  grab.addEventListener("pointerup", e => up(e, true)); grab.addEventListener("pointercancel", e => up(e, false)); grab.addEventListener("contextmenu", e => e.preventDefault()) }
+
+// ---------- press and hold a tile on the island to lock it (right-click with a mouse). A ring fills while the finger is held; at the end the lock card opens, and the lift of that touch is not a tap.
+{ const board = $("board"), ring = $("holdRing"), H = {t:0, show:0, id:-1, x:0, y:0, fired:0};
+  const stop = () => { clearTimeout(H.t); clearTimeout(H.show); H.t = H.show = 0; ring.hidden = true; ring.className = "fghold" };
+  const fire = () => { H.t = 0; H.fired = now(); swallow = 0; ring.className = "fghold done"; setTimeout(stop, 160); hapt(14); lockTile(cellUnder(H.x, H.y)); swallow = 1 };
+  board.addEventListener("pointerdown", e => { if (!e.isPrimary) { stop(); return } swallow = 0; stop(); if (e.target.tagName !== "CANVAS" || (e.pointerType === "mouse" && e.button !== 0) || !S || S.over || !CFG.lockEnabled) return;
+    H.id = e.pointerId; H.x = e.clientX; H.y = e.clientY; H.t = setTimeout(fire, 460);
+    H.show = setTimeout(() => { ring.style.left = H.x + "px"; ring.style.top = H.y + "px"; ring.hidden = false; ring.className = "fghold"; ring.getBoundingClientRect(); ring.className = "fghold on" }, 140) }, true);
+  board.addEventListener("pointermove", e => { if (H.t && e.pointerId === H.id && Math.hypot(e.clientX - H.x, e.clientY - H.y) > 9) stop() }, true);
+  for (const ev of ["pointerup", "pointercancel"]) board.addEventListener(ev, e => { if (e.pointerId !== H.id) return; const fired = H.t === 0 && H.fired && now() - H.fired < 3000 && ev === "pointerup"; if (H.t) stop(); H.id = -1; swallow = fired && swallow ? 1 : 0 }, true);
+  board.addEventListener("contextmenu", e => { if (e.target.tagName !== "CANVAS") return; e.preventDefault(); if (now() - H.fired < 900) return; stop(); lockTile(cellUnder(e.clientX, e.clientY)) }, true) }
+
 $("menu").addEventListener("click", async e => { if (e.target === $("menu")) { menu(false); return } const b = e.target.closest("[data-m]"); if (!b) return; const k = b.dataset.m;
   if (k === "new") { $("mConf").hidden = false; return } if (k === "newNo") { $("mConf").hidden = true; return }
   if (k === "log") { const ok = await copyText(logText(S)); menu(false); say(ok ? "Run log copied." : "Couldn't copy on this device."); return }
@@ -982,7 +1062,7 @@ function marshRampText(c) { const r = c.marshRiverRamp, W = ["", "one", "two", "
 // The menu's how-to lines follow the rules in force: the bare ground rule (LOU-300), and whether locks are limited.
 { const n = CFG.bareGroundMaxLevel, hb = $("howBare"); hb.hidden = n >= CFG.maxLevel;
   hb.textContent = CFG.bareGroundMode === "downgrade" ? `Planted on bare ground, a tile above level ${n} lands as level 1.` : `Only level ${n}${n > 1 ? " or lower" : ""} can be planted on bare ground. A higher tile has to combine onto a habitat of its own level, or be discarded.`;
-  tx("howLock", (CFG.lockEvery > 0 ? `Every ${CFG.lockEvery} tiles you place earns a lock. ` : "There is no limit on locks. ") + "Lock a tile to copy its neighbours, at its level or below, to the back of your pile. A locked tile can't grow any more.");
+  tx("howLock", (CFG.lockEvery > 0 ? `Every ${CFG.lockEvery} tiles you place earns a lock. ` : "There is no limit on locks. ") + "Press and hold a tile on the island (or right-click it) to lock it: its neighbours, at its level or below, are copied to the back of your pile, and a locked tile can't grow any more.");
   const ha = $("howAddr"); ha.hidden = !ASKED.length; ha.textContent = ASKED.length ? "This visit changes " + ASKED.map(k => `${k}=${Array.isArray(CFG[k]) ? CFG[k].join(", ") : CFG[k]}`).join(", ") + " (from the address). Your run and best score are kept apart from the usual game's." : "";
   const hv = $("howBiome"); hv.hidden = !(CFG.prairieShare > 0 || CFG.marshShare > 0);
   hv.textContent = "Yellow tiles are Prairie and turquoise tiles are Marsh. " + (CFG.biomeMatch ? "They grow the same way as the green ones, but a tile only combines with a habitat of its own kind and level." : "Any kind combines with any kind of the same level.")
@@ -1007,7 +1087,7 @@ if (NAME) { document.title = "Flowgrow · " + NAME; const mb = document.querySel
 function setSkin(v) { if (!LOOKS.includes(v) || v === skin) return; if (!PLAY) mem.set("look", v);   // the play page remembers no look: it picks one each visit
   if (v === "3d") { enter3d(); return }   // it loads first, and the page keeps drawing the look it has until then
   if (skin === "3d") leave3d();
-  skin = v; $("app").classList.toggle("simple", flat());
+  skin = v; markLook(); $("app").classList.toggle("simple", flat());
   B = bounds(); resort(); landKey = ""; lastSize = ""; view.z = null; fillLadder(); resize(); sync() }
 // ---------- the 3D look (LOU-311). The vendored three.js (r128) and flowgrow.look3d.js are fetched the first time it is asked for (?look=3d, or the Look row), so the other looks never load them. The look only reads the
 // game (the bridge below) and calls tap(); it never changes a rule, a score, a save or the seed. If the files or WebGL aren't there the page keeps the look it has and says so.
@@ -1016,11 +1096,11 @@ let l3Loading = null;
 function load3d() { if (G.Flowgrow3D) return Promise.resolve(G.Flowgrow3D); if (l3Loading) return l3Loading;
   l3Loading = LOOK3D_FILES.concat(new URLSearchParams(location.search).has("example") ? ["flowgrow.look3d.example.js"] : []).reduce((p, f) => p.then(() => new Promise((ok, bad) => { const s = document.createElement("script"); s.src = new URL(f, SRC_URL).href; s.onload = ok; s.onerror = () => bad(new Error("Couldn't load " + f)); document.head.appendChild(s) })), Promise.resolve()).then(() => G.Flowgrow3D);
   l3Loading.catch(() => { l3Loading = null }); return l3Loading }
-const bridge3d = () => ({board:$("board"), cv, top:$("top"), cfg:CFG, grid:GRID, rules, W, H, key, unkey, step, reduce, state:() => S, options:() => opts, tap, say, fit:$("fitBtn"),
+const bridge3d = () => ({board:$("board"), cv, top:$("top"), cfg:CFG, grid:GRID, rules, W, H, key, unkey, step, reduce, state:() => S, options:() => opts, tap, say, bottom:dockH, optLabel,
   lock:() => ({mode:lockMode, sel:lockSel, list:lockList}), pops, fx, widenText, marshMult, upgradeOf, levelName, tileText, BIOME_NAME, mem});
 // (the play page never says "Loading the 3D look", so it has no message to clear when the look is up, and a message of its own stays)
 function enter3d() { if (L3) return Promise.resolve(); if (!PLAY) say("Loading the 3D look…");
-  return load3d().then(m => { const ctl = m.mount(bridge3d()); if (!ctl) throw new Error("This device can't draw 3D."); L3 = ctl; skin = "3d"; cv.style.visibility = "hidden"; $("app").classList.toggle("simple", true);
+  return load3d().then(m => { const ctl = m.mount(bridge3d()); if (!ctl) throw new Error("This device can't draw 3D."); L3 = ctl; skin = "3d"; markLook(); cv.style.visibility = "hidden"; $("app").classList.toggle("simple", true);
     if (!PLAY) say(""); lastSize = ""; resize(); sync() }).catch(err => { if (!PLAY) say((err && err.message || "The 3D look couldn't start.") + " Staying on the " + skin + " look.", true) }) }   // the play page says nothing: it drops to a simpler look (settleLook)
 function leave3d() { if (!L3) return; L3.unmount(); L3 = null; cv.style.visibility = "" }
 
@@ -1035,7 +1115,7 @@ async function settleLook() { try { const bt = navigator.getBattery ? await navi
   setSkin("painted"); if (await frameRate() >= FPS_LOW) return;
   setSkin("simple") }
 // ---------- the first run (LOU-316): three short screens, once. Place a tile, match two of the same level, grow the river. A run in progress or a developer never sees it; skipping or finishing remembers it.
-const INTRO = [["Place a tile", "Tap land next to your river to put the tile in your hand there.", `<g fill="#e4efe0" stroke="#b3c4c6" stroke-width="2"><path d="M30 38l22-13 22 13v26L52 77 30 64z"/><path d="M78 38l22-13 22 13v26L100 77 78 64z"/><path d="M54 66l22-13 22 13v26L76 105 54 92z"/></g><path d="M20 50 C 40 62, 60 40, 76 52" fill="none" stroke="#5aaeea" stroke-width="9" stroke-linecap="round"/><path d="M78 38l22-13 22 13v26L100 77 78 64z" fill="none" stroke="#e0a31c" stroke-width="4" stroke-dasharray="7 6"/><path d="M96 22l8-14 8 14z" fill="#e0a31c"/>`],
+const INTRO = [["Place a tile", "Drag the tile in your hand onto land next to your river, or just tap the land.", `<g fill="#e4efe0" stroke="#b3c4c6" stroke-width="2"><path d="M30 38l22-13 22 13v26L52 77 30 64z"/><path d="M78 38l22-13 22 13v26L100 77 78 64z"/><path d="M54 66l22-13 22 13v26L76 105 54 92z"/></g><path d="M20 50 C 40 62, 60 40, 76 52" fill="none" stroke="#5aaeea" stroke-width="9" stroke-linecap="round"/><path d="M78 38l22-13 22 13v26L100 77 78 64z" fill="none" stroke="#e0a31c" stroke-width="4" stroke-dasharray="7 6"/><path d="M96 22l8-14 8 14z" fill="#e0a31c"/>`],
   ["Match two of the same level", "Put a tile on one of the same level and they grow into the next level.", `<path d="M28 48l18-10 18 10v20L46 78 28 68z" fill="#a6e47f" stroke="#3f9a3a" stroke-width="2.5"/><text x="46" y="65" text-anchor="middle" font-size="22" font-weight="800" fill="#173c2a">1</text><text x="75" y="64" text-anchor="middle" font-size="22" font-weight="800" fill="#4f6f70">+</text><path d="M88 48l18-10 18 10v20l-18 10-18-10z" fill="#a6e47f" stroke="#3f9a3a" stroke-width="2.5"/><text x="106" y="65" text-anchor="middle" font-size="22" font-weight="800" fill="#173c2a">1</text><path d="M60 94h40" stroke="#4f6f70" stroke-width="3" stroke-linecap="round"/><path d="M52 108l20-11 20 11v22l-20 11-20-11z" transform="translate(8 -26)" fill="#52b94e" stroke="#278a3a" stroke-width="2.5"/><text x="80" y="124" text-anchor="middle" font-size="22" font-weight="800" fill="#fff">2</text>`],
   ["Grow the river", "River tiles reach more land. Place them, and widen the river by matching them too.", `<path d="M14 92 C 40 70, 56 104, 84 80 S 128 66, 146 56" fill="none" stroke="#5aaeea" stroke-width="7" stroke-linecap="round"/><path d="M14 92 C 40 70, 56 104, 84 80" fill="none" stroke="#9fd2f4" stroke-width="13" stroke-linecap="round" opacity=".55"/><g fill="#e4efe0" stroke="#b3c4c6" stroke-width="2"><path d="M100 24l16-9 16 9v18l-16 9-16-9z"/><path d="M52 30l16-9 16 9v18l-16 9-16-9z"/><path d="M20 38l16-9 16 9v18l-16 9-16-9z"/></g>`]];
 function showIntro() { const el = $("intro"); if (!el) return; let i = 0, seen = false; const done = () => { el.hidden = true; mem.set("intro", "1") };
@@ -1045,7 +1125,7 @@ function showIntro() { const el = $("intro"); if (!el) return; let i = 0, seen =
 // What the page says about the old runs on this device (LOU-316): a run saved by an older version of the rules can't be replayed now, so it is dropped, once, with a plain line.
 function staleRuns() { let n = 0; try { for (const k of Object.keys(localStorage)) { const m = /^flowgrow\.run\.v(\d+)\./.exec(k); if (!m || +m[1] >= 13) continue; try { if ((JSON.parse(localStorage.getItem(k)).moves || []).length) n++ } catch (_) {} localStorage.removeItem(k) } } catch (_) {} return n }
 addEventListener("resize", resize);
-if (window.ResizeObserver) { const ro = new ResizeObserver(resize); ro.observe($("board")); ro.observe($("top")) }
+if (window.ResizeObserver) { const ro = new ResizeObserver(resize); ro.observe($("board")); ro.observe($("top")); ro.observe($("actions")) }
 function loop() { draw(); requestAnimationFrame(loop) }
 if (!TEST) loadPileArt();   // the pile's pictures (they are drawn when they arrive); the test build has none, its tiles are the flat ones
 if (TEST && takePending()) sync(); else if (load()) sync(); else { const old = PLAY && !DEV ? staleRuns() : 0; newRun(); if (old) say("Your earlier run was from an older version of the rules, so this is a new run.") }   // on the test build, a run that was loaded under other rules is waiting here
@@ -1058,6 +1138,6 @@ if ("serviceWorker" in navigator) addEventListener("load", () => navigator.servi
 if (PLAY && !DEV_LOOK) settleLook(); else if (WANT === "3d") enter3d();   // ?look=3d (or the remembered look); the play page picks its own (below)
 // for checking the page from a script
 G.Flowgrow.onRunEnd = G.Flowgrow.onRunEnd || (() => {});   // onRunEnd(result): the seed, rules, moves and score of a run that has just ended. It does nothing yet (LOU-316)
-Object.assign(G.Flowgrow, {run:() => S, runRecord, loadRun, page:() => PAGE, tap, undo, pick:doPick, lockMode:() => lockMode, discard:() => $("discardBtn").click(), newRun, scr, options:() => opts, skin:() => skin, setSkin,
+Object.assign(G.Flowgrow, {run:() => S, runRecord, loadRun, page:() => PAGE, tap, undo, pick:doPick, lockMode:() => lockMode, lockTile, discard:() => $("discardBtn").click(), newRun, scr, options:() => opts, skin:() => skin, setSkin,
   show(h, r) { S.h = h; if (r) S.r = r; S.top = Math.max(0, ...Object.values(h)); sync() }, look3d:() => L3, look(p, z) { if (L3 && skin === "3d") return L3.look(p, z); const o = iso(...p); view.cx = o.x; view.cy = o.y; if (z) view.z = z; applyView() }});
 })();

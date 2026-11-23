@@ -48,7 +48,7 @@ try {
     else if (m.a === "u") await b.ev(`document.querySelector('#pickq [data-f="${m.f}"]').click()`);
     n++; if ((await b.ev("Flowgrow.run().moves.length")) !== before + 1) throw new Error(`The page didn't take move ${n} (${JSON.stringify(m)}). Its rules are not the ones this run was found under.`) }
   const over = await b.ev("Flowgrow.run().over");
-  if (out) { fs.mkdirSync(out, {recursive: true}); await b.ev("document.getElementById('fitBtn').click()"); await sleep(1200); await b.ev("Flowgrow.look([6, 4])"); await sleep(400); await b.shot(path.join(out, "island.png")) }
+  if (out) { fs.mkdirSync(out, {recursive: true}); await b.ev("document.querySelector('[data-m=zoom]').click()"); await sleep(1200); await b.ev("Flowgrow.look([6, 4])"); await sleep(400); await b.shot(path.join(out, "island.png")) }
   if (!over) await b.ev("document.getElementById('endYes').click()"); await sleep(1200);
   const fin = await b.ev("(() => { const S = Flowgrow.run(); return {score: S.score, over: S.over, top: S.top, moves: S.moves.length, locks: S.lockUsed, sheet: document.getElementById('wScore').innerText, log: Flowgrow.rules.logText(S)} })()");
   console.log(`page: ${fin.score} points, top level ${fin.top}, ${fin.locks} locks, ${fin.moves} moves (${fin.sheet.replace(/\s+/g, " ")})`);

@@ -71,7 +71,7 @@ function mount(X) {
     riverMat.uniforms.night.value = night; uWind.value = 1 - .6 * night; uGlow.value = .55 * night;
     skyU.top.value.copy(cur.top); skyU.hor.value.copy(cur.hor); skyU.sunDir.value.copy(sunV); skyU.sunC.value.copy(cur.sun); skyU.moonDir.value.copy(moonV); skyU.night.value = night;
     cloudMat.color.copy(cur.cloud); cloudMat.emissive.copy(cur.cloud).multiplyScalar(.32); if (clouds[1]) clouds[1].visible = night < .55;
-    if (night !== lastNight) { const n = night > .5; if (lab.classList.contains("night") !== n) lab.classList.toggle("night", n); lastNight = night }
+    if (night !== lastNight) { const n = night > .5; if (lab.classList.contains("night") !== n) { lab.classList.toggle("night", n); const root = lab.closest(".app"); if (root) root.classList.toggle("night", n) } lastNight = night }   // the page's glass and labels follow (LOU-317)
     applied = t.toFixed(4) + "|" + X.quality() }
 
   // ---------- the sky: gradient, sun and moon discs with a halo, and stars (never on screen at the fixed angle, see the top of this file; off when the camera can't see it)
