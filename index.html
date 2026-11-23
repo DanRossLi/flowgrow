@@ -6,91 +6,32 @@
 <title>Flowgrow</title>
 <meta name="description" content="Flowgrow: grow an island from your river. Place tiles, combine the same level, and let the river reach more land.">
 <meta name="robots" content="noindex">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Flowgrow">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="theme-color" content="#cfe3ea">
-<link rel="manifest" href="manifest.webmanifest">
-<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Flowgrow">
+<meta property="og:title" content="Flowgrow">
+<meta property="og:description" content="Flowgrow: grow an island from your river. Place tiles, combine the same level, and let the river reach more land.">
+<meta property="og:url" content="https://danrossli.github.io/flowgrow/">
+<meta property="og:image" content="https://danrossli.github.io/flowgrow/share.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://danrossli.github.io/flowgrow/share.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<link rel="stylesheet" href="fonts/fonts.css">
-<link rel="stylesheet" href="play.css">
-<link rel="stylesheet" href="flowgrow.css">
+<link rel="canonical" href="https://danrossli.github.io/flowgrow/play/">
+<noscript><meta http-equiv="refresh" content="0; url=play/"></noscript>
+<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#cfe3ea;color:#24434a;font:600 16px system-ui,sans-serif}a{color:#2c6e99}</style>
 </head>
 <body>
-<!-- Flowgrow (LOU-298, LOU-299): an ecology and nature building game on a hex grid. It began inside Flow Tile and has had its own repo and
-     site since Nov 20, 2026. Its own files are flowgrow.js, flowgrow.css and flowgrow.config.js; play.css is a copy of Flow Tile's stylesheet. -->
-<div class="app fg" id="app">
-  <div class="board" id="board">
-    <canvas id="cv" aria-label="The island"></canvas>
-    <div class="overlay top" id="top">
-      <div class="stats">
-        <div class="stat"><span>Score</span><b id="hScore">0</b></div>
-        <div class="stat"><span>Tiles left</span><b id="hLeft">0</b></div>
-        <div class="stat"><span>Top level</span><b id="hTop">–</b></div>
-      </div>
-    </div>
-    <button type="button" class="icon sq zoom" id="fitBtn" aria-label="Show the whole island"></button>
-    <div class="overlay bottom" id="bottom">
-      <div class="pickq" id="pickq" role="alertdialog" aria-label="Choose an upgrade" hidden><b>Choose an upgrade</b><div class="pickrow"><button type="button" id="pick0"></button><button type="button" id="pick1"></button></div></div>
-      <div class="stuck seaq" id="lockq" role="alertdialog" aria-label="Lock this tile?" hidden><span><b id="lockT"></b><small id="lockS"></small></span><div><button type="button" id="lockYes">Lock</button><button type="button" id="lockNo">Cancel</button></div></div>
-      <div class="stuck seaq" id="endq" role="status" hidden><span><b>The pile is empty</b><small>Lock a tile for more copies, or end the run.</small></span><div><button type="button" id="endYes">End run</button></div></div>
-      <div class="msg fade" id="msg" role="status"></div>
-    </div>
-    <div class="lvdone" id="win" style="--t0:0s" hidden>
-      <div class="dsheet" role="dialog" aria-labelledby="winTitle">
-        <i class="mgrip" aria-hidden="true"></i>
-        <div class="dname">Flowgrow</div>
-        <h2 id="winTitle">Every tile is placed</h2>
-        <div class="dscore" id="wScore"></div>
-        <ul id="wGoals"></ul>
-        <button type="button" class="dnext" id="again"><b>Play again</b></button>
-        <div class="dtoast" id="dToast" role="status" hidden></div>
-        <div class="dlinks"><button type="button" id="copyLog">Copy run log</button></div>
-      </div>
-    </div>
-  </div>
-  <div class="actions" id="actions">
-    <!-- the pile, front to back: the tile in hand, the next tiles, the rest of the stack, then the copies banked by locks -->
-    <div class="fgpile" aria-label="Your pile">
-      <div class="fgcap"><b>Your pile</b><span id="hName"></span></div>
-      <div class="fgtray">
-        <div class="fgq" id="queue"></div>
-        <div class="fgstack" id="stack" hidden><b id="stackN"></b><i></i><i></i><i></i></div>
-        <div class="fgbank" id="bank" hidden><span>Back of the pile</span><div id="bankList"></div></div>
-      </div>
-    </div>
-    <div class="fgbtns">
-      <button type="button" id="menuBtn" class="fgb round" aria-label="Menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h14"/></svg></button>
-      <i class="fgsp"></i>
-      <button type="button" id="lockBtn" class="fgb fglock" aria-label="Lock a tile"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5.500" y="10.500" width="13" height="9.500" rx="2.200"/><path d="M8.500 10.500V8a3.500 3.500 0 017 0v2.500"/></svg><span><b>Lock</b><small id="lockIn"></small></span><b class="ubadge" id="lockN">0</b></button>
-      <button type="button" id="discardBtn" class="fgb fgbw" aria-label="Discard this tile"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13"/></svg><b class="fgw">Discard</b></button>
-      <button type="button" id="undoBtn" class="fgb fgbw" aria-label="Undo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 010 12h-3"/></svg><b class="fgw">Undo</b></button>
-    </div>
-  </div>
-  <div class="mwrap" id="menu" hidden><div class="msheet" role="dialog" aria-label="Menu">
-    <i class="mgrip" aria-hidden="true"></i>
-    <div class="mhead"><b>Flowgrow</b><span id="mSeed"></span></div>
-    <p class="fghow">Place tiles near your river. Two tiles of the same level make the next level. River tiles reach more land.</p>
-    <p class="fghow" id="howAddr" hidden></p>
-    <p class="fghow" id="howElev" hidden></p>
-    <p class="fghow" id="howTrees" hidden></p>
-    <p class="fghow" id="howRiver" hidden></p>
-    <p class="fghow" id="howBiome" hidden></p>
-    <p class="fghow" id="howUpgrade" hidden></p>
-    <p class="fghow" id="howBare" hidden></p>
-    <p class="fghow" id="howLock">There is no limit on locks. Lock a tile to copy its neighbours, at its level or below, to the back of your pile. A locked tile can't grow any more.</p>
-    <div class="fgladder" id="ladder" aria-label="The levels"></div>
-    <button type="button" class="mrow" data-m="look"><i class="mico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7.800 4.500v9L12 21l-7.800-4.500v-9z"/></svg></i><span>Look<small id="lookNote"></small></span></button>
-    <button type="button" class="mrow" data-m="time" id="timeRow" hidden><i class="mico"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.600 5.600l1.400 1.400M17 17l1.400 1.400M5.600 18.400L7 17M17 7l1.400-1.400"/></svg></i><span>Time of day<small id="timeNote"></small></span></button>
-    <button type="button" class="mrow" data-m="zoom"><i class="mico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></i><span>Whole island<small>Zoom out, or back in</small></span></button>
-    <button type="button" class="mrow" data-m="log"><i class="mico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h10v16H7z"/><path d="M10 9h4M10 13h4"/></svg></i><span>Copy run log<small>One line per move</small></span></button>
-    <button type="button" class="mrow rust" data-m="new"><i class="mico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 109-9 9.500 9.500 0 00-6.700 2.800L3 8"/><path d="M3 3v5h5"/></svg></i><span>New run<small>Asks you to confirm</small></span></button>
-    <div class="mconf" id="mConf" hidden><span>Start a new run? This run is lost.</span><button type="button" class="mgo" data-m="newYes">New run</button><button type="button" data-m="newNo">Cancel</button></div>
-  </div></div>
-</div>
-<script src="flowgrow.config.js"></script>
-<script src="flowgrow.js"></script>
+<!-- The bare address is a front door (LOU-316). The game is at play/; the test build (the rules, no graphics) is at test/. A link that carries rules or a seed (?treeShare=0, ?seed=7 ...) is a test link, so it goes to
+     test/; every other link goes to play/. The query string and the hash are kept, so an old link still works. A run saved on this device is under the same keys on both addresses (the play page's), so it is not lost. -->
+<p><a href="play/">Flowgrow</a></p>
+<script>
+(function () {
+  var q = location.search, keys = q.replace(/^\?/, "").split("&").map(function (p) { return p.split("=")[0] }).filter(Boolean);
+  var play = { look: 1, example: 1, dev: 1, q: 1, time: 1 }, test = keys.some(function (k) { return !play[k] });
+  location.replace((test ? "test/" : "play/") + q + location.hash);
+})();
+</script>
 </body>
 </html>

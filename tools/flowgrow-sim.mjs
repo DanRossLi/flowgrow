@@ -923,7 +923,7 @@ function checks() { let n = 0; const fails = [];
       falls += Object.keys(S.r).filter(k => R.fallAt(S, k)).length;
       const e = R.elevOf(cfg, sd); if (Object.keys(S.r).some(k => S.r[k].from != null && e[k] > e[S.r[k].from])) throw new Error("a river tile went uphill") }
     ok(`a whole run of random legal moves with elevation on (${shape}, ${name}): four runs end and replay exactly from their seeds, the score is the sum of the moves, no river tile went up, and the river stepped down in some (${falls} waterfalls)`, ends === 4 && replays === 4 && sums === 4 && falls > 0) }
-  ok("the elevation map pages are what tools/make-maps.mjs writes from index.html", spawnSync(process.execPath, [path.join(ROOT, "tools/make-maps.mjs"), "--check"], {encoding:"utf8"}).status === 0);
+  ok("the elevation map pages are what tools/make-maps.mjs writes from play/index.html", spawnSync(process.execPath, [path.join(ROOT, "tools/make-maps.mjs"), "--check"], {encoding:"utf8"}).status === 0);
   { const pages = ["foothills", "ridges", "terraces"].map(id => fs.readFileSync(path.join(ROOT, "elevation", id, "index.html"), "utf8")), sw = fs.readFileSync(path.join(ROOT, "sw.js"), "utf8");
     ok("each elevation map sets elevation on for itself and nothing else of the game's, loads the game from two folders up, and is in the service worker's list", pages.every((h, i) => h.includes(`"elevationShape":"${["foothills", "ridges", "terraces"][i]}"`) && h.includes('"elevation":true') && h.includes('src="../../flowgrow.js"') && !/(?:href|src)="(?!\.\.\/\.\.\/|https?:|#)[^"]*"/.test(h)) && ["./elevation/", "./elevation/foothills/", "./elevation/ridges/", "./elevation/terraces/"].every(u => sw.includes(`"${u}"`))) }
 

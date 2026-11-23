@@ -3,7 +3,7 @@
   "short_name": "Flowgrow",
   "description": "Place tiles near your river. Two tiles of the same level make the next level. An ecology and nature building game.",
   "id": "./",
-  "start_url": "./",
+  "start_url": "play/",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",

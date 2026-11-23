@@ -4,7 +4,7 @@
 //   node --experimental-websocket tools/holder-smoke.mjs
 //   node --experimental-websocket tools/holder-smoke.mjs --url http://localhost:8000/ --out shots
 //
-//   --url U    the page to test (default the live game)
+//   --url U    the site to test (default the live game); it tests the play page, U + "play/?dev=1"
 //   --out DIR  also save screenshots of the holder with all five kinds in view (holder-390x844.png, holder-1280x800.png)
 //
 // It sets a pile with all five kinds in view (the tile in hand and the next three, and a copy of the fifth at the back of the pile, with a level 3 copy and a raised river copy beside it), through the page's test hook
@@ -54,7 +54,7 @@ const READ = `JSON.stringify({q: [...document.querySelectorAll("#queue .fgt")].m
 const ready = async b => { for (let i = 0; i < 80; i++) { if (await b.ev("!!(window.Flowgrow && Flowgrow.run && Flowgrow.run())")) return true; await sleep(200) } return false };
 
 for (const [w, h, look] of [[390, 844, "simple"], [390, 844, "3d"], [360, 640, "simple"], [1280, 800, "simple"]]) { const b = await launch(w, h); const tag = `${w}x${h} ${look}`;
-  try { await b.goto(`${url}?look=${look}&q=low&seed=5&stackSize=20&time=day`); ok(`${tag}: the page starts`, await ready(b)); await sleep(1200); await b.ev(STATE); await sleep(800);
+  try { await b.goto(`${url}play/?dev=1&look=${look}&q=low&seed=5&time=day`); ok(`${tag}: the page starts`, await ready(b)); await sleep(1200); await b.ev(STATE); await sleep(800);
     const d = JSON.parse(await b.ev(READ)), kinds = ["river.webp", "green.webp", "prairie.webp", "marsh.webp"];
     ok(`${tag}: the hand and the next three show the river, green, prairie and marsh sprites`, d.q.length === 4 && d.q.every((t, i) => t.art === kinds[i]), d.q.map(t => t.art || "flat").join(", "));
     ok(`${tag}: the trees copy at the back of the pile shows its sprite`, d.bank[0] && d.bank[0].art === "trees.webp", d.bank.map(t => t.art || "flat").join(", "));
@@ -68,13 +68,13 @@ for (const [w, h, look] of [[390, 844, "simple"], [390, 844, "3d"], [360, 640, "
     if (out && w !== 360 && look === "simple") await b.shot(path.join(out, `holder-${w}x${h}.png`));
     ok(`${tag}: no page errors`, b.errors.length === 0, b.errors.join(" | ").slice(0, 300)) } finally { await b.stop() } }
 // sizes: 40 KB or less each, 250 KB or less in all
-{ const b = await launch(390, 844); try { await b.goto(`${url}?look=simple&seed=5`); const sizes = await b.ev(`(async () => { const o = {}; for (const k of ["river", "green", "prairie", "marsh", "trees"]) { const r = await fetch("art/pile/" + k + ".webp"); o[k] = r.ok ? (await r.arrayBuffer()).byteLength : -1 } return JSON.stringify(o) })()`), s = JSON.parse(sizes), total = Object.values(s).reduce((a, v) => a + Math.max(0, v), 0);
+{ const b = await launch(390, 844); try { await b.goto(`${url}play/?dev=1&look=simple&seed=5`); const sizes = await b.ev(`(async () => { const o = {}; for (const k of ["river", "green", "prairie", "marsh", "trees"]) { const r = await fetch("../art/pile/" + k + ".webp"); o[k] = r.ok ? (await r.arrayBuffer()).byteLength : -1 } return JSON.stringify(o) })()`), s = JSON.parse(sizes), total = Object.values(s).reduce((a, v) => a + Math.max(0, v), 0);
     ok("each sprite is 40 KB or less and all five 250 KB or less", Object.values(s).every(v => v > 0 && v <= 40 * 1024) && total <= 250 * 1024, Object.entries(s).map(([k, v]) => `${k} ${(v / 1024).toFixed(1)} KB`).join(", ") + `, ${(total / 1024).toFixed(1)} KB in all`) } finally { await b.stop() } }
 // a sprite that fails to load: its tile is drawn flat and the holder is never empty
-{ const b = await launch(390, 844, {block: ["*art/pile/green.webp*"]}); try { await b.goto(`${url}?look=simple&q=low&seed=5&stackSize=20`); await ready(b); await sleep(1200); await b.ev(STATE); await sleep(800); const d = JSON.parse(await b.ev(READ));
+{ const b = await launch(390, 844, {block: ["*art/pile/green.webp*"]}); try { await b.goto(`${url}play/?dev=1&look=simple&q=low&seed=5`); await ready(b); await sleep(1200); await b.ev(STATE); await sleep(800); const d = JSON.parse(await b.ev(READ));
     ok("a sprite that fails to load falls back to the flat tile, and the rest still show", d.q.length === 4 && !d.q[1].art && d.q[1].flat && d.q[0].art === "river.webp" && d.q[2].art === "prairie.webp", d.q.map(t => t.art || "flat").join(", "));
     ok("  no page errors", b.errors.filter(e => !/Failed to load resource|ERR_BLOCKED/.test(e)).length === 0, b.errors.join(" | ").slice(0, 300)) } finally { await b.stop() } }
 // less motion: the bob stops
-{ const b = await launch(390, 844, {reduce: true}); try { await b.goto(`${url}?look=simple&q=low&seed=5&stackSize=20`); await ready(b); await sleep(1200); await b.ev(STATE); await sleep(800);
+{ const b = await launch(390, 844, {reduce: true}); try { await b.goto(`${url}play/?dev=1&look=simple&q=low&seed=5`); await ready(b); await sleep(1200); await b.ev(STATE); await sleep(800);
     const an = await b.ev(`getComputedStyle(document.querySelector("#queue .fgt.now img.fgart")).animationName`); ok("with reduced motion the picture in hand doesn't bob", an === "none", an) } finally { await b.stop() } }
 console.log(bad ? `${bad} check(s) FAILED` : "all checks passed"); process.exit(bad ? 1 : 0);

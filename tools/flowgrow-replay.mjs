@@ -5,8 +5,7 @@
 //   node --experimental-websocket tools/flowgrow-replay.mjs search-best.json
 //   node --experimental-websocket tools/flowgrow-replay.mjs search-best.json --url http://localhost:8000/ --out replay
 //
-//   --url U    the page to play it in (default the live game). The page plays by ITS rules: they must be the ones the run was found
-//              under, so for a run found with key=value changes, serve a copy of the game with those changes in its config.
+//   --url U    the site to play it on (default the live game); it plays on the test build, U + "test/", with the key=value changes the run was found under put in its address.
 //   --out DIR  also save a screenshot of the finished island (island.png) and the run log the page produces (run-log.txt)
 //
 // It needs Chrome (set CHROME to its path if it isn't found) and drives it over the DevTools protocol with Node's built-in WebSocket,
@@ -40,7 +39,7 @@ async function launch() { const dir = fs.mkdtempSync(path.join(os.tmpdir(), "flo
 
 const b = await launch(); let failed = false;
 try {
-  await b.goto(`${url}?seed=${run.seed}&look=simple`);
+  await b.goto(`${url}test/?seed=${run.seed}` + Object.entries(run.over || {}).map(([k, v]) => `&${k}=${encodeURIComponent(v)}`).join(""));   // the test build: the plain look, with the run's rules in the address
   if (!(await b.ev("typeof Flowgrow !== 'undefined' && !!Flowgrow.run()"))) throw new Error("That page isn't Flowgrow.");
   const last = run.moves[run.moves.length - 1], body = last.a === "e" ? run.moves.slice(0, -1) : run.moves; let n = 0;
   for (const m of body) { const before = await b.ev("Flowgrow.run().moves.length");

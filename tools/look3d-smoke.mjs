@@ -4,7 +4,7 @@
 //   node --experimental-websocket tools/look3d-smoke.mjs
 //   node --experimental-websocket tools/look3d-smoke.mjs --url http://localhost:8000/ --out shots
 //
-//   --url U    the page to test (default the live game)
+//   --url U    the site to test (default the live game); it tests the play page, U + "play/?dev=1" (the developer's door for ?look= and ?seed=)
 //   --out DIR  also save screenshots of day, golden hour and night at 390x844 (day.png, gold.png, night.png)
 //
 // It loads ?look=3d&time=night&q=low in headless Chrome (software GL, so it needs no graphics card), plays three moves by tapping the canvas, and checks that the page logged no errors, that the canvas is not blank,
@@ -51,7 +51,7 @@ const PLAY = `(() => { const F = Flowgrow; for (let i = 0; i < 20; i++) { const 
 
 let b = await launch();
 try {
-  const t0 = Date.now(); await b.goto(`${url}?look=3d&time=night&q=low&seed=5`);
+  const t0 = Date.now(); await b.goto(`${url}play/?dev=1&look=3d&time=night&q=low&seed=5`);
   ok("the 3D look loads and mounts", await ready(b), (Date.now() - t0) + " ms"); await sleep(2500);
   const urls = await b.ev("performance.getEntriesByType('resource').map(e => e.name)"), own = new URL(url).origin;
   ok("nothing was loaded from another site", urls.every(u => u.startsWith(own) || u.startsWith("data:") || u.startsWith("blob:")), urls.filter(u => !u.startsWith(own)).join(", "));
@@ -74,12 +74,12 @@ try {
   ok("no page errors", b.errors.length === 0, b.errors.join(" | ").slice(0, 400));
 } finally { await b.stop() }
 // the whole island fits at the opening view, on a phone and on a desktop window
-for (const [w, h] of [[390, 844], [1280, 800]]) { b = await launch(w, h, 1); try { await b.goto(`${url}?look=3d&q=low&time=day&seed=5`); await ready(b); await sleep(1800);
+for (const [w, h] of [[390, 844], [1280, 800]]) { b = await launch(w, h, 1); try { await b.goto(`${url}play/?dev=1&look=3d&q=low&time=day&seed=5`); await ready(b); await sleep(1800);
     const box = await b.ev("(() => { const r = document.getElementById('cv3d').getBoundingClientRect(), pts = [[0, 0], [12, 0], [0, 8], [12, 8]].map(p => Flowgrow.scr(p)); return JSON.stringify({r: [r.left, r.top, r.right, r.bottom], pts}) })()"), d = JSON.parse(box);
     ok(`the whole island fits at the opening view at ${w}x${h}`, d.pts.every(([x, y]) => x > d.r[0] && x < d.r[2] && y > d.r[1] && y < d.r[3]), JSON.stringify(d.pts.map(p => p.map(Math.round)))) } finally { await b.stop() } }
 // the same seed, the same twenty moves, in the simple look and in the 3D look: the moves and the score must match
 const results = {};
-for (const look of ["simple", "3d"]) { b = await launch(); try { await b.goto(`${url}?look=${look}&q=low&time=day&seed=5&stackSize=20`); if (look === "3d") await ready(b); else await sleep(800); await sleep(1500);
+for (const look of ["simple", "3d"]) { b = await launch(); try { await b.goto(`${url}play/?dev=1&look=${look}&q=low&time=day&seed=5`); if (look === "3d") await ready(b); else await sleep(800); await sleep(1500);
     results[look] = JSON.parse(await b.ev(PLAY)); await sleep(800);
     // the level numbers lie on the ground, one for each habitat and each river tile above level 1 (LOU-313), and a list nobody sees tells a screen reader about each tile; the white pills are gone
     if (look === "3d") { const nm = JSON.parse(await b.ev("(() => { const S = Flowgrow.run(), m = window.__flowgrow3d.scene.children.find(o => o.renderOrder === 2.5); return JSON.stringify({want: Object.keys(S.h).length + Object.values(S.r).filter(r => r.l > 1).length, got: m ? m.geometry.attributes.position.count / 20 : -1, list: document.querySelectorAll('#l3sr > div').length, pills: document.querySelectorAll('#l3labels .l3t:not(.lockb)').length}) })()"));
