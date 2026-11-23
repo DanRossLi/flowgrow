@@ -46,7 +46,7 @@ The rules, the pile, locking and the saved run are the same in all three. Switch
   | `med` | 52k + 6k shadows, 123 draw calls (+9) | 53k + 10k, 124 (+19) | 98k + 74k, 124 (+98) |
   | `high` | 82k + 11k shadows, 123 (+9) | 86k + 20k, 124 (+19) | 235k + 192k, 124 (+98) |
 
-  Zoomed in (about 4 tiles across) the heavy late game is 52k on `low`, 112k + 96k on `med` and 301k + 298k on `high` (thinned to 91 per cent). The frame rates under software GL, which is a processor doing a graphics card's work, are far below a phone's (`low` 27 and 18, `med` 18 and 10, `high` 13 and 6, on the fresh island and the heavy game), and the JavaScript's own time for a frame is about 1 ms on `low` and 3 to 4 ms on `med`. **None of it has been measured on a phone.**
+  Zoomed in (about 4 tiles across) the heavy late game is 52k on `low`, 112k + 96k to 113k + 116k on `med` (it depends on where you look) and 301k + 298k on `high` (thinned to 91 per cent). The frame rates under software GL, which is a processor doing a graphics card's work, are far below a phone's (`low` 27 and 18, `med` 18 and 10, `high` 13 and 6, on the fresh island and the heavy game), and the JavaScript's own time for a frame is about 1 ms on `low` and 3 to 4 ms on `med`. **None of it has been measured on a phone.**
 - **Tests:** `node --experimental-websocket tools/look3d-smoke.mjs` (see "Check it"). `window.__flowgrow3d` has `setTime(mode or t)`, `getTime()`, `setQuality(q)`, `setThrottle(on)`, `stats()` (triangles, draw calls, fps, the shadow pass, the level of detail) and `sample()` for scripts.
 - What was changed from the build spec, cut, or left as a placeholder (the art for levels 8 to 15 and for the four kinds is a proposal) is listed in CANON.md under "The 3D look, no rules changed".
 
