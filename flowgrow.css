@@ -72,3 +72,4 @@
 /* the simple look (Dan, Nov 20): the number is on the tile itself, so the level badge on the pile's tiles isn't needed, and the board is flat and clean */
 .fg.simple .fgl{display:none}
 .fg.simple .board::after{display:none}
+.mrow[hidden]{display:none}

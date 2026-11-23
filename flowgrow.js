@@ -920,11 +920,14 @@ $("lockNo").onclick = () => { lockSel = null; sync() };
 $("endYes").onclick = () => { if (end(S)) sync() };
 $("copyLog").onclick = async () => { const e = $("dToast"); e.textContent = await copyText(logText(S)) ? "Run log copied." : "Couldn't copy on this device."; e.hidden = false; setTimeout(() => { e.hidden = true }, 2200) };
 // The menu: how to play, the seven levels, a new run, the run log and Home. Tap outside to close.
-const menu = open => { $("mConf").hidden = true; tx("mSeed", "Seed " + S.seed); tx("lookNote", skin === "3d" ? "3D. Tap for the simple look" : skin === "painted" ? "Painted. Tap for the 3D look" : "Simple. Tap for the painted look"); $("menu").hidden = !open };
+const menu = open => { $("mConf").hidden = true; tx("mSeed", "Seed " + S.seed); tx("lookNote", skin === "3d" ? "3D. Tap for the simple look" : skin === "painted" ? "Painted. Tap for the 3D look" : "Simple. Tap for the painted look");
+  const tr = $("timeRow"); if (tr) { tr.hidden = !(L3 && skin === "3d"); if (L3 && skin === "3d") tx("timeNote", L3.timeNote()) }   // the time of day is a 3D-look setting
+  $("menu").hidden = !open };
 $("menuBtn").onclick = () => menu(true);
 $("menu").addEventListener("click", async e => { if (e.target === $("menu")) { menu(false); return } const b = e.target.closest("[data-m]"); if (!b) return; const k = b.dataset.m;
   if (k === "new") { $("mConf").hidden = false; return } if (k === "newNo") { $("mConf").hidden = true; return }
   if (k === "log") { const ok = await copyText(logText(S)); menu(false); say(ok ? "Run log copied." : "Couldn't copy on this device."); return }
+  if (k === "time") { if (L3 && L3.cycleTime) { L3.cycleTime(); menu(true) } return }   // Auto, Day, Golden hour, Night, Pause: the menu stays open so the new choice shows
   menu(false); if (k === "newYes") newRun(); else if (k === "look") setSkin(LOOKS[(LOOKS.indexOf(skin) + 1) % LOOKS.length]); else if (k === "zoom") { if (L3 && skin === "3d") L3.toggleFit(); else { view.z = view.z > 1.02 ? 1 : lay.zAuto; applyView() } } });
 addEventListener("keydown", e => { if (e.key === "Escape") menu(false) });
 function fillLadder() { const L = $("ladder"); L.textContent = ""; for (let l = 1; l <= CFG.maxLevel; l++) { const d = document.createElement("div"); d.appendChild(tileEl({k:"h", l}, 40, "")); const n = document.createElement("small"); n.innerHTML = `${levelName(CFG, l)}<b>+${scoreOf(CFG, l)}</b>`; d.appendChild(n); L.appendChild(d) } }
@@ -965,13 +968,13 @@ function setSkin(v) { if (!LOOKS.includes(v) || v === skin) return; mem.set("loo
   B = bounds(); resort(); landKey = ""; lastSize = ""; view.z = null; fillLadder(); resize(); sync() }
 // ---------- the 3D look (LOU-311). The vendored three.js (r128) and flowgrow.look3d.js are fetched the first time it is asked for (?look=3d, or the Look row), so the other looks never load them. The look only reads the
 // game (the bridge below) and calls tap(); it never changes a rule, a score, a save or the seed. If the files or WebGL aren't there the page keeps the look it has and says so.
-const LOOK3D_FILES = ["vendor/three.r128.min.js", "flowgrow.look3d.js", "flowgrow.look3d.art.js"];
+const LOOK3D_FILES = ["vendor/three.r128.min.js", "flowgrow.look3d.js", "flowgrow.look3d.art.js", "flowgrow.look3d.sky.js"];
 let l3Loading = null;
 function load3d() { if (G.Flowgrow3D) return Promise.resolve(G.Flowgrow3D); if (l3Loading) return l3Loading;
   l3Loading = LOOK3D_FILES.reduce((p, f) => p.then(() => new Promise((ok, bad) => { const s = document.createElement("script"); s.src = new URL(f, SRC_URL).href; s.onload = ok; s.onerror = () => bad(new Error("Couldn't load " + f)); document.head.appendChild(s) })), Promise.resolve()).then(() => G.Flowgrow3D);
   l3Loading.catch(() => { l3Loading = null }); return l3Loading }
 const bridge3d = () => ({board:$("board"), cv, top:$("top"), cfg:CFG, grid:GRID, rules, W, H, key, unkey, step, reduce, state:() => S, options:() => opts, tap, say, fit:$("fitBtn"),
-  lock:() => ({mode:lockMode, sel:lockSel, list:lockList}), pops, fx, widenText, marshMult, upgradeOf, levelName, tileText, BIOME_NAME});
+  lock:() => ({mode:lockMode, sel:lockSel, list:lockList}), pops, fx, widenText, marshMult, upgradeOf, levelName, tileText, BIOME_NAME, mem});
 function enter3d() { if (L3) return; say("Loading the 3D look…");
   load3d().then(m => { const ctl = m.mount(bridge3d()); if (!ctl) throw new Error("This device can't draw 3D."); L3 = ctl; skin = "3d"; cv.style.visibility = "hidden"; $("app").classList.toggle("simple", true);
     say(""); lastSize = ""; resize(); sync() }).catch(err => { say((err && err.message || "The 3D look couldn't start.") + " Staying on the " + skin + " look.", true) }) }

@@ -46,16 +46,16 @@ const tpl = g => { const n = g.index ? g.toNonIndexed() : g; return n.attributes
 const GT = {ico0:tpl(new T.IcosahedronGeometry(1, 0)), ico1:tpl(new T.IcosahedronGeometry(1, 1)), dod:tpl(new T.DodecahedronGeometry(1, 0)), cyl:tpl(new T.CylinderGeometry(1, 1, 1, 6).translate(0, .5, 0)),
   cone:tpl(new T.ConeGeometry(1, 1, 7).translate(0, .5, 0)), cone2:tpl(new T.ConeGeometry(1, 1, 5).translate(0, .5, 0)), blade:tpl(new T.ConeGeometry(1, 1, 3).translate(0, .5, 0)),
   trunk:tpl(new T.CylinderGeometry(.6, 1, 1, 8).translate(0, .5, 0)), stem4:tpl(new T.CylinderGeometry(.55, 1, 1, 4).translate(0, .5, 0))};
-function Batch(y0) { this.p = []; this.n = []; this.c = []; this.s = []; this.y0 = y0 || 0 }
+function Batch(y0) { this.p = []; this.n = []; this.c = []; this.s = []; this.y0 = y0 || 0; this.gl = 0 }   // gl: 10 marks the vertices being added as glowing at night (pond water, mushroom caps, seed heads); it rides in the sway weight
 Batch.prototype.add = function (tp, m, col, amount) {
   const e = m.elements, p = this.p, nn = this.n, cc = this.c, ss = this.s, base = p.length, am = amount == null ? 1 : amount;
   for (let i = 0; i < tp.length; i += 3) { const x = tp[i], y = tp[i + 1], z = tp[i + 2];
     p.push(e[0] * x + e[4] * y + e[8] * z + e[12], e[1] * x + e[5] * y + e[9] * z + e[13], e[2] * x + e[6] * y + e[10] * z + e[14]) }
   for (let i = base; i < p.length; i += 9) { const ax = p[i + 3] - p[i], ay = p[i + 4] - p[i + 1], az = p[i + 5] - p[i + 2], bx = p[i + 6] - p[i], by = p[i + 7] - p[i + 1], bz = p[i + 8] - p[i + 2];
     let nx = ay * bz - az * by, ny = az * bx - ax * bz, nz = ax * by - ay * bx; const l = Math.hypot(nx, ny, nz) || 1; nx /= l; ny /= l; nz /= l; nn.push(nx, ny, nz, nx, ny, nz, nx, ny, nz) }
-  for (let i = base; i < p.length; i += 3) { cc.push(col.r, col.g, col.b); ss.push(am ? am * clamp((p[i + 1] - this.y0) / .55, 0, 1) : 0) } };
+  for (let i = base; i < p.length; i += 3) { cc.push(col.r, col.g, col.b); ss.push((am ? am * clamp((p[i + 1] - this.y0) / .55, 0, 1) : 0) + this.gl) } };
 // one vertex given outright (the ground's top and the soil walls have their own normals)
-Batch.prototype.vert = function (x, y, z, nx, ny, nz, c) { this.p.push(x, y, z); this.n.push(nx, ny, nz); this.c.push(c[0], c[1], c[2]); this.s.push(0) };
+Batch.prototype.vert = function (x, y, z, nx, ny, nz, c) { this.p.push(x, y, z); this.n.push(nx, ny, nz); this.c.push(c[0], c[1], c[2]); this.s.push(this.gl) };
 // copy another batch into this one, moved by (ox, oy, oz): a tile's plants are built once around their own origin and copied into each tile that has the same look
 Batch.prototype.append = function (o, ox, oy, oz) { const op = o.p, p = this.p, n = this.n, c = this.c, s = this.s;
   for (let i = 0; i < op.length; i += 3) p.push(op[i] + ox, op[i + 1] + oy, op[i + 2] + oz);
@@ -145,9 +145,10 @@ function mount(B) {
   function riverD2(X, Z) { let m = 1e9; for (const s of riverSegs) { const vx = s.bx - s.ax, vz = s.bz - s.az, l2 = vx * vx + vz * vz || 1, t = clamp(((X - s.ax) * vx + (Z - s.az) * vz) / l2, 0, 1), dx = X - (s.ax + vx * t), dz = Z - (s.az + vz * t), d = dx * dx + dz * dz; if (d < m) m = d } return m }
 
   // ---------- one tile's mesh: the top (sector triangles sampled from the ground, smooth normals), the soil walls on the island's outer edge, and the grass field. Step 3 adds what grows on it.
-  const tileMat = new T.MeshStandardMaterial({vertexColors:true, roughness:.92, metalness:0});
-  tileMat.onBeforeCompile = sh => { sh.uniforms.uTime = uTime;
-    sh.vertexShader = "uniform float uTime;\nattribute float aSway;\n" + sh.vertexShader.replace("#include <begin_vertex>", "#include <begin_vertex>\n transformed.x += sin(uTime*1.7 + position.x*4. + position.z*3.)*.018*aSway;\n transformed.z += cos(uTime*1.4 + position.z*4. + position.x*2.)*.014*aSway;") };
+  const tileMat = new T.MeshStandardMaterial({vertexColors:true, roughness:.92, metalness:0}), uWind = {value:1}, uGlow = {value:0};   // uWind: how much the foliage sways (calmer at night); uGlow: how much a glowing vertex lights itself
+  tileMat.onBeforeCompile = sh => { sh.uniforms.uTime = uTime; sh.uniforms.uWind = uWind; sh.uniforms.uGlow = uGlow;
+    sh.vertexShader = "uniform float uTime;\nuniform float uWind;\nattribute float aSway;\nvarying float vGlow;\n" + sh.vertexShader.replace("#include <begin_vertex>", "#include <begin_vertex>\n float glw_=step(5.,aSway); vGlow=glw_; float sw_=(aSway-10.*glw_)*uWind;\n transformed.x += sin(uTime*1.7 + position.x*4. + position.z*3.)*.018*sw_;\n transformed.z += cos(uTime*1.4 + position.z*4. + position.x*2.)*.014*sw_;");
+    sh.fragmentShader = "uniform float uGlow;\nvarying float vGlow;\n" + sh.fragmentShader.replace("#include <emissivemap_fragment>", "#include <emissivemap_fragment>\n totalEmissiveRadiance += vColor.rgb * vGlow * uGlow;") };
   const islandGroup = new T.Group(); scene.add(islandGroup);
   const GRN = ["#3f9a3a", "#4fae40", "#68bb45", "#5aa83e"].map(lin), GRD = ["#9bc653", "#b3c968"].map(lin), DRIFT = ["#ffffff", "#ffd84a", "#ff9ec4", "#b98cf0"].map(lin), STEM = lin("#4f9a44");
   const shade = (c, k) => ({r:c.r * k, g:c.g * k, b:c.b * k});
@@ -227,7 +228,7 @@ function mount(B) {
   function celebrate(cl, what) { if (reduced()) return; const d = cl.d, k = what === "frost" ? "frost" : d.river ? "r" : d.level >= 8 ? "gold" : d.kind || "g"; burst(cl, k, k === "frost" ? 10 : d.level >= 8 ? 26 : 16); pulse(cl, RINGC[k] || RINGC.g) }
 
   // ---------- the day's state, read by everything that depends on the time of day (step 4 drives it from the clock: night 0 is full day, 1 is deep night). Until then it is day.
-  const dayState = {t:.2, night:0};
+  const dayState = {phase:"day", t:.2, mode:"cycle", sunDir:new T.Vector3(-.53, .77, .36), moonDir:new T.Vector3(-.3, .55, -.78), night01:0, dusk01:0, dawn01:0};
 
   // ---------- the animals. The art module makes each animal's shape (a small merged template), says who lives on what and how each one moves; here every animal on the island is posed by the CPU each frame into
   // ONE dynamic mesh, so any number of them is one draw call. By day each tile's day animal is out and by night its night animal (the swap follows dayState.night). None on the low tier. Cosmetic only.
@@ -235,14 +236,14 @@ function mount(B) {
   let zoo = [], zooCap = 0, zPos = null, zNor = null, zCol = null, zGeo = null, zMesh = null, zooNight = -1;
   function buildZoo() { const art = G.Flowgrow3D && G.Flowgrow3D.art, list = []; let nv = 0;
     if (art && art.animal && quality !== "low") for (const cl of cells) { const d = cl.d; if (!d) continue; const pr = art.pairFor(d); if (!pr) continue;
-      for (let s = 0; s < 2; s++) { let name = pr[s]; const info = cl.info || {}; if ((name === "owl" || name === "woodpecker") && !info.perch) name = s ? "hedgehog" : "squirrel"; if (name === "duck" && !info.pond) name = "frog";
+      for (let s = 0; s < pr.length; s++) { let name = pr[s]; const info = cl.info || {}; if ((name === "owl" || name === "woodpecker") && !info.perch) name = s ? "hedgehog" : "squirrel"; if (name === "duck" && !info.pond) name = "frog";
         const tp = art.animal(name, quality === "high" ? 1 : 0); if (!tp) continue; const rr = rng(cl.i * 53 + s * 7 + 3);
-        list.push({cl, name, tp, mv:art.MOVE[name] || {r:.3, s:.1}, night:s === 1, ph:rr() * 6.28, dir:rr() < .5 ? -1 : 1, x0:cl.x, z0:cl.z, info}); nv += tp.p.length / 3 } }
+        list.push({cl, name, tp, mv:art.MOVE[name] || {r:.3, s:.1}, night:s >= 1, ph:rr() * 6.28, dir:rr() < .5 ? -1 : 1, x0:cl.x, z0:cl.z, info}); nv += tp.p.length / 3 } }
     if (nv > zooCap) { zooCap = Math.ceil(nv * 1.2); zPos = new Float32Array(zooCap * 3); zNor = new Float32Array(zooCap * 3); zCol = new Float32Array(zooCap * 3); if (zMesh) { scene.remove(zMesh); zGeo.dispose() }
       zGeo = new T.BufferGeometry(); zGeo.setAttribute("position", new T.BufferAttribute(zPos, 3).setUsage(T.DynamicDrawUsage)); zGeo.setAttribute("normal", new T.BufferAttribute(zNor, 3).setUsage(T.DynamicDrawUsage)); zGeo.setAttribute("color", new T.BufferAttribute(zCol, 3).setUsage(T.DynamicDrawUsage));
       zMesh = new T.Mesh(zGeo, zooMat); zMesh.frustumCulled = false; zMesh.receiveShadow = true; scene.add(zMesh) }
     zoo = list; zooNight = -1; if (zMesh) { zMesh.visible = list.length > 0; if (!list.length) zGeo.setDrawRange(0, 0) } }
-  function poseZoo(t) { if (!zMesh || !zoo.length) return; const night = dayState.night, still = reduced(); if (still && night === zooNight) return; zooNight = night; if (still) t = 0;
+  function poseZoo(t) { if (!zMesh || !zoo.length) return; const night = dayState.night01, still = reduced(); if (still && night === zooNight) return; zooNight = night; if (still) t = 0;
     let o = 0; for (const a of zoo) { const vis = a.night ? sstep(.3, .7, night) : 1 - sstep(.2, .55, night); if (vis < .02) continue;
       const mv = a.mv, info = a.info, gy = CH[a.cl.i], th0 = a.ph; let px, py, pz, hd, fl = 0;
       if (a.name === "owl" && info.perch) { const pc = info.perch; px = a.x0 + pc.x; pz = a.z0 + pc.z; py = gy + pc.top + .01; hd = th0 + Math.sin(t * .35 + th0) * 1.1 }
@@ -270,14 +271,21 @@ function mount(B) {
   const sdfTex = new T.DataTexture(sdfData, sdfNx, sdfNz, T.RGBAFormat, T.UnsignedByteType); sdfTex.minFilter = sdfTex.magFilter = T.LinearFilter; sdfTex.generateMipmaps = false; sdfTex.needsUpdate = true;
   const DAY = {top:"#8ec9e8", hor:"#eaf6ee", shallow:"#7fe0bd", deep:"#2b9a8e", foam:"#f4fffb", sunC:"#fff0cf"};   // the day's palette; step 4 drives these from the clock
   const seaU = {t:uTime, sdf:{value:sdfTex}, org:{value:new T.Vector2(sdfX0, sdfZ0)}, siz:{value:new T.Vector2(sdfW, sdfH)}, dmax:{value:sdfMax}, mid:{value:new T.Vector2(midX, midZ)}, shallow:{value:new T.Color(DAY.shallow)}, deep:{value:new T.Color(DAY.deep)},
-    horizon:{value:new T.Color(DAY.hor)}, foamC:{value:new T.Color(DAY.foam)}};
+    horizon:{value:new T.Color(DAY.hor)}, foamC:{value:new T.Color(DAY.foam)}, moonDir:{value:new T.Vector3(-.3, .55, -.78).normalize()}, moonC:{value:new T.Color("#bcd2ff")}, night:{value:0}};
   const sea = new T.Mesh(new T.PlaneGeometry(1200, 1200, 1, 1), new T.ShaderMaterial({uniforms:seaU,
     vertexShader:"varying vec3 vW;void main(){vec4 w=modelMatrix*vec4(position,1.);vW=w.xyz;gl_Position=projectionMatrix*viewMatrix*w;}",
-    fragmentShader:"uniform float t;uniform sampler2D sdf;uniform vec2 org;uniform vec2 siz;uniform float dmax;uniform vec2 mid;uniform vec3 shallow;uniform vec3 deep;uniform vec3 horizon;uniform vec3 foamC;varying vec3 vW;" +
+    fragmentShader:"uniform float t;uniform sampler2D sdf;uniform vec2 org;uniform vec2 siz;uniform float dmax;uniform vec2 mid;uniform vec3 shallow;uniform vec3 deep;uniform vec3 horizon;uniform vec3 foamC;uniform vec3 moonDir;uniform vec3 moonC;uniform float night;varying vec3 vW;" +
       "void main(){vec2 uv=(vW.xz-org)/siz;float d=texture2D(sdf,uv).r*dmax;if(uv.x<0.||uv.y<0.||uv.x>1.||uv.y>1.)d=dmax;" +
       "float wob=sin(vW.x*2.3+t*.9)*.06+sin(vW.z*3.1-t*1.1)*.05;float dd=d+wob;vec3 col=mix(shallow,deep,smoothstep(.05,2.8,dd));" +
       "float ring=(1.-smoothstep(0.,.32,dd))*(.55+.45*sin(dd*26.-t*1.6));col=mix(col,foamC,clamp(ring,0.,1.)*.8);" +
       "float sp=sin(vW.x*9.+t*1.3)*sin(vW.z*9.-t*1.7);col+=smoothstep(.88,1.,sp)*.1*(1.-smoothstep(0.,6.,d));col+=.012*sin(vW.x*.7+vW.z*.5+t*.4)+.008*sin(vW.x*.31-vW.z*.43+t*.3);" +
+      // at night: a column of moonlight runs out from the island towards the moon (a faint sheen with sparkles), and the stars are mirrored in the far water. The sky itself is never on screen at this
+      // angle (the camera looks 34 degrees down at the sea), so the moon and stars show on the water.
+      "if(night>.01){vec2 md2=normalize(moonDir.xz);vec2 rel=vW.xz-mid;float along=dot(rel,md2);float lat=dot(rel,vec2(-md2.y,md2.x));" +
+      "float path=exp(-lat*lat/60.)*smoothstep(4.,16.,along)*(1.-smoothstep(70.,160.,along));vec2 q=vW.xz*2.4;vec2 g=floor(q);float hh=fract(sin(dot(g,vec2(127.1,311.7)))*43758.5453);" +
+      "float tw=pow(.5+.5*sin(t*2.1+hh*60.),4.);float spk=step(.74,hh)*smoothstep(.5,.04,length(fract(q)-.5))*tw;col+=moonC*(spk*1.15+.05)*path*night;" +
+      "vec3 V=normalize(cameraPosition-vW);vec3 N=normalize(vec3(sin(vW.x*1.9+t*.8)*.05,1.,sin(vW.z*2.1+t*.7)*.05));vec3 Rf=reflect(-V,N);" +
+      "if(Rf.y>.1){vec2 sq=Rf.xz/Rf.y*20.;vec2 sg=floor(sq);float sh=fract(sin(dot(sg,vec2(127.1,311.7)))*43758.5453);float stw=.55+.45*sin(t*1.7+sh*60.);float stv=step(.988,sh)*smoothstep(.42,.06,length(fract(sq)-.5))*stw;col+=vec3(.8,.9,1.)*stv*night*.8*smoothstep(22.,60.,length(rel));}}" +
       "col=mix(col,horizon,smoothstep(40.,190.,length(vW.xz-mid)));gl_FragColor=vec4(col,1.);}"}));
   sea.rotation.x = -Math.PI / 2; sea.position.set(midX, SEA_Y, midZ); scene.add(sea);
   const skyU = {top:{value:new T.Color(DAY.top)}, hor:{value:new T.Color(DAY.hor)}, sunDir:{value:new T.Vector3(-9, 13, 6).normalize()}, sunC:{value:new T.Color(DAY.sunC)}};
@@ -301,13 +309,13 @@ function mount(B) {
 
   // ---------- the river: a ribbon along the tile centres in flow order (each tile joins the one it flows from), turned smooth with Catmull-Rom. Its width follows the river's level (1 to 15: width and
   // foam only, never a different shape); where a tile steps down from the one it flows from (the elevation rule) the ribbon drops steeply and the shader whitens it: a waterfall.
-  const riverMat = new T.ShaderMaterial({transparent:true, depthWrite:false, side:T.DoubleSide, uniforms:{t:uTime, cA:{value:new T.Color("#52d3c6")}, cB:{value:new T.Color("#2a97a3")}},
+  const riverMat = new T.ShaderMaterial({transparent:true, depthWrite:false, side:T.DoubleSide, uniforms:{t:uTime, night:{value:0}, cA:{value:new T.Color("#52d3c6")}, cB:{value:new T.Color("#2a97a3")}},
     vertexShader:"attribute float lvl;attribute float fall;attribute float fade;varying vec2 vUv;varying float vL;varying float vFall;varying float vFade;void main(){vUv=uv;vL=lvl;vFall=fall;vFade=fade;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}",
-    fragmentShader:"uniform float t;uniform vec3 cA;uniform vec3 cB;varying vec2 vUv;varying float vL;varying float vFall;varying float vFade;" +
+    fragmentShader:"uniform float t;uniform float night;uniform vec3 cA;uniform vec3 cB;varying vec2 vUv;varying float vL;varying float vFall;varying float vFade;" +
       "void main(){float e=abs(vUv.x-.5)*2.;float deep=clamp((vL-1.)/6.,0.,1.);vec3 a=mix(cA,vec3(.16,.62,.66),deep*.7);vec3 bb=mix(cB,vec3(.1,.46,.58),deep*.7);vec3 col=mix(a,bb,smoothstep(0.,1.,e));" +
       "float calm=1.-deep*.5;float s=sin(vUv.y*7.-t*2.4*calm+sin(vUv.x*9.+t*.8)*1.4)*.5+.5;col+=smoothstep(.78,1.,s)*.16*calm;float s2=sin(vUv.y*17.-t*3.6*calm+vUv.x*5.)*.5+.5;col+=smoothstep(.9,1.,s2)*.09*calm;" +
       "float f=smoothstep(.80-deep*.08,.97,e+.035*sin(vUv.y*34.+t*2.5));col=mix(col,vec3(.94,1.,.98),f*(.85+deep*.1));" +
-      "float fl=vFall*(.55+.45*sin(vUv.y*46.-t*9.+vUv.x*7.));col=mix(col,vec3(.97,1.,1.),clamp(fl,0.,1.)*.85);gl_FragColor=vec4(col,.96*vFade);}"});
+      "float fl=vFall*(.55+.45*sin(vUv.y*46.-t*9.+vUv.x*7.));col=mix(col,vec3(.97,1.,1.),clamp(fl,0.,1.)*.85);col=mix(col,col*vec3(.62,.8,1.04),night);gl_FragColor=vec4(col,.96*vFade);}"});   // at night the river is cooler and dimmer but stays the clearest thing on the board
   const riverMesh = new T.Mesh(new T.BufferGeometry(), riverMat); riverMesh.renderOrder = 2; riverMesh.frustumCulled = false; riverMesh.visible = false; scene.add(riverMesh);
   const rwid = l => clamp(.9 + .25 * Math.min(l - 1, 1) + .02 * Math.max(0, l - 2), .9, 1.4), riverY = cl => RIVER_Y + ESTEP * (cl.d ? cl.d.elev : 0);
   function buildRiver() { const keys = Object.keys(S.r), kids = {}, segs = [];
@@ -362,7 +370,7 @@ function mount(B) {
   if (!document.getElementById("l3css")) { const st = document.createElement("style"); st.id = "l3css";
     st.textContent = "#l3labels{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:1}.l3t{position:absolute;left:0;top:0;min-width:22px;height:22px;padding:0 7px;border-radius:11px;background:#fff;color:#24434a;font:800 13px/22px 'M PLUS Rounded 1c',Nunito,sans-serif;text-align:center;white-space:nowrap;box-shadow:0 2px 6px rgba(10,40,50,.28),0 0 0 1.5px rgba(10,40,50,.12);will-change:transform;font-variant-numeric:tabular-nums}" +
       ".l3t.p{color:#7a5a10}.l3t.m{color:#0d6a66}.l3t.t{color:#0f4f31}.l3t.r{color:#1f5f8f}.l3t.gold{color:#7a5a10}.l3t.teal{color:#0f7a66}.l3t.green{color:#0f5a33}.l3t.grey{color:#6b7b7e}.l3t.fx{background:rgba(255,243,184,.96);color:#5a3d06;font-size:15px}" +
-      ".l3t svg{width:10px;height:11px;margin-right:3px;vertical-align:-1px}"; document.head.appendChild(st) }
+      ".l3t svg{width:10px;height:11px;margin-right:3px;vertical-align:-1px}#l3labels.night .l3t{box-shadow:0 2px 8px rgba(2,12,24,.6),0 0 0 2px rgba(255,255,255,.16)}"; document.head.appendChild(st) }   // at night a pill gets a faint halo
   const LOCK = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10.500" width="14" height="10" rx="2.200" fill="currentColor"/><path d="M8 10.500V8a4 4 0 018 0v2.500" fill="none" stroke="currentColor" stroke-width="2.800"/></svg>';
   const pool = new Map(); let labFrame = 0; const pv = new T.Vector3();
   function label(id, text, cls, html) { let e = pool.get(id); if (!e) { e = {el:document.createElement("div"), x:-1, y:-1, seen:0, text:"", cls:""}; e.el.className = "l3t"; lab.appendChild(e.el); pool.set(id, e) }
@@ -447,14 +455,17 @@ function mount(B) {
     const rs = Object.keys(S.r).sort().map(k => k + ":" + S.r[k].l + ":" + S.r[k].from).join(";") + "|" + (elev ? S.seed : ""); if (rs !== riverSig) { riverSig = rs; buildRiver() }
     for (const cl of dirty) refreshTile(cl, born.get(cl) || 0);
     for (const cl of born.keys()) celebrate(cl, "grow"); for (const cl of frozen) celebrate(cl, "frost");
-    if (changed.length) buildZoo();
+    if (changed.length) { buildZoo(); if (skyCtl) skyCtl.setSpots(fireSpots()) }
     buildRings(); dirtyLabels = true }
-  let dirtyLabels = true;
+  let dirtyLabels = true, skyCtl = null;
+  // where the fireflies live: over the springs and the wet, wooded and grown tiles (a tile with a higher level has more)
+  function fireSpots() { const out = []; for (const cl of cells) { const d = cl.d; if (!d) continue;
+      if (d.code === "T") out.push({x:cl.x, y:CH[cl.i], z:cl.z, n:3}); else if (d.level && (d.kind === "m" || d.kind === "t" || (d.kind === "g" && d.level >= 3) || (d.kind === "p" && d.level >= 4))) out.push({x:cl.x, y:CH[cl.i], z:cl.z, n:Math.min(9, 1 + d.level)}) } return out }
 
   function resize() { if (!alive) return; w = board.clientWidth; h = board.clientHeight; if (!w || !h) return;
     renderer.setPixelRatio(Math.min(devicePixelRatio || 1, coarse ? C3.pixelRatio.touch : C3.pixelRatio.other)); renderer.setSize(w, h, false); pU.scale.value = renderer.getPixelRatio() * h / (2 * Math.tan(C3.fov * Math.PI / 360)); camera.aspect = w / h; computeFit(); camera.updateProjectionMatrix(); applyCamera(true); updateFitButton(); dirtyLabels = true }
   let frames = 0, fpsT = performance.now(), fps = 0, lastT = 0, lastCam = "";
-  function draw(T0) { if (!alive || !w) return; const dt = lastT ? Math.min(.05, (T0 - lastT) / 1000) : 0; lastT = T0; dtLast = dt; uTime.value += dt;
+  function draw(T0) { if (!alive || !w) return; const dt = lastT ? Math.min(.05, (T0 - lastT) / 1000) : 0; lastT = T0; dtLast = dt; uTime.value += dt; if (skyCtl) skyCtl.update(dt);   // the day's clock and colours (step 4)
     for (const c of clouds) { c.position.x += c.userData.sp * dt; if (c.position.x > 120) c.position.x = -120 }
     applyCamera(false); const cs = view.tx.toFixed(3) + view.tz.toFixed(3) + view.dist.toFixed(2); if (cs !== lastCam) { lastCam = cs; dirtyLabels = true }
     popTick(); sparkTick(dt); pulseTick(); poseZoo(uTime.value);
@@ -467,8 +478,13 @@ function mount(B) {
   // the page coordinates of a cell's top (for tests and for the page's own helpers)
   function scr(p) { const c = cellAt(p[0], p[1]); if (!c) return [0, 0]; const r = cv3.getBoundingClientRect(); pv.set(c.x, CH[c.i] + .1, c.z).project(camera); return [r.left + (pv.x * .5 + .5) * w, r.top + (-pv.y * .5 + .5) * h] }
   function look(p, z) { const c = cellAt(p[0], p[1]); if (!c) return; view.gx = c.x; view.gz = c.z; if (z) view.gd = clamp(fit.dist / (z || 1), fit.near, fit.dist); clampView(); updateFitButton() }
-  const ctl = {draw, resize, sync: syncState, scr, look, toggleFit, unmount() { alive = false; delete G.__flowgrow3d; for (const c of cells) { dropPop(c); if (c.mesh) c.mesh.geometry.dispose() } if (zGeo) zGeo.dispose(); pGeo.dispose(); renderer.dispose(); cv3.remove(); lab.remove(); B.fit && (B.fit.style.top = "") }};
-  G.__flowgrow3d = {setTime() {}, getTime: () => 0, setNight(n) { dayState.night = n }, setQuality(q) { if (TIERS.includes(q) && q !== quality) { quality = q; applyQuality(); for (const cl of cells) cl.sig = ""; syncState() } }, stats, sample, renderer, scene, camera, view};
+  // ---------- the day and night (flowgrow.look3d.sky.js, step 4): the clock, the light, the colours, the stars and the fireflies. If the file isn't there the island stays in daylight.
+  const skyMod = G.Flowgrow3D.sky;
+  if (skyMod) skyCtl = skyMod.mount({scene, renderer, C3, QS, dayState, seaU, riverMat, sky, cloudMat, clouds, sun, hemi, lab, midX, midZ, uWind, uGlow, uTime, pointScale:pU.scale, reduced, quality:() => quality, mem:B.mem,
+    progress:() => cfg.stackSize ? 1 - rules.left(S) / cfg.stackSize : null});   // "progress" mode: how far through the pile the run is (nothing for an endless pile)
+  const ctl = {draw, resize, sync: syncState, scr, look, toggleFit, cycleTime: () => skyCtl ? skyCtl.cycle() : "", timeNote: () => skyCtl ? skyCtl.note() : "",
+    unmount() { alive = false; delete G.__flowgrow3d; for (const c of cells) { dropPop(c); if (c.mesh) c.mesh.geometry.dispose() } if (zGeo) zGeo.dispose(); if (skyCtl) skyCtl.dispose(); pGeo.dispose(); renderer.dispose(); cv3.remove(); lab.remove(); B.fit && (B.fit.style.top = "") }};
+  G.__flowgrow3d = {setTime: v => skyCtl ? skyCtl.setTime(v) : null, getTime: () => skyCtl ? skyCtl.getTime() : null, setQuality(q) { if (TIERS.includes(q) && q !== quality) { quality = q; applyQuality(); for (const cl of cells) cl.sig = ""; syncState(); if (skyCtl) skyCtl.setQuality() } }, stats, sample, renderer, scene, camera, view, dayState};
   syncState(); resize();
   return ctl;
 }

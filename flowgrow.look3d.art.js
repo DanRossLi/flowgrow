@@ -14,6 +14,7 @@ GT.disc = U.tpl(new T.CircleGeometry(1, 14).rotateX(-Math.PI / 2));   // a flat 
 // ---------- state of the tile being built (the builders below draw into CB, around the tile's own centre)
 let CB = null, DET = 1, CG = GT.ico1, LK = false, SZ = 1, SW = 1, R = null, INFO = null, LOWPOLY = false;
 const cnt = n => Math.max(1, Math.round(n * DET));
+const glow = f => { CB.gl = 10; f(); CB.gl = 0 };   // what is drawn in f lights itself a little at night (pond water, mushroom caps, seed heads): the core's tile shader reads the flag
 const ccache = {}, cl = hex => ccache[hex] || (ccache[hex] = lin(hex));
 const _c = new T.Color();
 function jit(hex, r, a) { _c.set(hex); _c.offsetHSL((r() - .5) * .03, (r() - .5) * .08, (r() - .5) * (a || .08)); _c.convertSRGBToLinear(); return {r:_c.r, g:_c.g, b:_c.b} }
@@ -43,13 +44,13 @@ function flower(x, y, z, tall) { const hs = (tall || 1) * (.75 + R() * .55), sp 
   else if (sp === "spike") { h = (.3 + R() * .26) * hs; t = fstem(x, y, z, h, .008); const pal = pick([["#9b6ee0", "#b58cf0", "#7a5bd0"], ["#5f7be8", "#7d96f2", "#4a64d0"], ["#ee79b8", "#f79bcb", "#d85ca2"]], R); fleaf(x, y, z, h, 3, .1, .016);
     const nb = cnt(8); for (let k = 0; k < nb; k++) { const f = .58 + .42 * k / nb, a = k * 2.4 + R(), sz = .022 * (1 - .55 * k / nb) + .006, px = x + (t.x - x) * f, pz = z + (t.z - z) * f; P(GT.ico0, px + Math.cos(a) * .016 * (1 - .4 * k / nb), y + h * f, pz + Math.sin(a) * .016 * (1 - .4 * k / nb), sz, sz * 1.2, sz, jit(pick(pal, R), R, .06), R() * 6) } }
   else if (sp === "corn") { h = (.24 + R() * .16) * hs; t = fstem(x, y, z, h, .007); fleaf(x, y, z, h, 2, .1, .012); petals(t.x, t.y, t.z, 8, .04, .012, ["#5b7fe8", "#7a98f0", "#4a6cd8"], 1.2); P(GT.ico0, t.x, t.y + .006, t.z, .012, .008, .012, cl("#2a2f6a")) }
-  else if (sp === "dandelion") { h = (.1 + R() * .1) * hs; t = fstem(x, y, z, h, .007); fleaf(x, y, z, h * .4, 3, .08, .018); if (R() < .55) { P(GT.ico0, t.x, t.y + .005, t.z, .026, .012, .026, cl("#ffd21e")); petals(t.x, t.y + .004, t.z, 8, .03, .007, ["#ffd21e", "#ffc400"], 1.35) } else P(GT.ico1, t.x, t.y + .02, t.z, .032, .032, .032, cl("#f1f1ea"), R() * 6) }
+  else if (sp === "dandelion") { h = (.1 + R() * .1) * hs; t = fstem(x, y, z, h, .007); fleaf(x, y, z, h * .4, 3, .08, .018); if (R() < .55) { P(GT.ico0, t.x, t.y + .005, t.z, .026, .012, .026, cl("#ffd21e")); petals(t.x, t.y + .004, t.z, 8, .03, .007, ["#ffd21e", "#ffc400"], 1.35) } else glow(() => P(GT.ico1, t.x, t.y + .02, t.z, .032, .032, .032, cl("#f1f1ea"), R() * 6)) }
   else if (sp === "buttercup") { h = (.1 + R() * .08) * hs; t = fstem(x, y, z, h, .006); fleaf(x, y, z, h, 2, .05, .012); petals(t.x, t.y, t.z, 5, .026, .016, ["#ffd83a"], .9) }
   else { h = (.14 + R() * .16) * hs; t = fstem(x, y, z, h); fleaf(x, y, z, h, 2, .08, .016); const aster = sp === "aster"; petals(t.x, t.y, t.z, aster ? 11 : sp === "cosmos" ? 8 : 10, .052 * (sp === "cosmos" ? 1.2 : 1), .013, aster ? ["#b48cf0", "#cfa8ff", "#9d72e6"] : sp === "cosmos" ? ["#ff8fb8", "#ffb3d1", "#e866a0"] : ["#ffffff", "#fff4dc"], 1.3); P(GT.ico0, t.x, t.y + .004, t.z, .02, .011, .02, cl("#f2bd1f")) } }
 function shrub(x, y, z, rad) { const c = jit(pick(GREENS, R), R, .12); P(CG, x, y + rad * .55, z, rad, rad * .72, rad, c, R() * 6); P(CG, x + rad * .55, y + rad * .35, z + rad * .2, rad * .6, rad * .5, rad * .6, jit(pick(GREENS, R), R, .12), R() * 6); P(CG, x - rad * .4, y + rad * .3, z - rad * .4, rad * .55, rad * .45, rad * .55, jit(pick(GREENS, R), R, .12), R() * 6) }
 function berryShrub(x, y, z, rad, pink) { shrub(x, y, z, rad); for (let i = 0; i < cnt(7); i++) { const a = R() * 6.28, e = R() * .9; P(GT.ico0, x + Math.cos(a) * rad * .9, y + rad * .55 + Math.sin(e) * rad * .45, z + Math.sin(a) * rad * .9, .03, .03, .03, cl(pink ? pick(["#ff9fc0", "#ffffff", "#ffd0e0"], R) : "#d8344a")) } }
 function rock(x, y, z, s, c) { P(GT.dod, x, y + s * .35, z, s, s * .7, s * .85, jit(c || pick(["#8d9aa0", "#a2adaf", "#7f8b90", "#b1b6aa"], R), R, .1), R() * 6, R() * .4, R() * .4, 0) }
-function mushroom(x, y, z, s) { P(GT.cyl, x, y, z, .02 * s, .07 * s, .02 * s, cl("#efe6d2"), 0, 0, 0, 0); P(GT.ico1, x, y + .07 * s, z, .055 * s, .035 * s, .055 * s, cl(pick(["#e0564a", "#f2a03d", "#d9684f"], R)), 0, 0, 0, 0); P(GT.ico0, x + .02 * s, y + .095 * s, z, .009 * s, .006 * s, .009 * s, cl("#ffffff"), 0, 0, 0, 0) }
+function mushroom(x, y, z, s) { P(GT.cyl, x, y, z, .02 * s, .07 * s, .02 * s, cl("#efe6d2"), 0, 0, 0, 0); glow(() => { P(GT.ico1, x, y + .07 * s, z, .055 * s, .035 * s, .055 * s, cl(pick(["#e0564a", "#f2a03d", "#d9684f"], R)), 0, 0, 0, 0); P(GT.ico0, x + .02 * s, y + .095 * s, z, .009 * s, .006 * s, .009 * s, cl("#ffffff"), 0, 0, 0, 0) }) }
 function fern(x, y, z, s) { s = s || 1; for (let i = 0; i < cnt(8); i++) { const a = i * .8 + R() * .3, c = jit(pick(["#3f9e3c", "#318f36", "#55b447"], R), R), l1 = .15 * s, l2 = .12 * s, ln = .8; P(GT.cone2, x, y + .01, z, .04 * s, l1, .012 * s, c, a, ln, 0);
     const ex = x + Math.sin(a) * Math.sin(ln) * l1, ey = y + .01 + Math.cos(ln) * l1, ez = z + Math.cos(a) * Math.sin(ln) * l1; P(GT.cone2, ex, ey, ez, .034 * s, l2, .01 * s, c, a, 1.45, 0) } }
 function logPile(x, y, z, len, rad, ang) { P(GT.cyl, x, y + rad, z, rad, len, rad, jit("#6d5036", R, .06), ang, 0, Math.PI / 2); P(CG, x, y + rad * 1.8, z, len * .28, rad * .35, rad * .7, jit("#4e9a3a", R), ang) }
@@ -91,7 +92,7 @@ const REEDC = ["#5fa63a", "#74b345", "#4d9633", "#8cbd4a", "#68a83e", "#a7b954"]
 function reedStem(x, y, z, h, kind) { const lx = (R() - .5) * .2, lz = (R() - .5) * .2, c = jit(pick(REEDC, R), R, .1), tx = x + lx * h, tz = z + lz * h, ty = y + h;
   limb(x, y, z, x + lx * h * .35, y + h * .55, z + lz * h * .35, .0085, c, GT.stem4); limb(x + lx * h * .35, y + h * .55, z + lz * h * .35, tx, ty, tz, .0055, c, GT.stem4);
   if (kind === "cat") { P(GT.cyl, tx, ty - .07, tz, .016, .085, .016, jit("#5c3a21", R, .08), 0, lz * 1.2, lx * 1.2); P(GT.cone2, tx, ty + .012, tz, .004, .05, .004, jit("#c9b078", R, .06), 0, lz * 1.2, lx * 1.2) }
-  else if (kind === "plume") P(GT.ico1, tx, ty + .01, tz, .016, .055, .016, jit(pick(["#cbb581", "#b39f84", "#d8c79a"], R), R, .08), R() * 6, lz * 1.3, lx * 1.3);
+  else if (kind === "plume") glow(() => P(GT.ico1, tx, ty + .01, tz, .016, .055, .016, jit(pick(["#cbb581", "#b39f84", "#d8c79a"], R), R, .08), R() * 6, lz * 1.3, lx * 1.3));
   else if (kind === "iris") { petals(tx, ty, tz, 3, .045, .024, ["#ffd01f", "#f7bd10"], 1.95); petals(tx, ty + .004, tz, 3, .03, .016, ["#f2b30d"], .55) } }
 function reedBed(n, Rr, hMax, ex) { const s = scatter(n, Rr, .064); for (const p of s) { if (ex && (p.x - ex.x) * (p.x - ex.x) + (p.z - ex.z) * (p.z - ex.z) < ex.r * ex.r) continue; const d = Math.hypot(p.x, p.z) / Rr, base = hMax * (1 - .5 * d * d), ns = 2 + ((R() * 3) | 0) * (DET > .6 ? 1 : 0);
     for (let k = 0; k < ns; k++) { const q = R(), kind = q < .34 ? "cat" : q < .58 ? "plume" : q < .66 ? "iris" : "blade"; reedStem(p.x + (R() - .5) * .045, 0, p.z + (R() - .5) * .045, base * (.55 + R() * .55), kind) } } }
@@ -102,7 +103,7 @@ function pond(x, y, z, rx, rz) { const n = 16, p1 = R() * 6.28, p2 = R() * 6.28,
   const pt = (a, k, yy) => [x + Math.cos(a) * rx * rad(a) * k, yy, z + Math.sin(a) * rz * rad(a) * k];
   const tri = (a, ca, b, cb, c, cc) => { const cr = (b[0] - a[0]) * (c[2] - a[2]) - (b[2] - a[2]) * (c[0] - a[0]); if (cr > 0) { const t = b, tc = cb; b = c; cb = cc; c = t; cc = tc } for (const [p, col] of [[a, ca], [b, cb], [c, cc]]) { const k = tint(col); CB.vert(p[0], p[1], p[2], 0, 1, 0, [k.r, k.g, k.b]) } };
   for (let i = 0; i < n; i++) { const a0 = i / n * 6.2832, a1 = (i + 1) / n * 6.2832, w0 = pt(a0, 1, yw), w1 = pt(a1, 1, yw), m0 = pt(a0, 1.24, ym), m1 = pt(a1, 1.24, ym);
-    tri([x, yw, z], deep, w0, pale, w1, pale); tri(w0, mud, m0, mudOut, m1, mudOut); tri(w0, mud, m1, mudOut, w1, mud) }
+    glow(() => tri([x, yw, z], deep, w0, pale, w1, pale)); tri(w0, mud, m0, mudOut, m1, mudOut); tri(w0, mud, m1, mudOut, w1, mud) }
   if (INFO && !INFO.pond) INFO.pond = {x, z, y:yw, rx:rx * .9, rz:rz * .9} }
 function pad(x, y, z, s) { P(GT.disc, x, y, z, s, 1, s, jit("#5cae5a", R, .05), R() * 6, 0, 0, 0) }
 function heron(x, y, z, ang, sc) { const fx = Math.sin(ang), fz = Math.cos(ang), leg = cl("#c9a05a"), gr = jit("#8fa3b5", R, .04), wh = cl("#eef0f0");
@@ -205,6 +206,7 @@ const ANI = {
   bee() { A("ico1", "#f2c21a", 0, 0, 0, .011, .01, .018); A("ico1", "#1c1c1c", 0, 0, -.006, .0115, .0105, .005); W("ico0", "#eefcff", -.012, .01, 0, .014, .002, .008); W("ico0", "#eefcff", .012, .01, 0, .014, .002, .008) },
   moth() { A("cyl", "#6a5a48", 0, 0, -.01, .003, .026, .003, Math.PI / 2, 0, 0); W("ico0", "#d8cdb8", -.022, .004, 0, .024, .004, .018, 0, 0, .3); W("ico0", "#d8cdb8", .022, .004, 0, .024, .004, .018, 0, 0, -.3) },
   dragonfly() { A("cyl", "#2f9ae8", 0, 0, 0, .006, .11, .006, Math.PI / 2, 0, 0); A("ico0", "#2f9ae8", 0, 0, .06, .011, .011, .011); for (const z of [.02, .0]) { W("ico0", "#e9fbff", -.034, .004, z, .036, .002, .01); W("ico0", "#e9fbff", .034, .004, z, .036, .002, .01) } },
+  bat() { A("ico1", "#2a2630", 0, 0, 0, .012, .01, .02); W("ico0", "#2a2630", -.03, 0, 0, .034, .002, .016, 0, 0, .25); W("ico0", "#2a2630", .03, 0, 0, .034, .002, .016, 0, 0, -.25) },
   woodpecker() { A("ico1", "#1d1d1f", 0, .03, 0, .011, .028, .011); A("ico1", "#efe9d8", 0, .03, .008, .008, .02, .006); A("ico0", "#1d1d1f", 0, .06, .002, .011, .011, .011); A("ico0", "#d62a2a", 0, .066, 0, .009, .006, .009); A("cone2", "#555", 0, .06, .011, .003, .022, .003, Math.PI / 2, 0, 0) }
 };
 const SCALE = {};   // a scale for one kind of animal, if it needs one (all are drawn at ANIMAL_SCALE)
@@ -212,16 +214,16 @@ const SCALE = {};   // a scale for one kind of animal, if it needs one (all are 
 function pairFor(d) { if (d.code === "B" || d.code === "T") return null; if (d.river) return null;
   if (!d.level) return d.reach ? ["butterfly", "moth"] : ["lizard", "hedgehog"];
   const L = d.level, ll = Math.min(L, 7);
-  if (d.kind === "g") return [["ladybug", "rabbit", "butterfly", "deer", "squirrel", "woodpecker", "squirrel"][ll - 1], ["moth", "hedgehog", "hedgehog", "fox", "owl", "owl", "owl"][ll - 1]];
+  if (d.kind === "g") return ll >= 6 ? [["woodpecker", "squirrel"][ll - 6], "owl", "bat"] : [["ladybug", "rabbit", "butterfly", "deer", "squirrel"][ll - 1], ["moth", "hedgehog", "hedgehog", "fox", "owl"][ll - 1]];
   if (d.kind === "p") return [d.up === "meadow" ? "bee" : ll > 3 ? "butterfly" : "rabbit", ll > 4 ? "fox" : "moth"];
   if (d.kind === "m") return [d.up === "reed" ? "dragonfly" : "duck", "frog"];
-  return ["squirrel", "owl"] }
+  return L >= 6 ? ["squirrel", "owl", "bat"] : ["squirrel", "owl"] }
 // an animal's template: lod 0 is the light one (round parts are 20 triangles), 1 the full one (80). It is built once, the first time it is asked for.
 function animal(name, lod) { if (!ANI[name]) return null; return mk(name, lod ? 1 : 0, ANI[name], SCALE[name]) }
 // how each kind moves (the core reads it each frame): r the radius of its walk round the tile's middle and s its speed along it, hop the height and hf the rate of its hops, fly the height of its flight and ff the
 // rate of its wing beats. An owl, a woodpecker, a duck and a frog don't walk: they sit in a tree or on the pond. A proposal, see Linear.
 const MOVE = {ladybug:{r:.4, s:.12}, rabbit:{r:.38, s:.3, hop:.05, hf:6}, hedgehog:{r:.42, s:.14}, deer:{r:.42, s:.13}, squirrel:{r:.45, s:.35, hop:.022, hf:9}, owl:{}, fox:{r:.4, s:.2}, frog:{}, duck:{},
-  lizard:{r:.38, s:.2}, snail:{r:.35, s:.05}, butterfly:{r:.45, s:.8, fly:.28, ff:14}, bee:{r:.4, s:1.7, fly:.18, ff:60}, moth:{r:.45, s:.7, fly:.25, ff:16}, dragonfly:{r:.45, s:.9, fly:.35, ff:70}, woodpecker:{}};
+  lizard:{r:.38, s:.2}, snail:{r:.35, s:.05}, butterfly:{r:.45, s:.8, fly:.28, ff:14}, bee:{r:.4, s:1.7, fly:.18, ff:60}, moth:{r:.45, s:.7, fly:.25, ff:16}, dragonfly:{r:.45, s:.9, fly:.35, ff:70}, woodpecker:{}, bat:{r:.9, s:1.1, fly:1.5, ff:22}};
 
 F.art = {content, pillH, pairFor, animal, MOVE};
 })();
